@@ -1,0 +1,41 @@
+[package]
+name = "double-o"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Context-efficient command runner for AI coding agents"
+license = "Apache-2.0"
+repository = "https://github.com/randomm/oo"
+
+[[bin]]
+name = "oo"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+humansize = "2"
+libc = "0.2"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"
+ureq = { version = "3", features = ["json"] }
+uuid = { version = "1", features = ["v4"] }
+vipune = { version = "0.1", optional = true }
+
+[features]
+default = []
+vipune-store = ["vipune"]
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
