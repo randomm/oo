@@ -45,8 +45,8 @@ pub fn load_learn_config() -> Result<LearnConfig, Error> {
     if !path.exists() {
         return Ok(LearnConfig::default());
     }
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
     let cf: ConfigFile =
         toml::from_str(&content).map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
     Ok(cf.learn.unwrap_or_default())
@@ -238,15 +238,9 @@ fn truncate_for_prompt(output: &str) -> &str {
 fn strip_fences(s: &str) -> String {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```toml") {
-        rest.strip_suffix("```")
-            .unwrap_or(rest)
-            .trim()
-            .to_string()
+        rest.strip_suffix("```").unwrap_or(rest).trim().to_string()
     } else if let Some(rest) = trimmed.strip_prefix("```") {
-        rest.strip_suffix("```")
-            .unwrap_or(rest)
-            .trim()
-            .to_string()
+        rest.strip_suffix("```").unwrap_or(rest).trim().to_string()
     } else {
         trimmed.to_string()
     }

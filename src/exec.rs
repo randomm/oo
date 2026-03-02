@@ -28,9 +28,7 @@ impl CommandOutput {
 pub fn run(args: &[String]) -> Result<CommandOutput, Error> {
     let start = Instant::now();
 
-    let output = Command::new(&args[0])
-        .args(&args[1..])
-        .output()?;
+    let output = Command::new(&args[0]).args(&args[1..]).output()?;
 
     let duration = start.elapsed();
     let exit_code = output.status.code().unwrap_or(128);

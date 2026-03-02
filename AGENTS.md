@@ -87,6 +87,7 @@ Fix failures locally. Never push to "see if CI catches anything."
 - Every PR must link to a GitHub issue — include `Fixes #N` in the PR body
 - No force push to `main`
 - All quality gates must pass before opening a PR
+- **Merge policy**: Agents may squash merge PRs that have been approved by the code review agent. No manual approval required in that case.
 
 ---
 
