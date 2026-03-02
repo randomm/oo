@@ -1,7 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-#[allow(deprecated)]
 fn oo() -> Command {
     Command::cargo_bin("oo").unwrap()
 }
@@ -73,4 +72,29 @@ fn test_forget_runs() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Cleared session data"));
+}
+
+#[test]
+fn test_help_no_args_shows_usage() {
+    oo().arg("help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage:"));
+}
+
+#[test]
+fn test_help_includes_help_cmd_in_usage() {
+    // Verify the help command itself appears in the no-args usage output
+    oo().assert()
+        .success()
+        .stdout(predicate::str::contains("oo help <cmd>"));
+}
+
+#[test]
+fn test_help_empty_arg() {
+    Command::cargo_bin("oo")
+        .unwrap()
+        .args(&["help", ""])
+        .assert()
+        .failure();
 }

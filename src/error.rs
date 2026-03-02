@@ -12,4 +12,6 @@ pub enum Error {
     Config(String),
     #[error("learn error: {0}")]
     Learn(String),
+    #[error("help lookup failed: {0}")]
+    Help(String),
 }

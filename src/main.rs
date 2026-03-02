@@ -1,6 +1,7 @@
 mod classify;
 mod error;
 mod exec;
+mod help;
 mod learn;
 mod pattern;
 mod session;
@@ -35,16 +36,18 @@ enum Action {
     Forget,
     Learn(Vec<String>),
     Version,
-    Help,
+    Help(Option<String>),
 }
 
 fn parse_action(args: &[String]) -> Action {
     match args.first().map(|s| s.as_str()) {
-        None => Action::Help,
+        None => Action::Help(None),
         Some("recall") => Action::Recall(args[1..].join(" ")),
         Some("forget") => Action::Forget,
         Some("learn") => Action::Learn(args[1..].to_vec()),
         Some("version") => Action::Version,
+        // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
+        Some("help") => Action::Help(args.get(1).cloned()),
         Some("_learn_bg") => {
             // Hidden internal subcommand for background learning
             if let Some(path) = args.get(1) {
@@ -73,16 +76,18 @@ fn main() {
     let cli = Cli::parse();
 
     let exit_code = match parse_action(&cli.args) {
-        Action::Help => {
+        Action::Help(None) => {
             println!("o̵̥̟͓̿͛̚õ̵̙͈̝̚");
             println!();
             println!("Usage: oo <command> [args...]");
             println!("       oo recall <query>");
             println!("       oo forget");
             println!("       oo learn <command> [args...]");
+            println!("       oo help <cmd>");
             println!("       oo version");
             0
         }
+        Action::Help(Some(cmd)) => cmd_help(&cmd),
         Action::Version => {
             println!("o̵̥̟͓̿͛̚õ̵̙͈̝̚ {}", env!("CARGO_PKG_VERSION"));
             0
@@ -363,6 +368,19 @@ fn cmd_learn(args: &[String]) -> i32 {
     }
 
     exit_code
+}
+
+fn cmd_help(cmd: &str) -> i32 {
+    match help::lookup(cmd) {
+        Ok(text) => {
+            print!("{text}");
+            0
+        }
+        Err(e) => {
+            eprintln!("oo: {e}");
+            1
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
