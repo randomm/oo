@@ -18,7 +18,11 @@ pub enum Classification {
     /// Exit 0, output > threshold, pattern matched with summary.
     Success { label: String, summary: String },
     /// Exit 0, output > threshold, no pattern. Content needs indexing.
-    Large { label: String, output: String, size: usize },
+    Large {
+        label: String,
+        output: String,
+        size: usize,
+    },
 }
 
 /// Derive label from command string (first path component's filename or word).
@@ -124,7 +128,9 @@ mod tests {
     fn test_passthrough_small_output() {
         let out = make_output(0, "hello world\n");
         let result = classify(&out, "echo hello", &[]);
-        assert!(matches!(result, Classification::Passthrough { output } if output == "hello world\n"));
+        assert!(
+            matches!(result, Classification::Passthrough { output } if output == "hello world\n")
+        );
     }
 
     #[test]
@@ -179,7 +185,10 @@ mod tests {
 
     #[test]
     fn test_smart_truncation_long() {
-        let lines: String = (0..200).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let lines: String = (0..200)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let result = smart_truncate(&lines);
         assert!(result.contains("line 0"));
         assert!(result.contains("line 199"));

@@ -7,7 +7,7 @@ mod session;
 mod store;
 
 use clap::Parser;
-use humansize::{format_size, BINARY};
+use humansize::{BINARY, format_size};
 
 use crate::classify::Classification;
 use crate::store::SessionMeta;
@@ -17,7 +17,12 @@ use crate::store::SessionMeta;
 // ---------------------------------------------------------------------------
 
 #[derive(Parser)]
-#[command(name = "oo", version, about = "Context-efficient command runner for AI coding agents")]
+#[command(
+    name = "oo",
+    version,
+    about = "Context-efficient command runner for AI coding agents",
+    long_about = "o̵̥̟͓̿͛̚õ̵̙͈̝̚\n\nContext-efficient command runner for AI coding agents."
+)]
 struct Cli {
     /// Arguments: a subcommand (recall/forget/learn/version) or a command to run
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -69,6 +74,8 @@ fn main() {
 
     let exit_code = match parse_action(&cli.args) {
         Action::Help => {
+            println!("o̵̥̟͓̿͛̚õ̵̙͈̝̚");
+            println!();
             println!("Usage: oo <command> [args...]");
             println!("       oo recall <query>");
             println!("       oo forget");
@@ -77,7 +84,7 @@ fn main() {
             0
         }
         Action::Version => {
-            println!("oo {}", env!("CARGO_PKG_VERSION"));
+            println!("o̵̥̟͓̿͛̚õ̵̙͈̝̚ {}", env!("CARGO_PKG_VERSION"));
             0
         }
         Action::Run(args) => cmd_run(&args),
@@ -145,7 +152,10 @@ fn cmd_run(args: &[String]) -> i32 {
             }
         }
         Classification::Large {
-            label, output, size, ..
+            label,
+            output,
+            size,
+            ..
         } => {
             // Index into store
             let indexed = try_index(&command, output);
@@ -341,9 +351,7 @@ fn cmd_learn(args: &[String]) -> i32 {
         }
         Classification::Large { label, size, .. } => {
             let human_size = format_size(*size, BINARY);
-            println!(
-                "\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)"
-            );
+            println!("\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)");
         }
     }
 

@@ -43,7 +43,10 @@ pub fn find_matching<'a>(command: &str, patterns: &'a [Pattern]) -> Option<&'a P
 
 /// Like `find_matching` but works with a slice of references.
 pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<&'a Pattern> {
-    patterns.iter().find(|p| p.command_match.is_match(command)).copied()
+    patterns
+        .iter()
+        .find(|p| p.command_match.is_match(command))
+        .copied()
 }
 
 /// Apply a success pattern to output, returning the formatted summary if it matches.
@@ -303,17 +306,17 @@ fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
                     lines: f.lines.unwrap_or(20),
                 },
                 "grep" => {
-                    let pat = f
-                        .grep_pattern
-                        .ok_or_else(|| Error::Pattern("grep strategy requires 'grep' field".into()))?;
+                    let pat = f.grep_pattern.ok_or_else(|| {
+                        Error::Pattern("grep strategy requires 'grep' field".into())
+                    })?;
                     let pattern =
                         Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
                     FailureStrategy::Grep { pattern }
                 }
                 "between" => {
-                    let start = f
-                        .start
-                        .ok_or_else(|| Error::Pattern("between strategy requires 'start'".into()))?;
+                    let start = f.start.ok_or_else(|| {
+                        Error::Pattern("between strategy requires 'start'".into())
+                    })?;
                     let end = f
                         .end
                         .ok_or_else(|| Error::Pattern("between strategy requires 'end'".into()))?;
@@ -455,8 +458,7 @@ lines = 20
 "#;
         let pat = parse_pattern_str(toml).unwrap();
         assert!(pat.command_match.is_match("myapp test --verbose"));
-        let summary =
-            extract_summary(pat.success.as_ref().unwrap(), "42 tests passed").unwrap();
+        let summary = extract_summary(pat.success.as_ref().unwrap(), "42 tests passed").unwrap();
         assert_eq!(summary, "42 tests passed");
     }
 

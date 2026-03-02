@@ -32,9 +32,7 @@ fn test_false_failure() {
 
 #[test]
 fn test_exit_code_preserved() {
-    oo().args(["sh", "-c", "exit 42"])
-        .assert()
-        .code(42);
+    oo().args(["sh", "-c", "exit 42"]).assert().code(42);
 }
 
 #[test]
@@ -42,7 +40,7 @@ fn test_version() {
     oo().arg("version")
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("oo "));
+        .stdout(predicate::str::contains("0.1.0"));
 }
 
 #[test]

@@ -45,17 +45,9 @@ pub trait Store {
         limit: usize,
     ) -> Result<Vec<SearchResult>, Error>;
 
-    fn delete_by_session(
-        &mut self,
-        project_id: &str,
-        session_id: &str,
-    ) -> Result<usize, Error>;
+    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error>;
 
-    fn cleanup_stale(
-        &mut self,
-        project_id: &str,
-        max_age_secs: i64,
-    ) -> Result<usize, Error>;
+    fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error>;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,18 +206,12 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    fn delete_by_session(
-        &mut self,
-        project_id: &str,
-        session_id: &str,
-    ) -> Result<usize, Error> {
+    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
         // Find entries matching this session
         let ids: Vec<String> = {
             let mut stmt = self
                 .conn
-                .prepare(
-                    "SELECT id, metadata FROM entries WHERE project = ?1",
-                )
+                .prepare("SELECT id, metadata FROM entries WHERE project = ?1")
                 .map_err(map_err)?;
             stmt.query_map(rusqlite::params![project_id], |row| {
                 let id: String = row.get(0)?;
@@ -253,18 +239,12 @@ impl Store for SqliteStore {
         Ok(count)
     }
 
-    fn cleanup_stale(
-        &mut self,
-        project_id: &str,
-        max_age_secs: i64,
-    ) -> Result<usize, Error> {
+    fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
         let now = now_epoch();
         let ids: Vec<String> = {
             let mut stmt = self
                 .conn
-                .prepare(
-                    "SELECT id, metadata FROM entries WHERE project = ?1",
-                )
+                .prepare("SELECT id, metadata FROM entries WHERE project = ?1")
                 .map_err(map_err)?;
             stmt.query_map(rusqlite::params![project_id], |row| {
                 let id: String = row.get(0)?;
@@ -274,9 +254,10 @@ impl Store for SqliteStore {
             .map_err(map_err)?
             .filter_map(|r| r.ok())
             .filter(|(_, meta_json)| {
-                meta_json.as_deref().and_then(parse_meta).is_some_and(|m| {
-                    m.source == "oo" && (now - m.timestamp) > max_age_secs
-                })
+                meta_json
+                    .as_deref()
+                    .and_then(parse_meta)
+                    .is_some_and(|m| m.source == "oo" && (now - m.timestamp) > max_age_secs)
             })
             .map(|(id, _)| id)
             .collect()
@@ -305,12 +286,9 @@ pub struct VipuneStore {
 impl VipuneStore {
     pub fn open() -> Result<Self, Error> {
         let config = vipune::Config::load().map_err(|e| Error::Store(e.to_string()))?;
-        let store = vipune::MemoryStore::new(
-            &config.database_path,
-            &config.embedding_model,
-            config,
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        let store =
+            vipune::MemoryStore::new(&config.database_path, &config.embedding_model, config)
+                .map_err(|e| Error::Store(e.to_string()))?;
         Ok(Self { store })
     }
 }
@@ -355,11 +333,7 @@ impl Store for VipuneStore {
             .collect())
     }
 
-    fn delete_by_session(
-        &mut self,
-        project_id: &str,
-        session_id: &str,
-    ) -> Result<usize, Error> {
+    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
         let entries = self
             .store
             .list(project_id, 10_000)
@@ -378,11 +352,7 @@ impl Store for VipuneStore {
         Ok(count)
     }
 
-    fn cleanup_stale(
-        &mut self,
-        project_id: &str,
-        max_age_secs: i64,
-    ) -> Result<usize, Error> {
+    fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
         let now = now_epoch();
         let entries = self
             .store
@@ -448,10 +418,9 @@ mod tests {
     }
 
     fn temp_store() -> SqliteStore {
-        SqliteStore::open_at(&std::env::temp_dir().join(format!(
-            "oo-test-{}.db",
-            uuid::Uuid::new_v4()
-        )))
+        SqliteStore::open_at(
+            &std::env::temp_dir().join(format!("oo-test-{}.db", uuid::Uuid::new_v4())),
+        )
         .unwrap()
     }
 
@@ -459,7 +428,9 @@ mod tests {
     fn test_index_and_search() {
         let mut store = temp_store();
         let meta = test_meta("s1");
-        store.index("proj", "auth bug in login flow", &meta).unwrap();
+        store
+            .index("proj", "auth bug in login flow", &meta)
+            .unwrap();
         store
             .index("proj", "database migration issue", &meta)
             .unwrap();
@@ -502,9 +473,7 @@ mod tests {
         let fresh_meta = test_meta("s1");
 
         store.index("proj", "old data here", &old_meta).unwrap();
-        store
-            .index("proj", "fresh data here", &fresh_meta)
-            .unwrap();
+        store.index("proj", "fresh data here", &fresh_meta).unwrap();
 
         let deleted = store.cleanup_stale("proj", 86400).unwrap();
         assert_eq!(deleted, 1);
