@@ -2,6 +2,7 @@ mod classify;
 mod error;
 mod exec;
 mod help;
+mod init;
 mod learn;
 mod pattern;
 mod session;
@@ -37,6 +38,7 @@ enum Action {
     Learn(Vec<String>),
     Version,
     Help(Option<String>),
+    Init,
 }
 
 fn parse_action(args: &[String]) -> Action {
@@ -48,6 +50,7 @@ fn parse_action(args: &[String]) -> Action {
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
+        Some("init") => Action::Init,
         Some("_learn_bg") => {
             // Hidden internal subcommand for background learning
             if let Some(path) = args.get(1) {
@@ -96,6 +99,7 @@ fn main() {
         Action::Recall(query) => cmd_recall(&query),
         Action::Forget => cmd_forget(),
         Action::Learn(args) => cmd_learn(&args),
+        Action::Init => cmd_init(),
     };
 
     std::process::exit(exit_code);
@@ -376,6 +380,16 @@ fn cmd_help(cmd: &str) -> i32 {
             print!("{text}");
             0
         }
+        Err(e) => {
+            eprintln!("oo: {e}");
+            1
+        }
+    }
+}
+
+fn cmd_init() -> i32 {
+    match init::run() {
+        Ok(()) => 0,
         Err(e) => {
             eprintln!("oo: {e}");
             1
