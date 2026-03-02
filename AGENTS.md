@@ -49,6 +49,7 @@ All checks must pass locally before any push. CI is for **verification**, not di
 cargo fmt --check          # formatting
 cargo clippy -- -D warnings  # lint (warnings are errors)
 cargo test                 # all tests pass
+cargo tarpaulin --fail-under 80  # coverage gate (80% minimum)
 cargo build --release      # release build succeeds
 ```
 
@@ -59,11 +60,14 @@ Fix failures locally. Never push to "see if CI catches anything."
 ## 4. Testing Standards
 
 - **TDD preferred** — write tests before implementation
-- **80% minimum coverage** for new code
+- **80% line coverage minimum** for new code — enforced via `cargo tarpaulin`
 - **Unit tests** in-module (`#[cfg(test)]`) for pure logic
 - **Integration tests** in `tests/` for CLI behaviour — use `assert_cmd`
+- Integration tests are the primary coverage driver — they test real CLI invocations
 - Every new pattern in `src/pattern.rs` must have a corresponding test
-- No test stubs — if a test exists it must assert something meaningful
+- Tests must provide real value — no trivial assertions like `assert!(true)` or `assert_eq!(1, 1)`
+- Every test must exercise a real code path and assert meaningful behaviour
+- Network-dependent tests must be marked `#[ignore]` with a comment explaining why
 - ~53 tests currently; do not reduce this count
 
 ---
