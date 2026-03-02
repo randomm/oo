@@ -14,4 +14,6 @@ pub enum Error {
     Learn(String),
     #[error("help lookup failed: {0}")]
     Help(String),
+    #[error("init failed: {0}")]
+    Init(String),
 }
