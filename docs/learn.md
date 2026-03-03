@@ -17,22 +17,31 @@ pattern to `~/.config/oo/patterns/`.
 
 ```toml
 [learn]
-provider    = "anthropic"                    # anthropic | openai
+provider    = "anthropic"                    # anthropic | openai | cerebras
 model       = "claude-haiku-4-5-20251001"    # default
 api_key_env = "ANTHROPIC_API_KEY"            # env var holding the key
 ```
 
-All three keys are optional — the defaults above apply if the section is absent.
+All three keys are optional — the provider is auto-detected from available API keys
+if the section is absent (see below).
 
-## Supported providers
+### Providers
 
-| `provider` | API endpoint |
-|------------|--------------|
-| `anthropic` | `https://api.anthropic.com/v1/messages` |
-| `openai` | `https://api.openai.com/v1/chat/completions` |
+| Provider | Env Var | Default Model |
+|----------|---------|---------------|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Cerebras | `CEREBRAS_API_KEY` | `zai-glm-4.7` |
 
-> **Important:** `api_key_env` always defaults to `ANTHROPIC_API_KEY` regardless of provider.
-> If you use OpenAI, you **must** set `api_key_env = "OPENAI_API_KEY"` explicitly:
+> **Cerebras model**: The default model (`zai-glm-4.7`) is current at time of writing.
+> Check the [Cerebras model catalog](https://cloud.cerebras.ai/models) for newer models
+> and override via `config.toml` if needed.
+
+The provider is auto-detected from available API keys (checked in order above).
+If you have `CEREBRAS_API_KEY` set and nothing else, `oo learn` just works.
+
+> **Note:** When configuring manually, set `api_key_env` to match the env var for
+> your chosen provider:
 >
 > ```toml
 > [learn]

@@ -41,6 +41,7 @@ vipune-store = ["vipune"]
 
 [dev-dependencies]
 assert_cmd = "2"
+mockito = "1"
 predicates = "3"
 tempfile = "3"
 
