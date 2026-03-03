@@ -49,10 +49,42 @@ Large unrecognised output is indexed locally; query it with `oo recall`.
 
 ---
 
-## Install
+## Installation
+
+### Pre-built binaries (recommended)
+
+Download from [GitHub Releases](https://github.com/randomm/oo/releases/latest):
+
+```bash
+# macOS (Apple Silicon)
+curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-aarch64-apple-darwin.tar.xz
+tar xf double-o-aarch64-apple-darwin.tar.xz
+sudo mv oo /usr/local/bin/
+
+# Linux (x86_64)
+curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-x86_64-unknown-linux-gnu.tar.xz
+tar xf double-o-x86_64-unknown-linux-gnu.tar.xz
+sudo mv oo /usr/local/bin/
+
+# Linux (ARM64)
+curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-aarch64-unknown-linux-gnu.tar.xz
+tar xf double-o-aarch64-unknown-linux-gnu.tar.xz
+sudo mv oo /usr/local/bin/
+```
+
+### From crates.io
 
 ```bash
 cargo install double-o
+```
+
+### From source
+
+```bash
+git clone https://github.com/randomm/oo.git
+cd oo
+cargo build --release
+cp target/release/oo /usr/local/bin/
 ```
 
 ---
@@ -68,6 +100,8 @@ cargo install double-o
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
 | `oo version` | Print version |
+
+> **Note:** `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
 
 ---
 
