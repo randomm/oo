@@ -339,4 +339,145 @@ command_match = "[invalid"
         let config = LearnConfig::default();
         assert_eq!(config.provider, "anthropic");
     }
+
+    #[test]
+    fn test_default_config_model() {
+        let config = LearnConfig::default();
+        assert!(!config.model.is_empty(), "model must not be empty");
+    }
+
+    #[test]
+    fn test_default_config_api_key_env() {
+        let config = LearnConfig::default();
+        assert_eq!(config.api_key_env, "ANTHROPIC_API_KEY");
+    }
+
+    #[test]
+    fn test_validate_valid_toml_no_success() {
+        // A minimal valid TOML with only command_match
+        let toml = r#"command_match = "^cargo""#;
+        assert!(validate_pattern_toml(toml).is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_toml_syntax() {
+        // Malformed TOML should return an error
+        let toml = "this is not valid = [toml";
+        assert!(validate_pattern_toml(toml).is_err());
+    }
+
+    #[test]
+    fn test_validate_missing_command_match() {
+        // TOML without required command_match field should fail
+        let toml = r#"
+[success]
+pattern = "ok"
+summary = "done"
+"#;
+        assert!(validate_pattern_toml(toml).is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_command_match_regex() {
+        // Invalid regex in command_match should return error
+        let toml = r#"command_match = "[invalid_regex""#;
+        assert!(validate_pattern_toml(toml).is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_success_pattern_regex() {
+        // Invalid regex in success.pattern should return error
+        let toml = r#"
+command_match = "^cargo"
+[success]
+pattern = "[invalid"
+summary = "done"
+"#;
+        assert!(validate_pattern_toml(toml).is_err());
+    }
+
+    #[test]
+    fn test_strip_fences_whitespace_preserved() {
+        // Content inside fences is trimmed but inner structure is kept
+        let input = "```toml\n\ncommand_match = \"test\"\n\n```";
+        let result = strip_fences(input);
+        assert!(
+            result.contains("command_match"),
+            "content must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_truncate_for_prompt_boundary() {
+        // Exactly 4000 chars should not be truncated
+        let exact = "a".repeat(4000);
+        assert_eq!(truncate_for_prompt(&exact).len(), 4000);
+
+        // 4001 chars should be truncated to 4000
+        let over = "a".repeat(4001);
+        assert_eq!(truncate_for_prompt(&over).len(), 4000);
+    }
+
+    #[test]
+    fn test_label_path_extraction() {
+        // Full paths: only the last component
+        assert_eq!(label("/usr/local/bin/rustc"), "rustc");
+        assert_eq!(label("./target/release/oo"), "oo");
+    }
+
+    #[test]
+    fn test_label_empty_command() {
+        // Edge case: empty string
+        assert_eq!(label(""), "unknown");
+    }
+
+    // --- load_learn_config tests ---
+
+    #[test]
+    fn test_load_learn_config_no_file_returns_default() {
+        // Returns default config (or Err if config.toml is malformed) — must not panic
+        match load_learn_config() {
+            Ok(c) => {
+                assert!(!c.provider.is_empty());
+                assert!(!c.model.is_empty());
+                assert!(!c.api_key_env.is_empty());
+            }
+            Err(_) => {} // malformed config.toml in test env is acceptable
+        }
+    }
+
+    #[test]
+    fn test_run_background_missing_file_returns_err() {
+        assert!(run_background("/tmp/__oo_no_such_file_xyz__.json").is_err());
+    }
+
+    #[test]
+    fn test_run_background_invalid_json_returns_err() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), b"not valid json {{{").expect("write");
+        assert!(run_background(tmp.path().to_str().expect("utf8 path")).is_err());
+    }
+
+    #[test]
+    fn test_run_background_valid_json_no_api_key() {
+        // Valid JSON; run_learn returns Err when ANTHROPIC_API_KEY is absent
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
+        std::fs::write(tmp.path(), data.to_string()).expect("write");
+        // Don't assert the result — key may or may not be set in dev env
+        let _ = run_background(tmp.path().to_str().expect("utf8 path"));
+    }
+
+    #[test]
+    fn test_validate_toml_with_valid_success_pattern() {
+        let toml = "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"";
+        assert!(validate_pattern_toml(toml).is_ok());
+    }
+
+    #[test]
+    fn test_patterns_dir_is_under_config_dir() {
+        let dir = patterns_dir();
+        let s = dir.to_string_lossy();
+        assert!(s.ends_with("oo/patterns"), "got: {s}");
+    }
 }

@@ -12,6 +12,10 @@ categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 authors = ["Janni Turunen"]
 
+[lib]
+name = "double_o"
+path = "src/lib.rs"
+
 [[bin]]
 name = "oo"
 path = "src/main.rs"

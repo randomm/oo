@@ -167,3 +167,181 @@ fn test_init_second_run_succeeds_without_error() {
     // Second invocation must exit 0 — idempotent.
     oo().arg("init").current_dir(dir.path()).assert().success();
 }
+
+// ---------------------------------------------------------------------------
+// recall command
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_recall_no_args() {
+    // `oo recall` with no query should fail with a helpful error
+    oo().arg("recall")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("recall requires a query"));
+}
+
+#[test]
+fn test_recall_no_results() {
+    // A query that matches nothing should exit 0 and mention no results
+    oo().args(["recall", "xyzzy_nonexistent_query_12345"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No results found"));
+}
+
+// ---------------------------------------------------------------------------
+// learn command
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_learn_no_args() {
+    // `oo learn` with no command should fail with a helpful error
+    oo().arg("learn")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("learn requires a command"));
+}
+
+#[test]
+fn test_learn_no_api_key() {
+    // `oo learn echo hello` spawns a background child that checks the API key.
+    // The foreground process always exits 0 (it just runs the command and detaches).
+    // What we can verify: stderr mentions the learning intent for the command.
+    oo().args(["learn", "echo", "hello"])
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("OPENAI_API_KEY")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("[learning pattern for"));
+}
+
+// ---------------------------------------------------------------------------
+// run command edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_run_command_not_found() {
+    // A command that doesn't exist should result in a failure indicator or error
+    oo().args(["nonexistent_binary_xyz_abc_123"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_run_multiword_command() {
+    // Multiple args are passed through correctly
+    oo().args(["echo", "hello", "world"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello world"));
+}
+
+#[test]
+fn test_passthrough_git_version() {
+    // `git --version` produces small output (< 4096 bytes) and exits 0.
+    // oo must pass it through verbatim — no ✓ or ● prefix.
+    // This tests the passthrough classification tier end-to-end.
+    oo().args(["git", "--version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("git version"));
+}
+
+#[test]
+fn test_failure_stderr_output() {
+    // `ls /nonexistent_path_xyz` should exit non-zero and show ✗ with stderr content
+    oo().args(["ls", "/nonexistent_path_xyz_abc_12345"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::starts_with("\u{2717}")); // ✗
+}
+
+// ---------------------------------------------------------------------------
+// parse_action dispatch (CLI integration)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dispatch_version() {
+    // `oo version` must exit 0
+    oo().arg("version").assert().success();
+}
+
+#[test]
+fn test_dispatch_forget() {
+    // `oo forget` must exit 0 and clear session data
+    oo().arg("forget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cleared session data"));
+}
+
+#[test]
+fn test_dispatch_run() {
+    // `oo echo hi` dispatches to run — exits 0 with command output
+    oo().args(["echo", "hi"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hi"));
+}
+
+#[test]
+fn test_dispatch_recall_query_joined() {
+    // `oo recall hello world` — multi-word query joined, exits 0
+    oo().args(["recall", "hello", "world"]).assert().success();
+}
+
+#[test]
+fn test_dispatch_help() {
+    // `oo help` — shows usage
+    oo().arg("help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage"));
+}
+
+#[test]
+fn test_dispatch_init() {
+    // `oo init` — runs the init command (tested more fully in init block above)
+    let dir = TempDir::new().unwrap();
+    oo().arg("init").current_dir(dir.path()).assert().success();
+}
+
+// ---------------------------------------------------------------------------
+// version / format tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_version_shows_zalgo() {
+    // The zalgo logo characters must appear in the version output
+    oo().arg("version")
+        .assert()
+        .success()
+        // The zalgo "o" characters appear in the logo prefix
+        .stdout(predicate::str::contains("o\u{335}"));
+}
+
+#[test]
+fn test_version_shows_version_number() {
+    // Must contain the version from Cargo.toml
+    let version = env!("CARGO_PKG_VERSION");
+    oo().arg("version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(version));
+}
+
+// ---------------------------------------------------------------------------
+// help command integration
+// ---------------------------------------------------------------------------
+
+/// Network-dependent: looks up cheat.sh for `ls`.
+/// Marked ignore — run manually when network is available.
+#[test]
+#[ignore = "requires network access to cheat.sh"]
+fn test_help_with_valid_command() {
+    oo().args(["help", "ls"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty().not());
+}
