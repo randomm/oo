@@ -88,23 +88,34 @@ pub fn load_learn_config() -> Result<LearnConfig, Error> {
 // Background learning
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = r#"You generate tool output classification patterns for a command runner.
+const SYSTEM_PROMPT: &str = r#"You generate output classification patterns for `oo`, a shell command runner used by an LLM coding agent.
 
-Given a shell command, its stdout, stderr, and exit code, produce a TOML
-pattern file that captures:
+The agent reads your pattern to decide its next action. Returning nothing is the WORST outcome — an empty summary forces a costly recall cycle that wastes more tokens than a slightly verbose summary would.
 
-1. A regex to match this command (command_match)
-2. For success (exit 0): a regex with named capture groups to extract a
-   one-line summary, and a summary template using those groups
-3. For failure (exit ≠ 0): a strategy to extract the actionable part of
-   the output (tail N lines, head N lines, grep for pattern, or extract
-   between markers)
+## oo's 4-tier system
 
-Be aggressive about compression. A 1000-line passing test suite should
-become "47 passed, 3.2s". A failing build should show only the first
-error and its context, not the full cascade.
+- Passthrough: output <4 KB passes through unchanged
+- Failure: failed commands get ✗ prefix with filtered error output
+- Success: successful commands get ✓ prefix with a pattern-extracted summary (your patterns target this tier)
+- Large: if your regex fails to match, output falls through to this tier (FTS5 indexed for recall) — not catastrophic
 
-Respond with ONLY the TOML block. No explanation, no markdown fences."#;
+## Output format
+
+Respond with ONLY a TOML block. Fences optional.
+
+    command_match = "^pytest"
+    [success]
+    pattern = '(?P<n>\d+) passed'
+    summary = "{n} passed"
+    [failure]
+    strategy = "grep"
+    grep = "error|Error|FAILED"
+
+## Rules
+
+- For build/test commands: compress aggressively (e.g. "47 passed, 3.2s" or "error: …first error only")
+- For large tabular output (ls, docker ps, git log): omit the success section — let it fall through to Large tier (FTS5 indexed)
+- A regex that's too broad is better than one that matches and returns empty"#;
 
 /// Run the learn flow: call LLM, validate + save pattern.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
@@ -317,14 +328,17 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     #[derive(Deserialize)]
     struct Check {
         command_match: String,
+        // Fields must exist for TOML deserialization; only regex validity is checked
         #[allow(dead_code)]
         success: Option<SuccessCheck>,
+        // Fields must exist for TOML deserialization; only regex validity is checked
         #[allow(dead_code)]
         failure: Option<serde_json::Value>,
     }
     #[derive(Deserialize)]
     struct SuccessCheck {
         pattern: String,
+        // Fields must exist for TOML deserialization; only regex validity is checked
         #[allow(dead_code)]
         summary: String,
     }
