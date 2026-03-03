@@ -117,14 +117,12 @@ pub fn smart_truncate(output: &str) -> String {
 mod tests {
     use super::*;
     use crate::exec::CommandOutput;
-    use std::time::Duration;
 
     fn make_output(exit_code: i32, stdout: &str) -> CommandOutput {
         CommandOutput {
             stdout: stdout.as_bytes().to_vec(),
             stderr: Vec::new(),
             exit_code,
-            duration: Duration::from_millis(100),
         }
     }
 

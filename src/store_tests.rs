@@ -192,3 +192,75 @@ fn test_cleanup_stale_preserves_fresh() {
     let results = store.search("proj", "fresh_content", 10).unwrap();
     assert!(!results.is_empty(), "fresh entry must not be cleaned up");
 }
+
+#[test]
+fn test_search_with_double_quotes_in_query_does_not_panic() {
+    // A query containing double-quotes must not cause FTS5 syntax errors or panics.
+    // Previously, unescaped quotes would be wrapped as `""token""`, which is invalid FTS5 syntax.
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    store
+        .index("proj", "some searchable content", &meta)
+        .unwrap();
+
+    // These queries all contain double-quote characters that could break FTS5 syntax.
+    let queries = [
+        r#"foo"bar"#,
+        r#""quoted""#,
+        r#"he said "hello" world"#,
+        r#""""#,
+    ];
+    for query in &queries {
+        let result = store.search("proj", query, 10);
+        assert!(
+            result.is_ok(),
+            "search must not return Err for query {query:?}, got: {:?}",
+            result.unwrap_err()
+        );
+        // The result vec itself must be a valid (possibly empty) list — not garbage.
+        let results = result.unwrap();
+        assert!(
+            results.len() <= 1,
+            "at most 1 indexed entry can match, got {}",
+            results.len()
+        );
+    }
+
+    // Additionally verify a quote-containing query that matches content actually finds it.
+    // Index content with the word "searchable" and query with embedded quotes around it.
+    let result = store.search("proj", r#""searchable""#, 10).unwrap();
+    // After stripping quotes the token becomes "searchable" — FTS5 should find the entry.
+    assert_eq!(
+        result.len(),
+        1,
+        "stripping embedded quotes must still allow FTS5 to find the matching entry"
+    );
+}
+
+#[test]
+fn test_search_with_asterisk_in_query_does_not_panic() {
+    // A query containing `*` inside a token (e.g. "foo*bar") must not panic or
+    // return an Err. FTS5 phrase-quoting neutralizes * so it is treated as a
+    // literal character rather than a prefix-search operator.
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    store
+        .index("proj", "wildcard matching content", &meta)
+        .unwrap();
+
+    let queries = [
+        "foo*bar", "prefix*", "*suffix", "a*b*c",
+        // Standalone * is a 1-char query that falls back to LIKE — must also be safe.
+        "*",
+    ];
+    for query in &queries {
+        let result = store.search("proj", query, 10);
+        assert!(
+            result.is_ok(),
+            "search must not Err for query {query:?}, got: {:?}",
+            result.unwrap_err()
+        );
+        // Results must be a valid (possibly empty) vector.
+        let _ = result.unwrap();
+    }
+}

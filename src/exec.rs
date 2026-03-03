@@ -1,14 +1,11 @@
 use std::process::Command;
-use std::time::{Duration, Instant};
 
 use crate::error::Error;
 
-#[allow(dead_code)]
 pub struct CommandOutput {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub exit_code: i32,
-    pub duration: Duration,
 }
 
 impl CommandOutput {
@@ -26,18 +23,14 @@ impl CommandOutput {
 }
 
 pub fn run(args: &[String]) -> Result<CommandOutput, Error> {
-    let start = Instant::now();
-
     let output = Command::new(&args[0]).args(&args[1..]).output()?;
 
-    let duration = start.elapsed();
     let exit_code = output.status.code().unwrap_or(128);
 
     Ok(CommandOutput {
         stdout: output.stdout,
         stderr: output.stderr,
         exit_code,
-        duration,
     })
 }
 
@@ -77,11 +70,5 @@ mod tests {
         let merged = result.merged_lossy();
         assert!(merged.contains("out"));
         assert!(merged.contains("err"));
-    }
-
-    #[test]
-    fn test_duration_measured() {
-        let result = run(&["sleep".into(), "0.01".into()]).unwrap();
-        assert!(result.duration.as_millis() >= 5);
     }
 }

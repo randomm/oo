@@ -82,7 +82,6 @@ fn make_output(exit_code: i32, stdout: &str) -> exec::CommandOutput {
         stdout: stdout.as_bytes().to_vec(),
         stderr: Vec::new(),
         exit_code,
-        duration: std::time::Duration::from_millis(1),
     }
 }
 

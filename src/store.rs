@@ -19,11 +19,11 @@ pub struct SessionMeta {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct SearchResult {
     pub id: String,
     pub content: String,
     pub meta: Option<SessionMeta>,
+    #[allow(dead_code)] // Used by VipuneStore (behind feature flag)
     pub similarity: Option<f64>,
 }
 
@@ -153,10 +153,15 @@ impl Store for SqliteStore {
                 )
                 .map_err(map_err)?;
 
-            // FTS5 query: wrap tokens for prefix matching
+            // FTS5 query: strip embedded double-quotes before wrapping tokens to
+            // prevent FTS5 syntax errors from user-supplied quotes in search terms.
+            // Strip " to prevent FTS5 syntax injection. Other special chars (*, ^, -)
+            // are neutralized by phrase quoting — e.g. "foo*bar" is treated as a
+            // literal phrase match rather than a prefix search, which is safe and
+            // correct for our use-case (exact token recall).
             let fts_query = query
                 .split_whitespace()
-                .map(|w| format!("\"{w}\""))
+                .map(|w| format!("\"{}\"", w.replace('"', "")))
                 .collect::<Vec<_>>()
                 .join(" ");
 
