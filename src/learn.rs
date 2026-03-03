@@ -74,6 +74,11 @@ pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }
 
+/// Path to the one-line status file written by the background learn process.
+pub fn learn_status_path() -> PathBuf {
+    config_dir().join("learn-status.log")
+}
+
 pub fn load_learn_config() -> Result<LearnConfig, Error> {
     let path = config_dir().join("config.toml");
     if !path.exists() {
@@ -135,8 +140,6 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
         truncate_for_prompt(output)
     );
 
-    eprintln!("  [learning pattern for \"{}\"]", label(command));
-
     let toml_response = match config.provider.as_str() {
         "anthropic" => call_anthropic(
             "https://api.anthropic.com/v1/messages",
@@ -172,7 +175,11 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
     let path = dir.join(&filename);
     std::fs::write(&path, &toml_clean).map_err(|e| Error::Learn(e.to_string()))?;
 
-    eprintln!("  [saved pattern to {}]", path.display());
+    // Write status file for the foreground process to display on next invocation
+    let status_path = learn_status_path();
+    let cmd_label = label(command);
+    let _ = crate::commands::write_learn_status(&status_path, &cmd_label, &path);
+
     Ok(())
 }
 
