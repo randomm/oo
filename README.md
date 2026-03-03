@@ -1,6 +1,8 @@
-**o̵̥̟͓̿͛̚õ̵̙͈̝̚**
+<img src="assets/logo.png" alt="oo">
 
-Context-efficient command runner for AI coding agents.
+*"Double-o, agent's best friend."* 
+
+*Or: how I learned to stop worrying and love my context-efficient command runner for AI coding agents.*
 
 ---
 
