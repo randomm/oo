@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::path::Path;
+
 use humansize::{BINARY, format_size};
 
 use crate::classify::Classification;
@@ -14,6 +17,7 @@ pub enum Action {
     Version,
     Help(Option<String>),
     Init(InitFormat),
+    Patterns,
 }
 
 /// Parse `--format <value>` from the remaining init args.
@@ -50,6 +54,7 @@ pub fn parse_action(args: &[String]) -> Action {
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
         Some("init") => Action::Init(parse_init_format(&args[1..])),
+        Some("patterns") => Action::Patterns,
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -306,14 +311,115 @@ pub fn cmd_learn(args: &[String]) -> i32 {
         }
     }
 
+    // Print provider before spawning so the user sees it in the foreground
+    let config = learn::load_learn_config().unwrap_or_else(|e| {
+        eprintln!("oo: config error: {e}");
+        learn::LearnConfig::default()
+    });
+    eprintln!(
+        "  [learning pattern for \"{}\" ({})]",
+        classify::label(&command),
+        config.provider
+    );
+
     // Spawn background learn process
     if let Err(e) = learn::spawn_background(&command, &merged, exit_code) {
         eprintln!("oo: learn failed: {e}");
-    } else {
-        eprintln!("  [learning pattern for \"{}\"]", classify::label(&command));
     }
 
     exit_code
+}
+
+/// Write a one-line status entry to the learn status file.
+///
+/// Called by the background process after successfully saving a pattern so
+/// the NEXT foreground invocation can display the result.
+pub fn write_learn_status(
+    status_path: &Path,
+    cmd_name: &str,
+    pattern_path: &Path,
+) -> Result<(), std::io::Error> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(status_path)?;
+    writeln!(
+        file,
+        "learned pattern for {} → {}",
+        cmd_name,
+        pattern_path.display()
+    )
+}
+
+/// Check for a pending learn-status file, print its contents to stderr, then
+/// delete the file.  Called early in each foreground invocation.
+pub fn check_and_clear_learn_status(status_path: &Path) {
+    if let Ok(content) = std::fs::read_to_string(status_path) {
+        for line in content.lines() {
+            eprintln!("oo: {line}");
+        }
+        let _ = std::fs::remove_file(status_path);
+    }
+}
+
+/// List learned pattern files from the given directory.
+///
+/// Extracted for testability — callers pass in the resolved patterns dir.
+pub fn cmd_patterns_in(dir: &Path) -> i32 {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => {
+            println!("no learned patterns yet");
+            return 0;
+        }
+    };
+
+    let mut found = false;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        // Parse the file once, extract all three fields from the single Value
+        let parsed = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
+
+        let cmd_match = parsed
+            .as_ref()
+            .and_then(|v| v.get("command_match")?.as_str().map(str::to_string));
+        let has_success = parsed.as_ref().and_then(|v| v.get("success")).is_some();
+        let has_failure = parsed.as_ref().and_then(|v| v.get("failure")).is_some();
+
+        // Only mark found after a valid parse; skip corrupt files silently
+        if parsed.is_none() {
+            continue;
+        }
+        found = true;
+        let cmd_match = cmd_match.unwrap_or_else(|| "(unknown)".into());
+
+        let mut flags = Vec::new();
+        if has_success {
+            flags.push("success");
+        }
+        if has_failure {
+            flags.push("failure");
+        }
+        if flags.is_empty() {
+            println!("{cmd_match}");
+        } else {
+            println!("{cmd_match}  [{}]", flags.join("] ["));
+        }
+    }
+
+    if !found {
+        println!("no learned patterns yet");
+    }
+    0
+}
+
+pub fn cmd_patterns() -> i32 {
+    cmd_patterns_in(&learn::patterns_dir())
 }
 
 pub fn cmd_help(cmd: &str) -> i32 {

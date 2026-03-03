@@ -4,6 +4,111 @@ fn s(s: &str) -> String {
     s.to_string()
 }
 
+// ---------------------------------------------------------------------------
+// parse_action: patterns subcommand (Part 3)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_action_patterns() {
+    assert!(matches!(parse_action(&[s("patterns")]), Action::Patterns));
+}
+
+// ---------------------------------------------------------------------------
+// cmd_patterns (Part 3)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cmd_patterns_empty_dir() {
+    let dir = tempfile::TempDir::new().unwrap();
+    // Non-existent patterns dir → "no learned patterns yet"
+    let code = cmd_patterns_in(dir.path().join("patterns").as_path());
+    assert_eq!(code, 0, "empty patterns dir must exit 0");
+}
+
+#[test]
+fn test_cmd_patterns_valid_toml() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let patterns_dir = dir.path().join("patterns");
+    std::fs::create_dir_all(&patterns_dir).unwrap();
+    std::fs::write(
+        patterns_dir.join("pytest.toml"),
+        "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"\n",
+    )
+    .unwrap();
+    let code = cmd_patterns_in(&patterns_dir);
+    assert_eq!(code, 0, "valid pattern file must exit 0");
+}
+
+// ---------------------------------------------------------------------------
+// Status file write / read / delete (Part 2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_write_learn_status_creates_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+    write_learn_status(&status_path, "git-status", &status_path).unwrap();
+    assert!(status_path.exists(), "status file must be created");
+    let content = std::fs::read_to_string(&status_path).unwrap();
+    assert!(
+        content.contains("git-status"),
+        "status file must contain command name"
+    );
+}
+
+#[test]
+fn test_check_and_clear_learn_status_reads_and_deletes() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+    std::fs::write(
+        &status_path,
+        "learned pattern for git-status → /some/path.toml\n",
+    )
+    .unwrap();
+    check_and_clear_learn_status(&status_path);
+    assert!(
+        !status_path.exists(),
+        "status file must be deleted after reading"
+    );
+}
+
+#[test]
+fn test_check_and_clear_learn_status_missing_file_is_no_op() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("nonexistent-status.log");
+    // Must not panic when file does not exist
+    check_and_clear_learn_status(&status_path);
+}
+
+// ---------------------------------------------------------------------------
+// write_learn_status: append mode (Part 2 extended)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_write_learn_status_appends_multiple_lines() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+    write_learn_status(&status_path, "git", &status_path).unwrap();
+    write_learn_status(&status_path, "cargo", &status_path).unwrap();
+    let content = std::fs::read_to_string(&status_path).unwrap();
+    assert!(content.contains("git"), "first entry must be present");
+    assert!(content.contains("cargo"), "second entry must be present");
+    // Both lines must coexist — not overwritten
+    assert_eq!(content.lines().count(), 2, "must have 2 lines");
+}
+
+#[test]
+fn test_learn_config_default_has_provider() {
+    // Validates LearnConfig::default() returns a usable config even without env vars.
+    // The provider field is accessed directly (provider_name_from_config was inlined).
+    let config = learn::LearnConfig::default();
+    assert!(
+        !config.provider.is_empty(),
+        "default config must have a provider"
+    );
+    assert!(!config.model.is_empty(), "default config must have a model");
+}
+
 #[test]
 fn test_parse_action_no_args_is_help() {
     assert!(matches!(parse_action(&[]), Action::Help(None)));

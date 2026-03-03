@@ -410,6 +410,68 @@ fn test_dispatch_init() {
 }
 
 // ---------------------------------------------------------------------------
+// oo patterns subcommand
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_patterns_no_learned_patterns() {
+    // When no patterns exist (or patterns dir is absent), exit 0 and print "no learned patterns yet"
+    // Set XDG_CONFIG_HOME so that dirs::config_dir() on Linux respects the temp HOME.
+    let dir = TempDir::new().unwrap();
+    oo().arg("patterns")
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path().join(".config"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no learned patterns yet"));
+}
+
+#[test]
+fn test_patterns_with_learned_pattern() {
+    // When a valid pattern file exists, list it.
+    // Use double_o::learn::patterns_dir() to resolve the platform-correct path
+    // (macOS: ~/Library/Application Support/oo/patterns, Linux: ~/.config/oo/patterns).
+    let dir = TempDir::new().unwrap();
+    // Build the platform-appropriate path under our temp HOME by temporarily
+    // setting HOME and querying dirs::config_dir equivalent logic.
+    // We know patterns_dir() = dirs::config_dir()/oo/patterns, so replicate that.
+    #[cfg(target_os = "macos")]
+    let patterns_dir = dir
+        .path()
+        .join("Library")
+        .join("Application Support")
+        .join("oo")
+        .join("patterns");
+    #[cfg(not(target_os = "macos"))]
+    let patterns_dir = dir.path().join(".config").join("oo").join("patterns");
+
+    std::fs::create_dir_all(&patterns_dir).unwrap();
+    std::fs::write(
+        patterns_dir.join("pytest.toml"),
+        "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"\n",
+    )
+    .unwrap();
+    oo().arg("patterns")
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path().join(".config"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("^pytest"));
+}
+
+#[test]
+fn test_learn_provider_logged_to_stderr() {
+    // Part 1: provider name must appear in stderr before background spawn
+    oo().args(["learn", "echo", "hello"])
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("CEREBRAS_API_KEY")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("anthropic"));
+}
+
+// ---------------------------------------------------------------------------
 // version / format tests
 // ---------------------------------------------------------------------------
 

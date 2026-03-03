@@ -1,6 +1,7 @@
 use clap::Parser;
 use double_o::{
-    Action, cmd_forget, cmd_help, cmd_init, cmd_learn, cmd_recall, cmd_run, learn, parse_action,
+    Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_init, cmd_learn, cmd_patterns,
+    cmd_recall, cmd_run, learn, parse_action,
 };
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,13 @@ fn main() {
 
     let cli = Cli::parse();
 
+    // Show any pending learn-status message from a previous background learn.
+    // Runs before command dispatch so the user sees the result on the next invocation.
+    {
+        let status_path = learn::learn_status_path();
+        check_and_clear_learn_status(&status_path);
+    }
+
     let exit_code = match parse_action(&cli.args) {
         Action::Help(None) => {
             println!(
@@ -63,6 +71,7 @@ fn main() {
         Action::Forget => cmd_forget(),
         Action::Learn(args) => cmd_learn(&args),
         Action::Init(format) => cmd_init(format),
+        Action::Patterns => cmd_patterns(),
     };
 
     std::process::exit(exit_code);
