@@ -2,12 +2,40 @@ use crate::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Output format for `oo init`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InitFormat {
+    /// Claude Code hooks.json generation (default).
+    #[default]
+    Claude,
+    /// Generic stdout-only output for non-Claude-Code agent frameworks.
+    Generic,
+}
+
 /// The AGENTS.md snippet printed to stdout on `oo init`.
 ///
 /// Kept as a constant so unit tests can assert against the exact string.
 pub const AGENTS_SNIPPET: &str = "\
 ## Shell commands
 Prefix all shell commands with `oo`. Use `oo recall \"<query>\"` to search large outputs.\
+";
+
+/// The generic setup section printed on `oo init --format generic`.
+///
+/// Instructs agents to use `oo` for shell commands without creating any files.
+pub const GENERIC_SETUP: &str = "\
+## Setup
+
+Add to your agent's configuration or AGENTS.md:
+
+### Shell Commands
+Prefix all shell commands with `oo`. Use `oo recall \"query\"` to search indexed output.
+Use `oo help <cmd>` for concise command reference.
+Use `oo learn <cmd>` to teach oo new output patterns.
+
+### Shell Alias (optional)
+Add to your shell profile:
+  alias o='oo'\
 ";
 
 /// Minimal Claude Code PreToolUse hooks configuration.
@@ -58,18 +86,26 @@ pub fn find_root(cwd: &Path) -> PathBuf {
     }
 }
 
-/// Run `oo init`: create `.claude/hooks.json` and print the AGENTS.md snippet.
+/// Run `oo init` with the given format.
 ///
-/// Idempotent — if `hooks.json` already exists it warns and skips the write.
+/// - `InitFormat::Claude` (default): create `.claude/hooks.json` and print the AGENTS.md snippet.
+/// - `InitFormat::Generic`: print AGENTS.md snippet + setup instructions to stdout only (no files).
+///
 /// Uses the current working directory as the starting point for git-root detection.
-pub fn run() -> Result<(), Error> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| Error::Init(format!("cannot determine working directory: {e}")))?;
-
-    run_in(&cwd)
+pub fn run(init_format: InitFormat) -> Result<(), Error> {
+    match init_format {
+        InitFormat::Claude => {
+            let cwd = std::env::current_dir()
+                .map_err(|e| Error::Init(format!("cannot determine working directory: {e}")))?;
+            run_in(&cwd)
+        }
+        InitFormat::Generic => run_generic(),
+    }
 }
 
-/// Inner implementation that accepts an explicit root — used by unit tests.
+/// Claude Code variant: create `.claude/hooks.json` and print the AGENTS.md snippet.
+///
+/// Idempotent — if `hooks.json` already exists it warns and skips the write.
 pub fn run_in(cwd: &Path) -> Result<(), Error> {
     let root = find_root(cwd);
     let claude_dir = root.join(".claude");
@@ -95,6 +131,17 @@ pub fn run_in(cwd: &Path) -> Result<(), Error> {
     println!("Add this to your AGENTS.md:");
     println!();
     println!("{AGENTS_SNIPPET}");
+
+    Ok(())
+}
+
+/// Generic variant: print AGENTS.md snippet + setup instructions to stdout.
+///
+/// Does NOT create any files — suitable for non-Claude-Code agent frameworks.
+pub fn run_generic() -> Result<(), Error> {
+    println!("{AGENTS_SNIPPET}");
+    println!();
+    println!("{GENERIC_SETUP}");
 
     Ok(())
 }
@@ -315,5 +362,77 @@ mod tests {
         // Content should be the canonical HOOKS_JSON from the first run.
         let content = fs::read_to_string(dir.path().join(".claude").join("hooks.json")).unwrap();
         assert_eq!(content, HOOKS_JSON);
+    }
+
+    // -----------------------------------------------------------------------
+    // InitFormat
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn init_format_default_is_claude() {
+        assert_eq!(InitFormat::default(), InitFormat::Claude);
+    }
+
+    // -----------------------------------------------------------------------
+    // GENERIC_SETUP content
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn generic_setup_contains_setup_heading() {
+        assert!(
+            GENERIC_SETUP.contains("## Setup"),
+            "generic setup must contain ## Setup heading"
+        );
+    }
+
+    #[test]
+    fn generic_setup_contains_oo_recall() {
+        assert!(
+            GENERIC_SETUP.contains("oo recall"),
+            "generic setup must mention oo recall"
+        );
+    }
+
+    #[test]
+    fn generic_setup_contains_oo_help() {
+        assert!(
+            GENERIC_SETUP.contains("oo help"),
+            "generic setup must mention oo help"
+        );
+    }
+
+    #[test]
+    fn generic_setup_contains_oo_learn() {
+        assert!(
+            GENERIC_SETUP.contains("oo learn"),
+            "generic setup must mention oo learn"
+        );
+    }
+
+    #[test]
+    fn generic_setup_contains_alias() {
+        assert!(
+            GENERIC_SETUP.contains("alias o='oo'"),
+            "generic setup must contain shell alias suggestion"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // run_generic — does not touch the filesystem
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_generic_succeeds() {
+        // run_generic writes only to stdout — no file I/O, so it always succeeds.
+        run_generic().expect("run_generic must succeed without error");
+    }
+
+    #[test]
+    fn generic_setup_does_not_create_hooks_dir() {
+        // run_generic must NOT create any directories. Verify the function itself
+        // does no file I/O by checking it returns Ok without panicking.
+        // Integration tests cover the full CLI contract (no .claude dir created).
+        let result = run_generic();
+        assert!(result.is_ok(), "run_generic must return Ok");
     }
 }

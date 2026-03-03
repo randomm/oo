@@ -169,6 +169,108 @@ fn test_init_second_run_succeeds_without_error() {
 }
 
 // ---------------------------------------------------------------------------
+// oo init --format generic
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_init_format_generic_exits_success() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_init_format_generic_prints_agents_snippet() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prefix all shell commands with `oo`",
+        ));
+}
+
+#[test]
+fn test_init_format_generic_prints_setup_section() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## Setup"));
+}
+
+#[test]
+fn test_init_format_generic_prints_shell_commands_instructions() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("oo recall"))
+        .stdout(predicate::str::contains("oo help"))
+        .stdout(predicate::str::contains("oo learn"));
+}
+
+#[test]
+fn test_init_format_generic_prints_alias_section() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alias o='oo'"));
+}
+
+#[test]
+fn test_init_format_generic_does_not_create_hooks_json() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "generic"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+    // Generic format must NOT create any files.
+    let hooks_path = dir.path().join(".claude").join("hooks.json");
+    assert!(
+        !hooks_path.exists(),
+        "oo init --format generic must not create .claude/hooks.json"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// oo init --format claude
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_init_format_claude_creates_hooks_json() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "claude"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+    let hooks_path = dir.path().join(".claude").join("hooks.json");
+    assert!(
+        hooks_path.exists(),
+        ".claude/hooks.json must exist after oo init --format claude"
+    );
+}
+
+#[test]
+fn test_init_format_claude_prints_agents_snippet() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--format", "claude"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prefix all shell commands with `oo`",
+        ));
+}
+
+// ---------------------------------------------------------------------------
 // recall command
 // ---------------------------------------------------------------------------
 

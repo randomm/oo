@@ -62,7 +62,28 @@ fn test_parse_action_help_with_cmd() {
 
 #[test]
 fn test_parse_action_init() {
-    assert!(matches!(parse_action(&[s("init")]), Action::Init));
+    assert!(matches!(
+        parse_action(&[s("init")]),
+        Action::Init(InitFormat::Claude)
+    ));
+}
+
+#[test]
+fn test_parse_action_init_format_claude() {
+    let args = vec![s("init"), s("--format"), s("claude")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitFormat::Claude)
+    ));
+}
+
+#[test]
+fn test_parse_action_init_format_generic() {
+    let args = vec![s("init"), s("--format"), s("generic")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitFormat::Generic)
+    ));
 }
 
 #[test]

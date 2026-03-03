@@ -1,6 +1,7 @@
 use humansize::{BINARY, format_size};
 
 use crate::classify::Classification;
+pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::{format_age, now_epoch};
 use crate::{classify, exec, help, init, learn, pattern, session, store};
@@ -12,7 +13,31 @@ pub enum Action {
     Learn(Vec<String>),
     Version,
     Help(Option<String>),
-    Init,
+    Init(InitFormat),
+}
+
+/// Parse `--format <value>` from the remaining init args.
+///
+/// Recognised values: `claude` (default), `generic`.
+/// Unknown values emit a warning to stderr and fall back to Claude.
+fn parse_init_format(args: &[String]) -> InitFormat {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == "--format" {
+            return match iter.next().map(|s| s.as_str()) {
+                Some("generic") => InitFormat::Generic,
+                Some("claude") | None => InitFormat::Claude,
+                Some(other) => {
+                    eprintln!(
+                        "oo: unknown --format value '{}', defaulting to claude",
+                        other
+                    );
+                    InitFormat::Claude
+                }
+            };
+        }
+    }
+    InitFormat::Claude
 }
 
 pub fn parse_action(args: &[String]) -> Action {
@@ -24,7 +49,7 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
-        Some("init") => Action::Init,
+        Some("init") => Action::Init(parse_init_format(&args[1..])),
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -304,8 +329,8 @@ pub fn cmd_help(cmd: &str) -> i32 {
     }
 }
 
-pub fn cmd_init() -> i32 {
-    match init::run() {
+pub fn cmd_init(format: InitFormat) -> i32 {
+    match init::run(format) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("oo: {e}");
