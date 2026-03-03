@@ -62,7 +62,7 @@ fn main() {
         Action::Recall(query) => cmd_recall(&query),
         Action::Forget => cmd_forget(),
         Action::Learn(args) => cmd_learn(&args),
-        Action::Init => cmd_init(),
+        Action::Init(format) => cmd_init(format),
     };
 
     std::process::exit(exit_code);
