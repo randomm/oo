@@ -448,3 +448,35 @@ fn test_call_anthropic_malformed_response() {
     );
     mock.assert();
 }
+
+#[test]
+fn test_call_openai_malformed_response() {
+    // Server returns 200 with a JSON body that is valid JSON but does not
+    // match the expected OpenAI response schema (missing choices[0].message.content).
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("POST", "/v1/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        // Valid JSON, but choices array is empty → content path yields None
+        .with_body(r#"{"id":"chatcmpl-test","object":"chat.completion","choices":[]}"#)
+        .create();
+
+    let result = call_openai(
+        &format!("{}/v1/chat/completions", server.url()),
+        "test-key",
+        "test-model",
+        "test prompt",
+    );
+    // Empty choices → missing content field → must return Err
+    assert!(
+        result.is_err(),
+        "expected Err on malformed OpenAI response, got Ok"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("OpenAI") || err_msg.contains("error") || err_msg.contains("response"),
+        "error message must be descriptive: {err_msg}"
+    );
+    mock.assert();
+}

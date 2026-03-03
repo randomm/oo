@@ -264,3 +264,64 @@ fn test_search_with_asterisk_in_query_does_not_panic() {
         let _ = result.unwrap();
     }
 }
+
+#[test]
+fn test_parse_meta_invalid_json_does_not_panic() {
+    // Store an entry with corrupt metadata directly via raw SQL, then search.
+    // The parse_meta helper silently returns None for invalid JSON — must not panic.
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    // Insert a valid entry first so FTS is initialised
+    store
+        .index("proj", "searchable content corrupt meta", &meta)
+        .unwrap();
+
+    // Overwrite metadata with corrupt JSON using raw SQL
+    store
+        .conn
+        .execute(
+            "UPDATE entries SET metadata = ?1 WHERE project = ?2",
+            rusqlite::params!["{invalid json{{", "proj"],
+        )
+        .unwrap();
+
+    // Search must not panic; the corrupt-meta entry should be silently skipped or
+    // returned without a `meta` field (None).
+    let results = store.search("proj", "corrupt", 10).unwrap();
+    // Either 0 or 1 result — either is acceptable; what is not acceptable is a panic.
+    for r in &results {
+        // If the entry is found, its meta must be None (corrupt JSON → parse failure)
+        assert!(r.meta.is_none(), "corrupt metadata must parse to None");
+    }
+}
+
+#[test]
+fn test_search_short_query_with_metadata() {
+    // 1-char queries fall back to LIKE; the returned SearchResult should carry
+    // the stored metadata so callers can display session + command info.
+    let mut store = temp_store();
+    let meta = SessionMeta {
+        source: "oo".into(),
+        session: "meta-session".into(),
+        command: "echo hello".into(),
+        timestamp: now_epoch(),
+    };
+    store
+        .index("proj", "abc some content with metadata", &meta)
+        .unwrap();
+
+    // 1-char query → LIKE path
+    let results = store.search("proj", "a", 10).unwrap();
+    assert!(!results.is_empty(), "LIKE fallback must find results");
+
+    let found = results.iter().find(|r| r.content.contains("abc"));
+    assert!(found.is_some(), "must find the indexed entry");
+
+    let found_meta = found.unwrap().meta.as_ref();
+    assert!(
+        found_meta.is_some(),
+        "LIKE-path result must include metadata"
+    );
+    assert_eq!(found_meta.unwrap().command, "echo hello");
+    assert_eq!(found_meta.unwrap().session, "meta-session");
+}
