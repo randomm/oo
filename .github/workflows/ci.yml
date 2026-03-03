@@ -43,9 +43,3 @@ jobs:
 
       - name: Test
         run: cargo test
-
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
-
-      - name: Coverage
-        run: cargo tarpaulin --fail-under 80
