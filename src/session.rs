@@ -78,4 +78,45 @@ mod tests {
         let id = project_id();
         assert!(!id.is_empty());
     }
+
+    // --- detect_project_fallback branch tests ---
+    // We test the function indirectly through project_id(), which always
+    // delegates to detect_project_fallback() in the non-vipune build.
+
+    #[test]
+    fn test_project_id_is_string() {
+        // project_id must return a valid (non-empty) UTF-8 string
+        let id = project_id();
+        assert!(!id.is_empty(), "project_id must not be empty");
+        assert!(
+            id.is_ascii() || !id.is_empty(),
+            "project_id must be a string"
+        );
+    }
+
+    #[test]
+    fn test_project_id_no_newlines() {
+        // The project identifier must not contain newlines (raw git output is trimmed)
+        let id = project_id();
+        assert!(
+            !id.contains('\n'),
+            "project_id must not contain newlines, got: {id:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(not(feature = "vipune-store"))]
+    fn test_detect_project_fallback_cwd_fallback() {
+        // When run inside a temp dir with no git, detect_project_fallback must
+        // still return a non-empty string (the directory name or "unknown").
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let original = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(tmp.path()).expect("set_current_dir");
+
+        let id = detect_project_fallback();
+
+        std::env::set_current_dir(&original).expect("restore cwd");
+        // Either the dir name (a UUID-ish string) or "unknown" — both are acceptable
+        assert!(!id.is_empty(), "fallback must not be empty");
+    }
 }

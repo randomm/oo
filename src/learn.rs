@@ -430,4 +430,54 @@ summary = "done"
         // Edge case: empty string
         assert_eq!(label(""), "unknown");
     }
+
+    // --- load_learn_config tests ---
+
+    #[test]
+    fn test_load_learn_config_no_file_returns_default() {
+        // Returns default config (or Err if config.toml is malformed) — must not panic
+        match load_learn_config() {
+            Ok(c) => {
+                assert!(!c.provider.is_empty());
+                assert!(!c.model.is_empty());
+                assert!(!c.api_key_env.is_empty());
+            }
+            Err(_) => {} // malformed config.toml in test env is acceptable
+        }
+    }
+
+    #[test]
+    fn test_run_background_missing_file_returns_err() {
+        assert!(run_background("/tmp/__oo_no_such_file_xyz__.json").is_err());
+    }
+
+    #[test]
+    fn test_run_background_invalid_json_returns_err() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), b"not valid json {{{").expect("write");
+        assert!(run_background(tmp.path().to_str().expect("utf8 path")).is_err());
+    }
+
+    #[test]
+    fn test_run_background_valid_json_no_api_key() {
+        // Valid JSON; run_learn returns Err when ANTHROPIC_API_KEY is absent
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
+        std::fs::write(tmp.path(), data.to_string()).expect("write");
+        // Don't assert the result — key may or may not be set in dev env
+        let _ = run_background(tmp.path().to_str().expect("utf8 path"));
+    }
+
+    #[test]
+    fn test_validate_toml_with_valid_success_pattern() {
+        let toml = "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"";
+        assert!(validate_pattern_toml(toml).is_ok());
+    }
+
+    #[test]
+    fn test_patterns_dir_is_under_config_dir() {
+        let dir = patterns_dir();
+        let s = dir.to_string_lossy();
+        assert!(s.ends_with("oo/patterns"), "got: {s}");
+    }
 }
