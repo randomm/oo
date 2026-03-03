@@ -327,6 +327,58 @@ fn test_call_openai_http_error_returns_err() {
     mock.assert();
 }
 
+// ---------------------------------------------------------------------------
+// SYSTEM_PROMPT content verification
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_system_prompt_mentions_agent_consumer() {
+    // The prompt consumer is an LLM agent, not a human — must be stated explicitly
+    assert!(
+        SYSTEM_PROMPT.contains("agent") || SYSTEM_PROMPT.contains("LLM"),
+        "SYSTEM_PROMPT must mention that the consumer is an LLM agent; got:\n{SYSTEM_PROMPT}"
+    );
+}
+
+#[test]
+fn test_system_prompt_penalises_empty_output() {
+    // Returning nothing is the WORST outcome — prompt must warn against it
+    let lower = SYSTEM_PROMPT.to_lowercase();
+    assert!(
+        lower.contains("empty") || lower.contains("nothing") || lower.contains("worst"),
+        "SYSTEM_PROMPT must warn that an empty/no summary is the worst outcome; got:\n{SYSTEM_PROMPT}"
+    );
+}
+
+#[test]
+fn test_system_prompt_contains_toml_schema() {
+    // The expected TOML output format must be exemplified in the prompt
+    assert!(
+        SYSTEM_PROMPT.contains("command_match"),
+        "SYSTEM_PROMPT must show the TOML schema (command_match field); got:\n{SYSTEM_PROMPT}"
+    );
+}
+
+#[test]
+fn test_system_prompt_explains_tier_system() {
+    // Prompt must explain oo's 4-tier classification so the LLM has context
+    let lower = SYSTEM_PROMPT.to_lowercase();
+    assert!(
+        lower.contains("passthrough") || lower.contains("large") || lower.contains("tier"),
+        "SYSTEM_PROMPT must describe oo's tier system; got:\n{SYSTEM_PROMPT}"
+    );
+}
+
+#[test]
+fn test_system_prompt_under_2000_chars() {
+    // Sent with every LLM call — keep it compact
+    assert!(
+        SYSTEM_PROMPT.len() < 2000,
+        "SYSTEM_PROMPT must be under 2000 characters; actual length: {}",
+        SYSTEM_PROMPT.len()
+    );
+}
+
 #[test]
 fn test_call_anthropic_success() {
     let mut server = mockito::Server::new();
