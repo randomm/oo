@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::Error;
+use crate::pattern::FailureSection;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -342,17 +343,15 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     struct Check {
         command_match: String,
         // Deserialization target: field must exist for TOML parsing even if not read in code
-        #[allow(dead_code)]
+        #[allow(dead_code)] // used only for TOML deserialization validation
         success: Option<SuccessCheck>,
-        // Deserialization target: field must exist for TOML parsing even if not read in code
-        #[allow(dead_code)]
-        failure: Option<serde_json::Value>,
+        failure: Option<FailureSection>,
     }
     #[derive(Deserialize)]
     struct SuccessCheck {
         pattern: String,
         // Deserialization target: field must exist for TOML parsing even if not read in code
-        #[allow(dead_code)]
+        #[allow(dead_code)] // used only for TOML deserialization validation
         summary: String,
     }
 
@@ -366,6 +365,44 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     if let Some(s) = &check.success {
         regex::Regex::new(&s.pattern)
             .map_err(|e| Error::Learn(format!("invalid success pattern regex: {e}")))?;
+    }
+
+    if let Some(f) = &check.failure {
+        match f.strategy.as_deref().unwrap_or("tail") {
+            "grep" => {
+                let pat = f.grep_pattern.as_deref().ok_or_else(|| {
+                    Error::Learn("failure grep strategy requires a 'grep' field".into())
+                })?;
+                if pat.is_empty() {
+                    return Err(Error::Learn("failure grep regex must not be empty".into()));
+                }
+                regex::Regex::new(pat)
+                    .map_err(|e| Error::Learn(format!("invalid failure grep regex: {e}")))?;
+            }
+            "between" => {
+                let start = f.start.as_deref().ok_or_else(|| {
+                    Error::Learn("between strategy requires 'start' field".into())
+                })?;
+                if start.is_empty() {
+                    return Err(Error::Learn("between 'start' must not be empty".into()));
+                }
+                regex::Regex::new(start)
+                    .map_err(|e| Error::Learn(format!("invalid start regex: {e}")))?;
+                let end = f
+                    .end
+                    .as_deref()
+                    .ok_or_else(|| Error::Learn("between strategy requires 'end' field".into()))?;
+                if end.is_empty() {
+                    return Err(Error::Learn("between 'end' must not be empty".into()));
+                }
+                regex::Regex::new(end)
+                    .map_err(|e| Error::Learn(format!("invalid end regex: {e}")))?;
+            }
+            "tail" | "head" => {} // no regex to validate
+            other => {
+                return Err(Error::Learn(format!("unknown failure strategy: {other}")));
+            }
+        }
     }
 
     Ok(())

@@ -1,5 +1,11 @@
 use super::*;
 
+// Tests for failure-section validation live in a separate file to keep this
+// module under 500 lines.
+#[cfg(test)]
+#[path = "learn_validate_tests.rs"]
+mod validate;
+
 // ---------------------------------------------------------------------------
 // strip_fences
 // ---------------------------------------------------------------------------

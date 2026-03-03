@@ -241,13 +241,13 @@ struct SuccessSection {
 }
 
 #[derive(Deserialize)]
-struct FailureSection {
-    strategy: Option<String>,
-    lines: Option<usize>,
+pub(crate) struct FailureSection {
+    pub(crate) strategy: Option<String>,
+    pub(crate) lines: Option<usize>,
     #[serde(rename = "grep")]
-    grep_pattern: Option<String>,
-    start: Option<String>,
-    end: Option<String>,
+    pub(crate) grep_pattern: Option<String>,
+    pub(crate) start: Option<String>,
+    pub(crate) end: Option<String>,
 }
 
 /// Load user-defined patterns from a directory of TOML files.
