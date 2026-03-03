@@ -22,7 +22,39 @@ pub struct LearnConfig {
 
 impl Default for LearnConfig {
     fn default() -> Self {
-        Self {
+        detect_provider()
+    }
+}
+
+// Auto-detect provider from available API keys (checked in priority order).
+fn detect_provider() -> LearnConfig {
+    detect_provider_with(|key| std::env::var(key).ok())
+}
+
+// Testable variant — accepts a closure for env lookup to avoid env mutation in tests.
+fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnConfig {
+    if env_lookup("ANTHROPIC_API_KEY").is_some() {
+        LearnConfig {
+            provider: "anthropic".into(),
+            model: "claude-haiku-4-5-20251001".into(),
+            api_key_env: "ANTHROPIC_API_KEY".into(),
+        }
+    } else if env_lookup("OPENAI_API_KEY").is_some() {
+        LearnConfig {
+            provider: "openai".into(),
+            model: "gpt-4o-mini".into(),
+            api_key_env: "OPENAI_API_KEY".into(),
+        }
+    } else if env_lookup("CEREBRAS_API_KEY").is_some() {
+        LearnConfig {
+            provider: "cerebras".into(),
+            // Cerebras model ID: check https://cloud.cerebras.ai/models for current model catalog
+            model: "zai-glm-4.7".into(),
+            api_key_env: "CEREBRAS_API_KEY".into(),
+        }
+    } else {
+        // Default to anthropic; will fail at runtime if no key is set.
+        LearnConfig {
             provider: "anthropic".into(),
             model: "claude-haiku-4-5-20251001".into(),
             api_key_env: "ANTHROPIC_API_KEY".into(),
@@ -93,8 +125,24 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
     eprintln!("  [learning pattern for \"{}\"]", label(command));
 
     let toml_response = match config.provider.as_str() {
-        "anthropic" => call_anthropic(&api_key, &config.model, &user_msg)?,
-        "openai" => call_openai(&api_key, &config.model, &user_msg)?,
+        "anthropic" => call_anthropic(
+            "https://api.anthropic.com/v1/messages",
+            &api_key,
+            &config.model,
+            &user_msg,
+        )?,
+        "openai" => call_openai(
+            "https://api.openai.com/v1/chat/completions",
+            &api_key,
+            &config.model,
+            &user_msg,
+        )?,
+        "cerebras" => call_openai(
+            "https://api.cerebras.ai/v1/chat/completions",
+            &api_key,
+            &config.model,
+            &user_msg,
+        )?,
         other => return Err(Error::Learn(format!("unknown provider: {other}"))),
     };
 
@@ -164,7 +212,12 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 // LLM API calls
 // ---------------------------------------------------------------------------
 
-fn call_anthropic(api_key: &str, model: &str, user_msg: &str) -> Result<String, Error> {
+fn call_anthropic(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    user_msg: &str,
+) -> Result<String, Error> {
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 1024,
@@ -172,7 +225,7 @@ fn call_anthropic(api_key: &str, model: &str, user_msg: &str) -> Result<String, 
         "messages": [{"role": "user", "content": user_msg}],
     });
 
-    let response: serde_json::Value = ureq::post("https://api.anthropic.com/v1/messages")
+    let response: serde_json::Value = ureq::post(base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
@@ -188,7 +241,12 @@ fn call_anthropic(api_key: &str, model: &str, user_msg: &str) -> Result<String, 
         .ok_or_else(|| Error::Learn("unexpected Anthropic response format".into()))
 }
 
-fn call_openai(api_key: &str, model: &str, user_msg: &str) -> Result<String, Error> {
+fn call_openai(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    user_msg: &str,
+) -> Result<String, Error> {
     let body = serde_json::json!({
         "model": model,
         "messages": [
@@ -197,7 +255,7 @@ fn call_openai(api_key: &str, model: &str, user_msg: &str) -> Result<String, Err
         ],
     });
 
-    let response: serde_json::Value = ureq::post("https://api.openai.com/v1/chat/completions")
+    let response: serde_json::Value = ureq::post(base_url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
         .send_json(&body)
@@ -228,11 +286,19 @@ fn label(command: &str) -> String {
 }
 
 fn truncate_for_prompt(output: &str) -> &str {
-    if output.len() > 4000 {
-        &output[..4000]
-    } else {
-        output
+    truncate_utf8(output, 4000)
+}
+
+// Truncate at a char boundary to avoid panics on multibyte UTF-8 sequences.
+fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
     }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 fn strip_fences(s: &str) -> String {
@@ -278,206 +344,7 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     Ok(())
 }
 
+// Tests live in a separate file to keep this module under 500 lines.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_strip_fences_toml() {
-        let input = "```toml\ncommand_match = \"test\"\n```";
-        assert_eq!(strip_fences(input), "command_match = \"test\"");
-    }
-
-    #[test]
-    fn test_strip_fences_plain() {
-        let input = "```\ncommand_match = \"test\"\n```";
-        assert_eq!(strip_fences(input), "command_match = \"test\"");
-    }
-
-    #[test]
-    fn test_strip_fences_none() {
-        let input = "command_match = \"test\"";
-        assert_eq!(strip_fences(input), "command_match = \"test\"");
-    }
-
-    #[test]
-    fn test_validate_valid_toml() {
-        let toml = r#"
-command_match = "^mytest"
-[success]
-pattern = '(?P<n>\d+) passed'
-summary = "{n} passed"
-"#;
-        assert!(validate_pattern_toml(toml).is_ok());
-    }
-
-    #[test]
-    fn test_validate_invalid_regex() {
-        let toml = r#"
-command_match = "[invalid"
-"#;
-        assert!(validate_pattern_toml(toml).is_err());
-    }
-
-    #[test]
-    fn test_truncate_for_prompt() {
-        let short = "hello";
-        assert_eq!(truncate_for_prompt(short), "hello");
-
-        let long = "x".repeat(5000);
-        assert_eq!(truncate_for_prompt(&long).len(), 4000);
-    }
-
-    #[test]
-    fn test_label_extraction() {
-        assert_eq!(label("pytest -x"), "pytest");
-        assert_eq!(label("/usr/bin/cargo test"), "cargo");
-    }
-
-    #[test]
-    fn test_default_config() {
-        let config = LearnConfig::default();
-        assert_eq!(config.provider, "anthropic");
-    }
-
-    #[test]
-    fn test_default_config_model() {
-        let config = LearnConfig::default();
-        assert!(!config.model.is_empty(), "model must not be empty");
-    }
-
-    #[test]
-    fn test_default_config_api_key_env() {
-        let config = LearnConfig::default();
-        assert_eq!(config.api_key_env, "ANTHROPIC_API_KEY");
-    }
-
-    #[test]
-    fn test_validate_valid_toml_no_success() {
-        // A minimal valid TOML with only command_match
-        let toml = r#"command_match = "^cargo""#;
-        assert!(validate_pattern_toml(toml).is_ok());
-    }
-
-    #[test]
-    fn test_validate_invalid_toml_syntax() {
-        // Malformed TOML should return an error
-        let toml = "this is not valid = [toml";
-        assert!(validate_pattern_toml(toml).is_err());
-    }
-
-    #[test]
-    fn test_validate_missing_command_match() {
-        // TOML without required command_match field should fail
-        let toml = r#"
-[success]
-pattern = "ok"
-summary = "done"
-"#;
-        assert!(validate_pattern_toml(toml).is_err());
-    }
-
-    #[test]
-    fn test_validate_invalid_command_match_regex() {
-        // Invalid regex in command_match should return error
-        let toml = r#"command_match = "[invalid_regex""#;
-        assert!(validate_pattern_toml(toml).is_err());
-    }
-
-    #[test]
-    fn test_validate_invalid_success_pattern_regex() {
-        // Invalid regex in success.pattern should return error
-        let toml = r#"
-command_match = "^cargo"
-[success]
-pattern = "[invalid"
-summary = "done"
-"#;
-        assert!(validate_pattern_toml(toml).is_err());
-    }
-
-    #[test]
-    fn test_strip_fences_whitespace_preserved() {
-        // Content inside fences is trimmed but inner structure is kept
-        let input = "```toml\n\ncommand_match = \"test\"\n\n```";
-        let result = strip_fences(input);
-        assert!(
-            result.contains("command_match"),
-            "content must be preserved"
-        );
-    }
-
-    #[test]
-    fn test_truncate_for_prompt_boundary() {
-        // Exactly 4000 chars should not be truncated
-        let exact = "a".repeat(4000);
-        assert_eq!(truncate_for_prompt(&exact).len(), 4000);
-
-        // 4001 chars should be truncated to 4000
-        let over = "a".repeat(4001);
-        assert_eq!(truncate_for_prompt(&over).len(), 4000);
-    }
-
-    #[test]
-    fn test_label_path_extraction() {
-        // Full paths: only the last component
-        assert_eq!(label("/usr/local/bin/rustc"), "rustc");
-        assert_eq!(label("./target/release/oo"), "oo");
-    }
-
-    #[test]
-    fn test_label_empty_command() {
-        // Edge case: empty string
-        assert_eq!(label(""), "unknown");
-    }
-
-    // --- load_learn_config tests ---
-
-    #[test]
-    fn test_load_learn_config_no_file_returns_default() {
-        // Returns default config (or Err if config.toml is malformed) — must not panic
-        match load_learn_config() {
-            Ok(c) => {
-                assert!(!c.provider.is_empty());
-                assert!(!c.model.is_empty());
-                assert!(!c.api_key_env.is_empty());
-            }
-            Err(_) => {} // malformed config.toml in test env is acceptable
-        }
-    }
-
-    #[test]
-    fn test_run_background_missing_file_returns_err() {
-        assert!(run_background("/tmp/__oo_no_such_file_xyz__.json").is_err());
-    }
-
-    #[test]
-    fn test_run_background_invalid_json_returns_err() {
-        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-        std::fs::write(tmp.path(), b"not valid json {{{").expect("write");
-        assert!(run_background(tmp.path().to_str().expect("utf8 path")).is_err());
-    }
-
-    #[test]
-    fn test_run_background_valid_json_no_api_key() {
-        // Valid JSON; run_learn returns Err when ANTHROPIC_API_KEY is absent
-        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-        let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
-        std::fs::write(tmp.path(), data.to_string()).expect("write");
-        // Don't assert the result — key may or may not be set in dev env
-        let _ = run_background(tmp.path().to_str().expect("utf8 path"));
-    }
-
-    #[test]
-    fn test_validate_toml_with_valid_success_pattern() {
-        let toml = "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"";
-        assert!(validate_pattern_toml(toml).is_ok());
-    }
-
-    #[test]
-    fn test_patterns_dir_is_under_config_dir() {
-        let dir = patterns_dir();
-        let s = dir.to_string_lossy();
-        assert!(s.ends_with("oo/patterns"), "got: {s}");
-    }
-}
+#[path = "learn_tests.rs"]
+mod tests;

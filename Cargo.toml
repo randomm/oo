@@ -41,6 +41,7 @@ vipune-store = ["vipune"]
 
 [dev-dependencies]
 assert_cmd = "2"
+mockito = "1"
 predicates = "3"
 tempfile = "3"
 
@@ -68,7 +69,7 @@ installers = []
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Which actions to run on pull requests
-pr-run-mode = "plan"
+pr-run-mode = "upload"
 
 [workspace.metadata.dist.github-custom-runners]
 aarch64-apple-darwin = "macos-14"
