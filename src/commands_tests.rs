@@ -197,3 +197,46 @@ fn test_classify_failure_pattern_extract_failure() {
 fn test_try_index_no_panic() {
     let _ = try_index("test command", "some output content");
 }
+
+#[test]
+fn test_cmd_recall_does_not_panic() {
+    // Verifies cmd_recall does not panic and returns a valid exit code.
+    // We cannot guarantee the store opens in all test environments, so both
+    // 0 (store ok, query ran) and 1 (store error) are acceptable outcomes.
+    let code = cmd_recall("unique_recall_test_content_xyz_42");
+    assert!(
+        code == 0 || code == 1,
+        "cmd_recall must return 0 or 1, got: {code}"
+    );
+}
+
+#[test]
+fn test_cmd_forget_does_not_panic() {
+    // Verifies cmd_forget does not panic and returns a valid exit code.
+    // We cannot guarantee the store opens in all test environments, so both
+    // 0 (store ok, delete ran) and 1 (store error) are acceptable outcomes.
+    let code = cmd_forget();
+    assert!(
+        code == 0 || code == 1,
+        "cmd_forget must return 0 or 1, got: {code}"
+    );
+}
+
+#[test]
+fn test_cmd_learn_passthrough_small_output() {
+    // cmd_learn with a command that produces small output (< 4 KiB) → Passthrough branch.
+    // spawn_background will fail (no binary in PATH during test), but that is non-fatal.
+    // We only care that the exit code matches the command's actual exit code.
+    let code = cmd_learn(&[s("echo"), s("hello_learn_test")]);
+    assert_eq!(code, 0, "echo must succeed, got: {code}");
+}
+
+#[test]
+fn test_cmd_learn_failure_branch() {
+    // cmd_learn with a command that fails → Failure branch in classification.
+    let code = cmd_learn(&[s("false")]);
+    assert_ne!(
+        code, 0,
+        "false must produce non-zero exit code, got: {code}"
+    );
+}

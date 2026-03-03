@@ -31,12 +31,19 @@ pub fn encode_cmd(cmd: &str) -> String {
 /// `?T` strips ANSI colour codes so the output is plain text.
 /// Response is capped at 64 KiB to prevent memory exhaustion.
 pub fn lookup(cmd: &str) -> Result<String, Error> {
+    lookup_with_base_url(cmd, "https://cheat.sh")
+}
+
+/// Testable variant that accepts a custom base URL (e.g. a mockito server).
+///
+/// Separating the base URL enables unit tests without live network access.
+fn lookup_with_base_url(cmd: &str, base_url: &str) -> Result<String, Error> {
     if cmd.is_empty() {
         return Err(Error::Help("command name must not be empty".to_owned()));
     }
 
     let encoded = encode_cmd(cmd);
-    let url = format!("https://cheat.sh/{encoded}?T");
+    let url = format!("{base_url}/{encoded}?T");
 
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(10)))
@@ -112,6 +119,101 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("empty"), "expected 'empty' in: {msg}");
+    }
+
+    #[test]
+    fn test_help_lookup_success() {
+        // Mock cheat.sh returning 200 with help text.
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/ls?T")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body("ls - list directory contents\n  -l  long listing format\n")
+            .create();
+
+        let result = lookup_with_base_url("ls", &server.url());
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        let text = result.unwrap();
+        assert!(
+            text.contains("list directory"),
+            "response body must be returned: {text}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_lookup_not_found() {
+        // Mock cheat.sh returning 404 — must produce a Help error.
+        // The lookup function appends "?T" to the path, so we mock that exact path.
+        let mut server = mockito::Server::new();
+        let mock = server.mock("GET", "/nosuchcmd?T").with_status(404).create();
+
+        let result = lookup_with_base_url("nosuchcmd", &server.url());
+        assert!(result.is_err(), "expected Err on 404");
+        let msg = result.unwrap_err().to_string();
+        // 404 maps to Error::Help("no help available for '...'") in lookup_with_base_url.
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error message, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_lookup_network_error() {
+        // Pointing at an unreachable address must produce a network-error variant.
+        // Port 1 is conventionally unroutable, so the connection is refused quickly.
+        let result = lookup_with_base_url("ls", "http://127.0.0.1:1");
+        assert!(result.is_err(), "expected Err on unreachable host");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("network") || msg.contains("error") || msg.contains("connect"),
+            "expected network error message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_help_encode_cmd_special_chars_in_lookup() {
+        // Verify encode_cmd is applied: "git commit" → "git%20commit" in URL path.
+        let mut server = mockito::Server::new();
+        // The path must use the percent-encoded form.
+        let mock = server
+            .mock("GET", "/git%20commit?T")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body("git commit - record changes to the repository\n")
+            .create();
+
+        let result = lookup_with_base_url("git commit", &server.url());
+        assert!(result.is_ok(), "expected Ok: {result:?}");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_response_cap() {
+        // A response larger than 64 KiB must be truncated to exactly 64 KiB.
+        let mut server = mockito::Server::new();
+        // 128 KiB of 'x' characters — well above the 64 KiB cap.
+        let large_body = "x".repeat(131_072);
+        let mock = server
+            .mock("GET", "/bigcmd?T")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body(large_body.as_str())
+            .create();
+
+        let result = lookup_with_base_url("bigcmd", &server.url());
+        assert!(result.is_ok(), "expected Ok: {result:?}");
+        let text = result.unwrap();
+        assert!(
+            text.len() <= 65_536,
+            "response must be capped at 64 KiB, got {} bytes",
+            text.len()
+        );
+        // Must have received some content (not empty)
+        assert!(!text.is_empty(), "response must not be empty");
+        mock.assert();
     }
 
     #[test]
