@@ -1,7 +1,6 @@
-<div style="font-size: 20px">
-o̵̥̟͓̿͛̚õ̵̙͈̝̚
-</div>
 
+o̵̥̟͓̿͛̚õ̵̙͈̝̚ ... or double-o, the best friend of an agent!
+<br><br><br>
 Context-efficient command runner for AI coding agents.
 
 ---
