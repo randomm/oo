@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
+use crate::util;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -240,7 +241,7 @@ impl Store for SqliteStore {
     }
 
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let now = now_epoch();
+        let now = util::now_epoch();
         let ids: Vec<String> = {
             let mut stmt = self
                 .conn
@@ -353,7 +354,7 @@ impl Store for VipuneStore {
     }
 
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let now = now_epoch();
+        let now = util::now_epoch();
         let entries = self
             .store
             .list(project_id, 10_000)
@@ -379,13 +380,6 @@ impl Store for VipuneStore {
 
 fn parse_meta(json: &str) -> Option<SessionMeta> {
     serde_json::from_str(json).ok()
-}
-
-fn now_epoch() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }
 
 /// Open the default store (SqliteStore, or VipuneStore if feature-enabled).

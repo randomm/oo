@@ -44,10 +44,14 @@ pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> 
     // Failure path
     if output.exit_code != 0 {
         let filtered = match pattern::find_matching(command, patterns) {
-            Some(pat) if pat.failure.is_some() => {
-                pattern::extract_failure(pat.failure.as_ref().unwrap(), &merged)
+            Some(pat) => {
+                if let Some(failure) = &pat.failure {
+                    pattern::extract_failure(failure, &merged)
+                } else {
+                    smart_truncate(&merged)
+                }
             }
-            _ => smart_truncate(&merged),
+            None => smart_truncate(&merged),
         };
         return Classification::Failure {
             label: lbl,
