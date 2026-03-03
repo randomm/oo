@@ -1,5 +1,5 @@
 <div>
-<h1>o̵̥̟͓̿͛̚õ̵̙͈̝̚</h1>
+o̵̥̟͓̿͛̚õ̵̙͈̝̚
 </div>
 
 Context-efficient command runner for AI coding agents.
