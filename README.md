@@ -1,6 +1,5 @@
+**o̵̥̟͓̿͛̚õ̵̙͈̝̚**
 
-<span style="font-family:Papyrus; font-size:8em;">o̵̥̟͓̿͛̚õ̵̙͈̝̚ ... or double-o, the best friend of an agent!</span>
-<br><br><br>
 Context-efficient command runner for AI coding agents.
 
 ---
