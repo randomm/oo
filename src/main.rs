@@ -7,12 +7,14 @@ mod learn;
 mod pattern;
 mod session;
 mod store;
+mod util;
 
 use clap::Parser;
 use humansize::{BINARY, format_size};
 
 use crate::classify::Classification;
 use crate::store::SessionMeta;
+use crate::util::{format_age, now_epoch};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -400,23 +402,3 @@ fn cmd_init() -> i32 {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn now_epoch() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
-
-fn format_age(timestamp: i64) -> String {
-    let age = now_epoch() - timestamp;
-    if age < 60 {
-        format!("{age}s ago")
-    } else if age < 3600 {
-        format!("{}min ago", age / 60)
-    } else if age < 86400 {
-        format!("{}h ago", age / 3600)
-    } else {
-        format!("{}d ago", age / 86400)
-    }
-}
