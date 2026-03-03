@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -178,24 +179,36 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
 pub fn spawn_background(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Learn(e.to_string()))?;
 
-    // Write data to a temp file for the child to read
-    let tmp = std::env::temp_dir().join(format!("oo-learn-{}", std::process::id()));
+    // Use a secure named temp file to avoid PID-based predictable filenames
+    // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
+    let mut tmp = tempfile::NamedTempFile::new().map_err(|e| Error::Learn(e.to_string()))?;
     let data = serde_json::json!({
         "command": command,
         "output": output,
         "exit_code": exit_code,
     });
-    std::fs::write(&tmp, data.to_string()).map_err(|e| Error::Learn(e.to_string()))?;
+    tmp.write_all(data.to_string().as_bytes())
+        .map_err(|e| Error::Learn(e.to_string()))?;
+
+    // Convert to TempPath: closes the file handle but keeps the file on disk
+    // until the TempPath is dropped — after the child has been spawned.
+    let tmp_path = tmp.into_temp_path();
 
     // Spawn detached child
     std::process::Command::new(exe)
         .arg("_learn_bg")
-        .arg(&tmp)
+        .arg(&tmp_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| Error::Learn(e.to_string()))?;
+
+    // Prevent the parent from deleting the temp file on drop. On a loaded
+    // system the child process may not have opened the file yet by the time
+    // the parent exits this function. `keep()` makes the file persist on disk
+    // until the child cleans it up at run_background (line ~218 below).
+    tmp_path.keep().map_err(|e| Error::Learn(e.to_string()))?;
 
     Ok(())
 }
@@ -328,17 +341,17 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     #[derive(Deserialize)]
     struct Check {
         command_match: String,
-        // Fields must exist for TOML deserialization; only regex validity is checked
+        // Deserialization target: field must exist for TOML parsing even if not read in code
         #[allow(dead_code)]
         success: Option<SuccessCheck>,
-        // Fields must exist for TOML deserialization; only regex validity is checked
+        // Deserialization target: field must exist for TOML parsing even if not read in code
         #[allow(dead_code)]
         failure: Option<serde_json::Value>,
     }
     #[derive(Deserialize)]
     struct SuccessCheck {
         pattern: String,
-        // Fields must exist for TOML deserialization; only regex validity is checked
+        // Deserialization target: field must exist for TOML parsing even if not read in code
         #[allow(dead_code)]
         summary: String,
     }
