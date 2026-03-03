@@ -1,8 +1,6 @@
-# o̵̥̟͓̿͛̚õ̵̙͈̝̚
-
-<br>
-<br>
-<br>
+<div>
+<h1>o̵̥̟͓̿͛̚õ̵̙͈̝̚</h1>
+</div>
 
 Context-efficient command runner for AI coding agents.
 
