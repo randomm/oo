@@ -307,14 +307,30 @@ fn call_openai(
 // ---------------------------------------------------------------------------
 
 fn label(command: &str) -> String {
-    command
-        .split_whitespace()
+    let mut words = command.split_whitespace();
+    let first = words
         .next()
         .unwrap_or("unknown")
         .rsplit('/')
         .next()
-        .unwrap_or("unknown")
-        .to_string()
+        .unwrap_or("unknown");
+    // Include the second word only when it is a subcommand (not a flag).
+    match words.next() {
+        Some(second) if !second.starts_with('-') => {
+            // Sanitize: keep only ASCII alphanumeric and hyphens to ensure
+            // the label is safe as a filename component.
+            let sanitized: String = second
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect();
+            if sanitized.is_empty() {
+                first.to_string()
+            } else {
+                format!("{first}-{sanitized}")
+            }
+        }
+        _ => first.to_string(),
+    }
 }
 
 fn truncate_for_prompt(output: &str) -> &str {
