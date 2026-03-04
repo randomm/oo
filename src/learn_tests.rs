@@ -152,12 +152,15 @@ fn test_truncate_utf8_exact_boundary() {
 
 #[test]
 fn test_label_extraction() {
+    // Second word is a flag ("-x") — excluded, so single word stays as-is
     assert_eq!(label("pytest -x"), "pytest");
-    assert_eq!(label("/usr/bin/cargo test"), "cargo");
+    // Path stripped from first word, second word ("test") included as subcommand
+    assert_eq!(label("/usr/bin/cargo test"), "cargo-test");
 }
 
 #[test]
 fn test_label_path_extraction() {
+    // Single-word commands (no subcommand) remain unchanged
     assert_eq!(label("/usr/local/bin/rustc"), "rustc");
     assert_eq!(label("./target/release/oo"), "oo");
 }
@@ -165,6 +168,35 @@ fn test_label_path_extraction() {
 #[test]
 fn test_label_empty_command() {
     assert_eq!(label(""), "unknown");
+}
+
+#[test]
+fn test_label_subcommand_included() {
+    // Two-word commands where second word is a subcommand (not a flag)
+    assert_eq!(label("cargo fmt --check"), "cargo-fmt");
+    assert_eq!(label("cargo clippy -- -D warnings"), "cargo-clippy");
+    assert_eq!(label("npm run build"), "npm-run");
+    assert_eq!(label("cargo test"), "cargo-test");
+}
+
+#[test]
+fn test_label_flag_excluded() {
+    // Second word starting with '-' is a flag — not included in label
+    assert_eq!(label("pytest -x"), "pytest");
+    assert_eq!(label("cargo --verbose test"), "cargo");
+}
+
+#[test]
+fn test_label_sanitizes_unsafe_chars() {
+    // `/` in path argument → slashes stripped
+    assert_eq!(label("git some/path/arg"), "git-somepatharg");
+    assert_eq!(label("cargo /absolute/path"), "cargo-absolutepath");
+    // `=` in subcommand value → stripped
+    assert_eq!(label("git subcommand=val"), "git-subcommandval");
+    // `..` traversal attempt → dots stripped, remaining chars kept
+    assert_eq!(label("cmd ../etc/passwd"), "cmd-etcpasswd");
+    // Two-flag-only command → no valid subcommand, returns first word only
+    assert_eq!(label("rustc --foo --bar"), "rustc");
 }
 
 // ---------------------------------------------------------------------------
