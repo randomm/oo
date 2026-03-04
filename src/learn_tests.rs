@@ -470,6 +470,25 @@ fn test_system_prompt_under_2000_chars() {
 }
 
 #[test]
+fn test_system_prompt_contains_named_group_instruction() {
+    // LLMs must be explicitly told to use named capture groups — numbered groups break oo
+    assert!(
+        SYSTEM_PROMPT.contains("(?P<name>") || SYSTEM_PROMPT.contains("named capture"),
+        "SYSTEM_PROMPT must contain instruction about named capture groups; got:\n{SYSTEM_PROMPT}"
+    );
+}
+
+#[test]
+fn test_system_prompt_contains_examples() {
+    // At least 2 TOML examples — a test runner and a build/lint tool
+    let success_count = SYSTEM_PROMPT.matches("[success]").count();
+    assert!(
+        success_count >= 2,
+        "SYSTEM_PROMPT must contain at least 2 TOML [success] sections (one per example); found {success_count}"
+    );
+}
+
+#[test]
 fn test_call_anthropic_success() {
     let mut server = mockito::Server::new();
     let mock = server

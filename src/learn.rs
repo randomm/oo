@@ -97,32 +97,42 @@ pub fn load_learn_config() -> Result<LearnConfig, Error> {
 
 const SYSTEM_PROMPT: &str = r#"You generate output classification patterns for `oo`, a shell command runner used by an LLM coding agent.
 
-The agent reads your pattern to decide its next action. Returning nothing is the WORST outcome — an empty summary forces a costly recall cycle that wastes more tokens than a slightly verbose summary would.
+The agent reads your pattern to decide its next action. Returning nothing is the WORST outcome — an empty summary forces a costly recall cycle.
+
+IMPORTANT: Use named capture groups (?P<name>...) only — never numbered groups like (\d+). Summary templates use {name} placeholders matching the named groups.
 
 ## oo's 4-tier system
 
 - Passthrough: output <4 KB passes through unchanged
 - Failure: failed commands get ✗ prefix with filtered error output
-- Success: successful commands get ✓ prefix with a pattern-extracted summary (your patterns target this tier)
-- Large: if your regex fails to match, output falls through to this tier (FTS5 indexed for recall) — not catastrophic
+- Success: successful commands get ✓ prefix with a pattern-extracted summary
+- Large: if regex fails to match, output is FTS5 indexed for recall
 
-## Output format
+## Examples
 
-Respond with ONLY a TOML block. Fences optional.
-
-    command_match = "^pytest"
+Test runner — capture RESULT line, not header; strategy=tail for failures:
+    command_match = "\\bcargo\\s+test\\b"
     [success]
-    pattern = '(?P<n>\d+) passed'
-    summary = "{n} passed"
+    pattern = 'test result: ok\. (?P<passed>\d+) passed.*finished in (?P<time>[\d.]+)s'
+    summary = "{passed} passed, {time}s"
     [failure]
-    strategy = "grep"
-    grep = "error|Error|FAILED"
+    strategy = "tail"
+    lines = 30
+
+Build/lint — quiet on success (only useful when failing); strategy=head for failures:
+    command_match = "\\bcargo\\s+build\\b"
+    [success]
+    pattern = "(?s).*"
+    summary = ""
+    [failure]
+    strategy = "head"
+    lines = 20
 
 ## Rules
 
-- For build/test commands: compress aggressively (e.g. "47 passed, 3.2s" or "error: …first error only")
-- For large tabular output (ls, docker ps, git log): omit the success section — let it fall through to Large tier (FTS5 indexed)
-- A regex that's too broad is better than one that matches and returns empty"#;
+- Test runners: capture SUMMARY line (e.g. 'test result: ok. 5 passed'), NOT headers (e.g. 'running 5 tests')
+- Build/lint tools: empty summary for success; head/lines=20 for failures
+- Large tabular output (ls, git log): omit success section — falls to Large tier"#;
 
 /// Run the learn flow: call LLM, validate + save pattern.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
