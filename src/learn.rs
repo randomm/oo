@@ -448,7 +448,11 @@ fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
     Ok(())
 }
 
-// Tests live in a separate file to keep this module under 500 lines.
+// Tests live in separate files to keep this module under 500 lines.
 #[cfg(test)]
 #[path = "learn_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "learn_prompt_tests.rs"]
+mod prompt_tests;
