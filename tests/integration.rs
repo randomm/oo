@@ -476,13 +476,12 @@ fn test_learn_provider_logged_to_stderr() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_version_shows_zalgo() {
-    // The zalgo logo characters must appear in the version output
+fn test_version_shows_oo_prefix() {
+    // The plain "oo" logo must appear in the version output
     oo().arg("version")
         .assert()
         .success()
-        // The zalgo "o" characters appear in the logo prefix
-        .stdout(predicate::str::contains("o\u{335}"));
+        .stdout(predicate::str::starts_with("oo "));
 }
 
 #[test]
