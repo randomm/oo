@@ -351,12 +351,38 @@ pub fn write_learn_status(
     )
 }
 
+/// Write a one-line failure entry to the learn status file.
+///
+/// Called by the background process when `run_learn` returns `Err`, so the
+/// NEXT foreground invocation can display the error.
+pub fn write_learn_status_failure(
+    status_path: &Path,
+    cmd_name: &str,
+    error_msg: &str,
+) -> Result<(), std::io::Error> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(status_path)?;
+    let first_line = error_msg.lines().next().unwrap_or(error_msg);
+    writeln!(file, "FAILED {cmd_name}: {first_line}")
+}
+
 /// Check for a pending learn-status file, print its contents to stderr, then
 /// delete the file.  Called early in each foreground invocation.
 pub fn check_and_clear_learn_status(status_path: &Path) {
     if let Ok(content) = std::fs::read_to_string(status_path) {
         for line in content.lines() {
-            eprintln!("oo: {line}");
+            if let Some(rest) = line.strip_prefix("FAILED ") {
+                // Format: "FAILED cmd-name: error message"
+                if let Some((cmd, msg)) = rest.split_once(": ") {
+                    eprintln!("oo: learn failed for {cmd} — {msg}");
+                } else {
+                    eprintln!("oo: learn failed — {rest}");
+                }
+            } else {
+                eprintln!("oo: {line}");
+            }
         }
         let _ = std::fs::remove_file(status_path);
     }

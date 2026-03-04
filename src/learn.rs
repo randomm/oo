@@ -38,7 +38,7 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
     if env_lookup("ANTHROPIC_API_KEY").is_some() {
         LearnConfig {
             provider: "anthropic".into(),
-            model: "claude-haiku-4-5-20251001".into(),
+            model: "claude-haiku-4-5".into(),
             api_key_env: "ANTHROPIC_API_KEY".into(),
         }
     } else if env_lookup("OPENAI_API_KEY").is_some() {
@@ -58,7 +58,7 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
         // Default to anthropic; will fail at runtime if no key is set.
         LearnConfig {
             provider: "anthropic".into(),
-            model: "claude-haiku-4-5-20251001".into(),
+            model: "claude-haiku-4-5".into(),
             api_key_env: "ANTHROPIC_API_KEY".into(),
         }
     }
@@ -236,6 +236,13 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 
     // Clean up temp file
     let _ = std::fs::remove_file(path);
+
+    if let Err(ref e) = result {
+        let cmd_label = label(command);
+        let status_path = learn_status_path();
+        let _ =
+            crate::commands::write_learn_status_failure(&status_path, &cmd_label, &e.to_string());
+    }
 
     result
 }

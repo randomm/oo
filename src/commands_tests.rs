@@ -366,3 +366,87 @@ fn test_cmd_learn_failure_branch() {
         "false must produce non-zero exit code, got: {code}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// check_and_clear_learn_status: failure format
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_check_and_clear_learn_status_failure() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+
+    // Write a FAILED entry directly
+    write_learn_status_failure(
+        &status_path,
+        "cargo-test",
+        "Anthropic API error: 401 Unauthorized",
+    )
+    .unwrap();
+
+    // File must exist before check
+    assert!(status_path.exists(), "status file must exist before check");
+
+    // check_and_clear must not panic and must delete the file
+    check_and_clear_learn_status(&status_path);
+
+    assert!(
+        !status_path.exists(),
+        "status file must be deleted after check_and_clear"
+    );
+}
+
+#[test]
+fn test_write_learn_status_failure_format() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+
+    write_learn_status_failure(
+        &status_path,
+        "npm-run",
+        "Set ANTHROPIC_API_KEY to use oo learn",
+    )
+    .unwrap();
+
+    let content = std::fs::read_to_string(&status_path).unwrap();
+    assert!(
+        content.starts_with("FAILED npm-run:"),
+        "failure line must start with 'FAILED <cmd>:'; got: {content}"
+    );
+    assert!(
+        content.contains("ANTHROPIC_API_KEY"),
+        "failure line must contain the error message; got: {content}"
+    );
+}
+
+#[test]
+fn test_write_learn_status_failure_multiline_error() {
+    // Error with newlines should be truncated to the first line only,
+    // so check_and_clear_learn_status can correctly parse the status file.
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+
+    write_learn_status_failure(
+        &status_path,
+        "git-log",
+        "API error\ndetailed body\nmore lines",
+    )
+    .unwrap();
+
+    let content = std::fs::read_to_string(&status_path).unwrap();
+    // Status file must contain exactly one line (with trailing newline)
+    assert_eq!(
+        content.lines().count(),
+        1,
+        "multiline error must be truncated to a single line; got: {content:?}"
+    );
+    // That line must contain the first line of the error message only
+    assert!(
+        content.contains("API error"),
+        "first line of error must be present; got: {content:?}"
+    );
+    assert!(
+        !content.contains("detailed body"),
+        "subsequent error lines must not appear in status file; got: {content:?}"
+    );
+}
