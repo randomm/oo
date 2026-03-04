@@ -57,10 +57,26 @@ available. The command itself still runs and its output is not affected.
 
 ## Where patterns are saved
 
-`~/.config/oo/patterns/<binary>.toml` — where `<binary>` is the first word of
-the command (e.g. `cargo.toml` for `cargo test`).
+`~/.config/oo/patterns/<label>.toml` — where `<label>` is derived from the command name.
 
 Existing files are overwritten, so running `oo learn` again refines the pattern.
+The filename is derived from the first word of the command (the binary name), plus the
+second word if it is a subcommand rather than a flag — for example, `cargo test` produces
+`cargo-test.toml`, while `cargo --version` produces `cargo.toml`. This means each
+binary/subcommand pair gets its own file and patterns don't collide across subcommands.
+
+## Overwrite Behavior
+
+Running `oo learn <command>` again for the same command overwrites the existing
+pattern file. No backup is made and no warning is shown.
+
+The pattern filename is derived from the first two words of the command
+(e.g. `cargo-test.toml` for `cargo test --release`). This means re-running
+`oo learn cargo test` after updating oo or switching LLM providers will silently
+replace the previous pattern.
+
+To preserve a pattern, rename or move the TOML file in `~/.config/oo/patterns/`
+before re-running learn.
 
 ## Best-effort semantics
 
