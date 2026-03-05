@@ -95,22 +95,21 @@ pub fn load_learn_config() -> Result<LearnConfig, Error> {
 // Background learning
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = r#"You generate output classification patterns for `oo`, a shell command runner used by an LLM coding agent.
+const SYSTEM_PROMPT: &str = r#"Generate output classification patterns for `oo`, a shell command runner. The agent reads your pattern to decide actions. Returning nothing is WORST — empty summary forces costly recall.
 
-The agent reads your pattern to decide its next action. Returning nothing is the WORST outcome — an empty summary forces a costly recall cycle.
+ALL capture groups use named syntax: (?P<name>pattern)
+Summary templates reference these: {name}
 
-IMPORTANT: Use named capture groups (?P<name>...) only — never numbered groups like (\d+). Summary templates use {name} placeholders matching the named groups.
+## 4-tier system
 
-## oo's 4-tier system
-
-- Passthrough: output <4 KB passes through unchanged
-- Failure: failed commands get ✗ prefix with filtered error output
-- Success: successful commands get ✓ prefix with a pattern-extracted summary
-- Large: if regex fails to match, output is FTS5 indexed for recall
+- Passthrough: <4 KB passes unchanged
+- Failure: ✗ with filtered error output
+- Success: ✓ with pattern-extracted summary
+- Large: if regex fails, output is indexed
 
 ## Examples
 
-Test runner — capture RESULT line, not header; strategy=tail for failures:
+cargo test:
     command_match = "\\bcargo\\s+test\\b"
     [success]
     pattern = 'test result: ok\. (?P<passed>\d+) passed.*finished in (?P<time>[\d.]+)s'
@@ -119,7 +118,7 @@ Test runner — capture RESULT line, not header; strategy=tail for failures:
     strategy = "tail"
     lines = 30
 
-Build/lint — quiet on success (only useful when failing); strategy=head for failures:
+cargo build:
     command_match = "\\bcargo\\s+build\\b"
     [success]
     pattern = "(?s).*"
@@ -128,11 +127,40 @@ Build/lint — quiet on success (only useful when failing); strategy=head for fa
     strategy = "head"
     lines = 20
 
+git log --oneline:
+    command_match = "\\bgit\\s+log\\s+--oneline\\b"
+    [success]
+    pattern = "^(?P<count>\d+) commits?"
+    summary = "{count} commits"
+    [failure]
+    strategy = "head"
+    lines = 10
+
+cargo clippy:
+    command_match = "\\bcargo\\s+clippy\\b"
+    [success]
+    pattern = "Checking.*warning: (?P<warnings>\d+) warnings"
+    summary = "{warnings} warnings"
+    [failure]
+    strategy = "tail"
+    lines = 30
+
+ls -la:
+    command_match = "\\bls\\s+-la\\b"
+    [success]
+    pattern = "^total (?P<files>\d+)"
+    summary = "{files} entries"
+    [failure]
+    strategy = "head"
+    lines = 10
+
 ## Rules
 
-- Test runners: capture SUMMARY line (e.g. 'test result: ok. 5 passed'), NOT headers (e.g. 'running 5 tests')
-- Build/lint tools: empty summary for success; head/lines=20 for failures
-- Large tabular output (ls, git log): omit success section — falls to Large tier"#;
+- Test runners: capture SUMMARY line (e.g. 'test result: ok. 5 passed'), NOT headers
+- Build/lint: empty summary for success; head/lines=20 for failures
+- Large tabular: omit success section — falls to Large tier
+
+Before outputting, verify your pattern uses only (?P<name>...) syntax for all capture groups."#;
 
 /// Run the learn flow: call LLM, validate + save pattern.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
