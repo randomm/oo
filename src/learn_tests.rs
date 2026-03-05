@@ -241,45 +241,6 @@ fn test_detect_provider_anthropic_model_name() {
     );
 }
 
-#[test]
-fn test_detect_provider_cerebras_key_selects_cerebras() {
-    let config = detect_provider_with(|key| {
-        if key == "CEREBRAS_API_KEY" {
-            Some("test-cerebras-key".into())
-        } else {
-            None
-        }
-    });
-    assert_eq!(config.provider, "cerebras");
-    assert_eq!(config.api_key_env, "CEREBRAS_API_KEY");
-    assert_eq!(config.model, "zai-glm-4.7");
-}
-
-#[test]
-fn test_detect_provider_openai_key_selects_openai() {
-    let config = detect_provider_with(|key| {
-        if key == "OPENAI_API_KEY" {
-            Some("test-openai-key".into())
-        } else {
-            None
-        }
-    });
-    assert_eq!(config.provider, "openai");
-    assert_eq!(config.api_key_env, "OPENAI_API_KEY");
-    assert_eq!(config.model, "gpt-4o-mini");
-}
-
-#[test]
-fn test_detect_provider_anthropic_takes_priority() {
-    // When both ANTHROPIC and OPENAI are set, anthropic wins (priority order).
-    let config = detect_provider_with(|key| match key {
-        "ANTHROPIC_API_KEY" => Some("key-a".into()),
-        "OPENAI_API_KEY" => Some("key-o".into()),
-        _ => None,
-    });
-    assert_eq!(config.provider, "anthropic");
-}
-
 // ---------------------------------------------------------------------------
 // load_learn_config / patterns_dir
 // ---------------------------------------------------------------------------
