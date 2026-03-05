@@ -107,52 +107,57 @@ Summary templates reference these: {name}
 - Success: ✓ with pattern-extracted summary
 - Large: if regex fails, output is indexed
 
-## Examples
+## example output format
 
-# cargo test
-    command_match = "\\bcargo\\s+test\\b"
-    [success]
-    pattern = 'test result: ok\. (?P<passed>\d+) passed.*finished in (?P<time>[\d.]+)s'
-    summary = "{passed} passed, {time}s"
-    [failure]
-    strategy = "tail"
-    lines = 30
+```toml
+command_match = "\\bcargo\\s+test\\b"
+[success]
+pattern = 'test result: ok\. (?P<passed>\d+) passed'
+summary = "{passed} passed"
+[failure]
+strategy = "tail"
+lines = 30
+```
 
-# cargo build
-    command_match = "\\bcargo\\s+build\\b"
-    [success]
-    pattern = "(?s).*"
-    summary = ""
-    [failure]
-    strategy = "head"
-    lines = 20
+```toml
+command_match = "\\bcargo\\s+build\\b"
+[success]
+pattern = "(?s).*"
+summary = ""
+[failure]
+strategy = "head"
+lines = 20
+```
 
-# git log --oneline
-    command_match = "\\bgit\\s+log\\s+--oneline\\b"
-    [success]
-    pattern = "^(?P<count>\d+) commits?"
-    summary = "{count} commits"
-    [failure]
-    strategy = "head"
-    lines = 10
+```toml
+command_match = "\\bgit\\s+log\\s+--oneline\\b"
+[success]
+pattern = "^(?P<count>\d+) commits?"
+summary = "{count} commits"
+[failure]
+strategy = "head"
+lines = 10
+```
 
-# cargo clippy
-    command_match = "\\bcargo\\s+clippy\\b"
-    [success]
-    pattern = "Checking.*warning: (?P<warnings>\d+) warnings"
-    summary = "{warnings} warnings"
-    [failure]
-    strategy = "tail"
-    lines = 30
+```toml
+command_match = "\\bcargo\\s+clippy\\b"
+[success]
+pattern = "Checking.*warning: (?P<warnings>\d+) warnings"
+summary = "{warnings} warnings"
+[failure]
+strategy = "tail"
+lines = 30
+```
 
-# ls -la
-    command_match = "\\bls\\s+-la\\b"
-    [success]
-    pattern = "^total (?P<files>\d+)"
-    summary = "{files} entries"
-    [failure]
-    strategy = "head"
-    lines = 10
+```toml
+command_match = "\\bls\\s+-la\\b"
+[success]
+pattern = "^total (?P<files>\d+)"
+summary = "{files} entries"
+[failure]
+strategy = "head"
+lines = 10
+```
 
 ## Rules
 
