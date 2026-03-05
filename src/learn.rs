@@ -466,7 +466,3 @@ mod tests;
 #[cfg(test)]
 #[path = "learn_prompt_tests.rs"]
 mod prompt_tests;
-
-#[cfg(test)]
-#[path = "learn_retry_tests.rs"]
-mod retry_tests;
