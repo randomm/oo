@@ -109,7 +109,7 @@ Summary templates reference these: {name}
 
 ## Examples
 
-cargo test:
+# cargo test
     command_match = "\\bcargo\\s+test\\b"
     [success]
     pattern = 'test result: ok\. (?P<passed>\d+) passed.*finished in (?P<time>[\d.]+)s'
@@ -118,7 +118,7 @@ cargo test:
     strategy = "tail"
     lines = 30
 
-cargo build:
+# cargo build
     command_match = "\\bcargo\\s+build\\b"
     [success]
     pattern = "(?s).*"
@@ -127,7 +127,7 @@ cargo build:
     strategy = "head"
     lines = 20
 
-git log --oneline:
+# git log --oneline
     command_match = "\\bgit\\s+log\\s+--oneline\\b"
     [success]
     pattern = "^(?P<count>\d+) commits?"
@@ -136,7 +136,7 @@ git log --oneline:
     strategy = "head"
     lines = 10
 
-cargo clippy:
+# cargo clippy
     command_match = "\\bcargo\\s+clippy\\b"
     [success]
     pattern = "Checking.*warning: (?P<warnings>\d+) warnings"
@@ -145,7 +145,7 @@ cargo clippy:
     strategy = "tail"
     lines = 30
 
-ls -la:
+# ls -la
     command_match = "\\bls\\s+-la\\b"
     [success]
     pattern = "^total (?P<files>\d+)"
