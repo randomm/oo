@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-05
+
+### Bug Fixes
+
+- Wrap prompt examples in markdown code blocks ([#73](https://github.com/randomm/oo/pull/73))
+
+
 ## [0.3.1] - 2026-03-04
 
 
