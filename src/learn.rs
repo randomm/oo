@@ -22,6 +22,15 @@ pub struct LearnConfig {
     pub api_key_env: String,
 }
 
+/// Testable variant of learn config and paths — avoids env var mutation.
+pub(crate) struct LearnParams<'a> {
+    pub config: &'a LearnConfig,
+    pub api_key: &'a str,
+    pub base_url: &'a str,
+    pub patterns_dir: &'a Path,
+    pub learn_status_path: &'a Path,
+}
+
 impl Default for LearnConfig {
     fn default() -> Self {
         detect_provider()
@@ -41,19 +50,6 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
             model: "claude-haiku-4-5".into(),
             api_key_env: "ANTHROPIC_API_KEY".into(),
         }
-    } else if env_lookup("OPENAI_API_KEY").is_some() {
-        LearnConfig {
-            provider: "openai".into(),
-            model: "gpt-4o-mini".into(),
-            api_key_env: "OPENAI_API_KEY".into(),
-        }
-    } else if env_lookup("CEREBRAS_API_KEY").is_some() {
-        LearnConfig {
-            provider: "cerebras".into(),
-            // Cerebras model ID: check https://cloud.cerebras.ai/models for current model catalog
-            model: "zai-glm-4.7".into(),
-            api_key_env: "CEREBRAS_API_KEY".into(),
-        }
     } else {
         // Default to anthropic; will fail at runtime if no key is set.
         LearnConfig {
@@ -65,6 +61,9 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
 }
 
 fn config_dir() -> PathBuf {
+    if let Some(test_dir) = std::env::var_os("OO_CONFIG_DIR") {
+        return PathBuf::from(test_dir);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join("oo")
@@ -134,6 +133,79 @@ Build/lint — quiet on success (only useful when failing); strategy=head for fa
 - Build/lint tools: empty summary for success; head/lines=20 for failures
 - Large tabular output (ls, git log): omit success section — falls to Large tier"#;
 
+/// Run the learn flow with explicit config and base URL — testable variant.
+///
+/// This internal function bypasses `load_learn_config()` and env var lookup,
+/// making it suitable for testing without environment mutation.
+pub(crate) fn run_learn_with_config(
+    params: &LearnParams,
+    command: &str,
+    output: &str,
+    exit_code: i32,
+) -> Result<(), Error> {
+    let user_msg = format!(
+        "Command: {command}\nExit code: {exit_code}\nOutput:\n{}",
+        truncate_for_prompt(output)
+    );
+
+    let get_response = |msg: &str| -> Result<String, Error> {
+        match params.config.provider.as_str() {
+            "anthropic" => {
+                call_anthropic(params.base_url, params.api_key, &params.config.model, msg)
+            }
+            other => Err(Error::Learn(format!("unknown provider: {other}"))),
+        }
+    };
+
+    // First attempt
+    let mut last_err;
+    let toml = get_response(&user_msg)?;
+    let clean = strip_fences(&toml);
+    match validate_pattern_toml(&clean) {
+        Ok(()) => {
+            std::fs::create_dir_all(params.patterns_dir)
+                .map_err(|e| Error::Learn(e.to_string()))?;
+            let filename = format!("{}.toml", label(command));
+            let path = params.patterns_dir.join(&filename);
+            std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
+            let _ = crate::commands::write_learn_status(
+                params.learn_status_path,
+                &label(command),
+                &path,
+            );
+            return Ok(());
+        }
+        Err(e) => last_err = e,
+    }
+
+    // Up to 2 retries
+    for _ in 0..2 {
+        let retry_msg = format!(
+            "Your previous TOML was invalid: {last_err}. Here is what you returned:\n{clean}\nOutput ONLY the corrected TOML, nothing else."
+        );
+        let toml = get_response(&retry_msg)?;
+        let clean = strip_fences(&toml);
+        match validate_pattern_toml(&clean) {
+            Ok(()) => {
+                std::fs::create_dir_all(params.patterns_dir)
+                    .map_err(|e| Error::Learn(e.to_string()))?;
+                let filename = format!("{}.toml", label(command));
+                let path = params.patterns_dir.join(&filename);
+                std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
+                let _ = crate::commands::write_learn_status(
+                    params.learn_status_path,
+                    &label(command),
+                    &path,
+                );
+                return Ok(());
+            }
+            Err(e) => last_err = e,
+        }
+    }
+
+    Err(Error::Learn(format!("failed after 3 attempts: {last_err}")))
+}
+
 /// Run the learn flow: call LLM, validate + save pattern.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
     let config = load_learn_config()?;
@@ -145,52 +217,18 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
         ))
     })?;
 
-    let user_msg = format!(
-        "Command: {command}\nExit code: {exit_code}\nOutput:\n{}",
-        truncate_for_prompt(output)
-    );
+    let base_url = std::env::var("ANTHROPIC_API_URL")
+        .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".to_string());
 
-    let toml_response = match config.provider.as_str() {
-        "anthropic" => call_anthropic(
-            "https://api.anthropic.com/v1/messages",
-            &api_key,
-            &config.model,
-            &user_msg,
-        )?,
-        "openai" => call_openai(
-            "https://api.openai.com/v1/chat/completions",
-            &api_key,
-            &config.model,
-            &user_msg,
-        )?,
-        "cerebras" => call_openai(
-            "https://api.cerebras.ai/v1/chat/completions",
-            &api_key,
-            &config.model,
-            &user_msg,
-        )?,
-        other => return Err(Error::Learn(format!("unknown provider: {other}"))),
+    let params = LearnParams {
+        config: &config,
+        api_key: &api_key,
+        base_url: &base_url,
+        patterns_dir: &patterns_dir(),
+        learn_status_path: &learn_status_path(),
     };
 
-    // Strip markdown fences if present
-    let toml_clean = strip_fences(&toml_response);
-
-    // Validate: parse as pattern
-    validate_pattern_toml(&toml_clean)?;
-
-    // Save
-    let dir = patterns_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| Error::Learn(e.to_string()))?;
-    let filename = format!("{}.toml", label(command));
-    let path = dir.join(&filename);
-    std::fs::write(&path, &toml_clean).map_err(|e| Error::Learn(e.to_string()))?;
-
-    // Write status file for the foreground process to display on next invocation
-    let status_path = learn_status_path();
-    let cmd_label = label(command);
-    let _ = crate::commands::write_learn_status(&status_path, &cmd_label, &path);
-
-    Ok(())
+    run_learn_with_config(&params, command, output, exit_code)
 }
 
 /// Spawn the learning process in the background by re-exec'ing ourselves.
@@ -270,6 +308,7 @@ fn call_anthropic(
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 1024,
+        "temperature": 0.0,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_msg}],
     });
@@ -288,35 +327,6 @@ fn call_anthropic(
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| Error::Learn("unexpected Anthropic response format".into()))
-}
-
-fn call_openai(
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-    user_msg: &str,
-) -> Result<String, Error> {
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-    });
-
-    let response: serde_json::Value = ureq::post(base_url)
-        .header("Authorization", &format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .send_json(&body)
-        .map_err(|e| Error::Learn(format!("OpenAI API error: {e}")))?
-        .body_mut()
-        .read_json()
-        .map_err(|e| Error::Learn(format!("response parse error: {e}")))?;
-
-    response["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| Error::Learn("unexpected OpenAI response format".into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -456,3 +466,7 @@ mod tests;
 #[cfg(test)]
 #[path = "learn_prompt_tests.rs"]
 mod prompt_tests;
+
+#[cfg(test)]
+#[path = "learn_retry_tests.rs"]
+mod retry_tests;
