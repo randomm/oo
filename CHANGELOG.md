@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-05
+
+### Bug Fixes
+
+- *(#76,#77)* Add retry loop to oo learn, remove OpenAI/Cerebras ([#78](https://github.com/randomm/oo/pull/78))
+
+
 ## [0.3.1] - 2026-03-04
 
 
