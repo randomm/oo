@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-03-11
+
+### Bug Fixes
+
+- Restore full README content with code-fence ASCII logo ([#84](https://github.com/randomm/oo/pull/84))
+
+### Features
+
+- New ascii logo ([#81](https://github.com/randomm/oo/pull/81))
+
+
 ## [0.3.2] - 2026-03-05
 
 ### Bug Fixes
