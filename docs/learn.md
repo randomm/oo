@@ -17,37 +17,31 @@ pattern to `~/.config/oo/patterns/`.
 
 ```toml
 [learn]
-provider    = "anthropic"                    # anthropic | openai | cerebras
-model       = "claude-haiku-4-5-20251001"    # default
+provider    = "anthropic"                    # default
+model       = "claude-haiku-4-5-20251001"    # optional
 api_key_env = "ANTHROPIC_API_KEY"            # env var holding the key
 ```
 
-All three keys are optional — the provider is auto-detected from available API keys
-if the section is absent (see below).
+All keys are optional — Anthropic is the default provider and will use
+the `ANTHROPIC_API_KEY` environment variable if the `[learn]` section is absent.
 
 ### Providers
 
 | Provider | Env Var | Default Model |
 |----------|---------|---------------|
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
-| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| Cerebras | `CEREBRAS_API_KEY` | `zai-glm-4.7` |
 
-> **Cerebras model**: The default model (`zai-glm-4.7`) is current at time of writing.
-> Check the [Cerebras model catalog](https://cloud.cerebras.ai/models) for newer models
-> and override via `config.toml` if needed.
-
-The provider is auto-detected from available API keys (checked in order above).
-If you have `CEREBRAS_API_KEY` set and nothing else, `oo learn` just works.
+The provider is determined from the configured provider or auto-detected from
+the available API key.
 
 > **Note:** When configuring manually, set `api_key_env` to match the env var for
 > your chosen provider:
 >
 > ```toml
 > [learn]
-> provider    = "openai"
-> model       = "gpt-4o-mini"
-> api_key_env = "OPENAI_API_KEY"
+> provider    = "anthropic"
+> model       = "claude-3-5-sonnet-20241022"
+> api_key_env = "ANTHROPIC_API_KEY"
 > ```
 
 ## What happens if no LLM is configured
@@ -77,6 +71,13 @@ replace the previous pattern.
 
 To preserve a pattern, rename or move the TOML file in `~/.config/oo/patterns/`
 before re-running learn.
+
+## Command Categories & Pattern Value
+
+Patterns are most useful for Status commands (tests, linters, builds). Content commands
+(git show, git diff, cat) always pass through regardless of pattern, and Data commands
+(git log, ls, gh) are indexed when large. See [Patterns: Command Categories](patterns.md#command-categories)
+for category definitions.
 
 ## Best-effort semantics
 

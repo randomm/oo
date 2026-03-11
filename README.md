@@ -55,6 +55,7 @@ $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
 Large unrecognised output is indexed locally; query it with `oo recall`.
+Output handling depends on command category: content commands like `git show` and `git diff` always pass through regardless of size, while data commands like `git log` and `ls` are indexed when large. See the [patterns guide](docs/patterns.md#command-categories) for details.
 
 ---
 
