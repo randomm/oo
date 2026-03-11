@@ -157,7 +157,7 @@ pub fn classify_with_refs(
         };
     }
 
-    if merged.len() <= 4096 {
+    if merged.len() <= classify::SMALL_THRESHOLD {
         return Classification::Passthrough { output: merged };
     }
 
@@ -172,11 +172,29 @@ pub fn classify_with_refs(
         }
     }
 
-    let size = merged.len();
-    Classification::Large {
-        label: lbl,
-        output: merged,
-        size,
+    // Large, no pattern match — use category to determine behavior
+    let category = classify::detect_category(command);
+    match category {
+        classify::CommandCategory::Status => {
+            // Status commands: quiet success (empty summary)
+            Classification::Success {
+                label: lbl,
+                summary: String::new(),
+            }
+        }
+        classify::CommandCategory::Content | classify::CommandCategory::Unknown => {
+            // Content and Unknown: always passthrough (never index)
+            Classification::Passthrough { output: merged }
+        }
+        classify::CommandCategory::Data => {
+            // Data: index for recall
+            let size = merged.len();
+            Classification::Large {
+                label: lbl,
+                output: merged,
+                size,
+            }
+        }
     }
 }
 

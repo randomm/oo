@@ -52,8 +52,37 @@ fn test_no_args_shows_help() {
 
 #[test]
 fn test_large_output_gets_indicator() {
-    // seq 1 10000 produces ~49KB which is > 4KB threshold
-    oo().args(["seq", "1", "10000"])
+    // `git log` is categorized as Data, so large output gets indexed (●).
+    // Create a temp git repo to generate logs that exceed 4KB threshold.
+    let dir = TempDir::new().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Create multiple commits with content to exceed 4KB
+    for i in 0..100 {
+        std::fs::write(dir.path().join("file.txt"), format!("content {}\n", i)).unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", &format!("commit {}", i)])
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+    }
+
+    // Run `oo git log` in the repo — should get ● (Large/indexed) indicator
+    oo().args(["git", "log"])
+        .current_dir(dir.path())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("\u{25CF}")); // ●

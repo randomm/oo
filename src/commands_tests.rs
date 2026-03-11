@@ -229,7 +229,8 @@ fn test_classify_with_refs_failure_no_pattern() {
 fn test_classify_with_refs_large_no_pattern() {
     let out = make_output(0, &"x\n".repeat(3000));
     let result = classify_with_refs(&out, "some_tool", &[]);
-    assert!(matches!(result, Classification::Large { label, .. } if label == "some_tool"));
+    // Unknown category defaults to passthrough (safe)
+    assert!(matches!(result, Classification::Passthrough { .. }));
 }
 
 #[test]
@@ -297,13 +298,14 @@ fn test_cmd_help_empty_cmd_returns_1() {
 
 #[test]
 fn test_classify_large_with_pattern_no_summary_match() {
-    // Pattern exists but success regex doesn't match → Large (not Success)
+    // Pattern exists but success regex doesn't match
+    // pytest is Status category → returns Success with empty summary instead of Large
     let patterns = pattern::builtins();
     let refs: Vec<&pattern::Pattern> = patterns.iter().collect();
     let out = make_output(0, &"x\n".repeat(3000));
     assert!(matches!(
         classify_with_refs(&out, "pytest tests/", &refs),
-        Classification::Large { .. }
+        Classification::Success { summary, .. } if summary.is_empty()
     ));
 }
 

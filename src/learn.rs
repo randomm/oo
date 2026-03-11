@@ -131,7 +131,11 @@ Build/lint — quiet on success (only useful when failing); strategy=head for fa
 
 - Test runners: capture SUMMARY line (e.g. 'test result: ok. 5 passed'), NOT headers (e.g. 'running 5 tests')
 - Build/lint tools: empty summary for success; head/lines=20 for failures
-- Large tabular output (ls, git log): omit success section — falls to Large tier"#;
+- Large tabular output (ls, git log): omit success section — falls to Large tier
+
+## Command Categories
+
+Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Content commands always pass through regardless of size; Data commands are indexed when large and unpatterned."#;
 
 /// Run the learn flow with explicit config and base URL — testable variant.
 ///

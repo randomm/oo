@@ -2,13 +2,26 @@ use crate::exec::CommandOutput;
 use crate::pattern::{self, Pattern};
 
 /// 4 KB — below this, output passes through verbatim.
-const SMALL_THRESHOLD: usize = 4096;
+pub const SMALL_THRESHOLD: usize = 4096;
 
 /// Maximum lines to show in failure output before smart truncation kicks in.
 const TRUNCATION_THRESHOLD: usize = 80;
 
 /// Hard cap on total lines shown after truncation.
 const MAX_LINES: usize = 120;
+
+/// Command category — determines default output handling when no pattern matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandCategory {
+    /// test runners, linters, builds — agent wants pass/fail (quiet success)
+    Status,
+    /// git show, git diff, cat — agent wants the actual output (passthrough)
+    Content,
+    /// git log, gh api, ls — structured/queryable data (index for recall)
+    Data,
+    /// anything else — defaults to passthrough (safe)
+    Unknown,
+}
 
 pub enum Classification {
     /// Exit ≠ 0. Filtered failure output.
@@ -35,6 +48,43 @@ pub fn label(command: &str) -> String {
         .next()
         .unwrap_or("command")
         .to_string()
+}
+
+/// Detect command category from command string.
+/// Returns CommandCategory based on binary and subcommand matching.
+pub fn detect_category(command: &str) -> CommandCategory {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return CommandCategory::Unknown;
+    }
+
+    // Extract binary name (strip path prefix)
+    let binary = parts[0].rsplit('/').next().unwrap_or(parts[0]);
+    let subcommand = parts.get(1).copied().unwrap_or("");
+
+    match binary {
+        // Status: test runners, build systems, linters
+        "cargo" => match subcommand {
+            "test" | "clippy" | "build" | "fmt" | "check" => CommandCategory::Status,
+            _ => CommandCategory::Unknown,
+        },
+        "pytest" | "jest" | "vitest" | "go" | "npm" | "yarn" | "pnpm" | "bun" | "eslint"
+        | "ruff" | "mypy" | "tsc" | "make" | "rubocop" => CommandCategory::Status,
+
+        // Content: file viewers and diffs
+        "git" => match subcommand {
+            "show" | "diff" => CommandCategory::Content,
+            "log" | "status" | "branch" | "tag" => CommandCategory::Data,
+            _ => CommandCategory::Unknown,
+        },
+        "cat" | "bat" | "less" => CommandCategory::Content,
+
+        // Data: listing and querying
+        "gh" => CommandCategory::Data,
+        "ls" | "find" | "grep" | "rg" => CommandCategory::Data,
+
+        _ => CommandCategory::Unknown,
+    }
 }
 
 pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> Classification {
@@ -76,12 +126,29 @@ pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> 
         }
     }
 
-    // Large, no pattern match → index
-    let size = merged.len();
-    Classification::Large {
-        label: lbl,
-        output: merged,
-        size,
+    // Large, no pattern match — use category to determine behavior
+    let category = detect_category(command);
+    match category {
+        CommandCategory::Status => {
+            // Status commands: quiet success (empty summary)
+            Classification::Success {
+                label: lbl,
+                summary: String::new(),
+            }
+        }
+        CommandCategory::Content | CommandCategory::Unknown => {
+            // Content and Unknown: always passthrough (never index)
+            Classification::Passthrough { output: merged }
+        }
+        CommandCategory::Data => {
+            // Data: index for recall
+            let size = merged.len();
+            Classification::Large {
+                label: lbl,
+                output: merged,
+                size,
+            }
+        }
     }
 }
 
@@ -154,11 +221,10 @@ mod tests {
         let out = make_output(0, &big);
         let result = classify(&out, "unknown_cmd", &[]);
         match result {
-            Classification::Large { label, size, .. } => {
-                assert_eq!(label, "unknown_cmd");
-                assert!(size > SMALL_THRESHOLD);
+            Classification::Passthrough { .. } => {
+                // Unknown category → passthrough
             }
-            _ => panic!("expected Large"),
+            _ => panic!("expected Passthrough for unknown command"),
         }
     }
 
@@ -244,5 +310,153 @@ mod tests {
             }
             _ => panic!("expected Success with empty summary"),
         }
+    }
+
+    // New tests for CommandCategory detection and behavior
+
+    #[test]
+    fn test_detect_category_status_commands() {
+        assert_eq!(detect_category("cargo test"), CommandCategory::Status);
+        assert_eq!(detect_category("cargo build"), CommandCategory::Status);
+        assert_eq!(detect_category("cargo clippy"), CommandCategory::Status);
+        assert_eq!(detect_category("cargo fmt"), CommandCategory::Status);
+        assert_eq!(detect_category("pytest tests/"), CommandCategory::Status);
+        assert_eq!(detect_category("jest"), CommandCategory::Status);
+        assert_eq!(detect_category("eslint src/"), CommandCategory::Status);
+        assert_eq!(detect_category("ruff check"), CommandCategory::Status);
+    }
+
+    #[test]
+    fn test_detect_category_content_commands() {
+        assert_eq!(
+            detect_category("git show HEAD:file"),
+            CommandCategory::Content
+        );
+        assert_eq!(detect_category("git diff HEAD~1"), CommandCategory::Content);
+        assert_eq!(detect_category("cat file.txt"), CommandCategory::Content);
+        assert_eq!(detect_category("bat src/main.rs"), CommandCategory::Content);
+    }
+
+    #[test]
+    fn test_detect_category_data_commands() {
+        assert_eq!(detect_category("git log"), CommandCategory::Data);
+        assert_eq!(detect_category("git status"), CommandCategory::Data);
+        assert_eq!(detect_category("gh issue list"), CommandCategory::Data);
+        assert_eq!(detect_category("gh pr list"), CommandCategory::Data);
+        assert_eq!(detect_category("ls -la"), CommandCategory::Data);
+        assert_eq!(detect_category("find . -name test"), CommandCategory::Data);
+        assert_eq!(detect_category("grep pattern file"), CommandCategory::Data);
+    }
+
+    #[test]
+    fn test_detect_category_unknown_defaults() {
+        assert_eq!(
+            detect_category("curl https://example.com"),
+            CommandCategory::Unknown
+        );
+        assert_eq!(detect_category("wget file.zip"), CommandCategory::Unknown);
+        assert_eq!(
+            detect_category("docker run image"),
+            CommandCategory::Unknown
+        );
+        assert_eq!(
+            detect_category("random-binary arg"),
+            CommandCategory::Unknown
+        );
+    }
+
+    #[test]
+    fn test_status_no_pattern_quiet_success() {
+        let big = "x\n".repeat(3000); // > 4KB
+        let out = make_output(0, &big);
+        let result = classify(&out, "cargo test", &[]);
+        match result {
+            Classification::Success { label, summary } => {
+                assert_eq!(label, "cargo");
+                assert!(summary.is_empty()); // quiet success
+            }
+            _ => panic!("expected Success with empty summary for status command"),
+        }
+    }
+
+    #[test]
+    fn test_content_always_passthrough() {
+        let big = "x\n".repeat(3000); // > 4KB
+        let out = make_output(0, &big);
+        let result = classify(&out, "git show HEAD:file", &[]);
+        match result {
+            Classification::Passthrough { .. } => {
+                // Correct: content commands always pass through
+            }
+            _ => panic!("expected Passthrough for content command"),
+        }
+    }
+
+    #[test]
+    fn test_data_no_pattern_indexes() {
+        let big = "line\n".repeat(3000); // > 4KB
+        let out = make_output(0, &big);
+        let result = classify(&out, "git log", &[]);
+        match result {
+            Classification::Large { label, size, .. } => {
+                assert_eq!(label, "git");
+                assert!(size > SMALL_THRESHOLD);
+            }
+            _ => panic!("expected Large (indexed) for data command"),
+        }
+    }
+
+    #[test]
+    fn test_unknown_defaults_to_passthrough() {
+        let big = "x\n".repeat(3000); // > 4KB
+        let out = make_output(0, &big);
+        let result = classify(&out, "curl https://example.com", &[]);
+        match result {
+            Classification::Passthrough { .. } => {
+                // Correct: unknown commands pass through (safe default)
+            }
+            _ => panic!("expected Passthrough for unknown command"),
+        }
+    }
+
+    #[test]
+    fn test_pattern_overrides_category() {
+        let patterns = pattern::builtins();
+        let big = format!("{}\n47 passed in 3.2s\n", ".\n".repeat(3000));
+        let out = make_output(0, &big);
+        // Status command (pytest) verified with pattern that extracts summary
+        // Pattern matching overrides category classification
+        let result = classify(&out, "pytest", &patterns);
+        match result {
+            Classification::Success { summary, .. } => {
+                assert_eq!(summary, "47 passed, 3.2s");
+            }
+            _ => panic!("expected pattern-matched Success"),
+        }
+    }
+
+    #[test]
+    fn test_category_detection_with_full_paths() {
+        assert_eq!(
+            detect_category("/usr/bin/cargo test"),
+            CommandCategory::Status
+        );
+        assert_eq!(
+            detect_category("/usr/local/bin/pytest"),
+            CommandCategory::Status
+        );
+        assert_eq!(
+            detect_category("/usr/bin/git show"),
+            CommandCategory::Content
+        );
+        assert_eq!(
+            detect_category("/bin/cat file.txt"),
+            CommandCategory::Content
+        );
+        assert_eq!(
+            detect_category("/usr/bin/gh issue list"),
+            CommandCategory::Data
+        );
+        assert_eq!(detect_category("/bin/ls -la"), CommandCategory::Data);
     }
 }
