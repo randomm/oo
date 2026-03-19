@@ -292,6 +292,44 @@ fn test_run_background_valid_json_no_api_key() {
 }
 
 // ---------------------------------------------------------------------------
+// validate_anthropic_url
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_anthropic_url_validation() {
+    // HTTPS URLs should pass
+    assert!(validate_anthropic_url("https://api.anthropic.com/v1/messages").is_ok());
+    assert!(validate_anthropic_url("https://custom.example.com/api").is_ok());
+
+    // HTTP localhost should pass
+    assert!(validate_anthropic_url("http://localhost:8000/api").is_ok());
+    assert!(validate_anthropic_url("http://localhost/api").is_ok());
+
+    // HTTP 127.0.0.1 should pass
+    assert!(validate_anthropic_url("http://127.0.0.1:8000/api").is_ok());
+    assert!(validate_anthropic_url("http://127.0.0.1/api").is_ok());
+
+    // HTTP other URLs should fail
+    let result = validate_anthropic_url("http://api.example.com/v1/messages");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("ANTHROPIC_API_URL must use HTTPS"));
+    assert!(err_msg.contains("got: http://api.example.com/v1/messages"));
+
+    let result = validate_anthropic_url("http://192.168.1.1/api");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("got: http://192.168.1.1/api"));
+
+    let result = validate_anthropic_url("http://example.com");
+    assert!(result.is_err());
+
+    // Ensure localhost.evil.com does NOT pass (prefix injection bypass)
+    let result = validate_anthropic_url("http://localhost.evil.com/api");
+    assert!(result.is_err());
+}
+
+// ---------------------------------------------------------------------------
 // run_background: status file written on failure
 // ---------------------------------------------------------------------------
 
