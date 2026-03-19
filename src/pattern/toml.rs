@@ -62,27 +62,10 @@ pub struct FailureSection {
 // User patterns (TOML on disk)
 // ---------------------------------------------------------------------------
 
-/// Parse a pattern definition from TOML string content.
+/// Load user-defined patterns from a directory of TOML files.
 ///
-/// Deserializes a TOML pattern definition into a `Pattern` struct,
-/// validating regex patterns and strategy configurations.
-///
-/// # Arguments
-///
-/// * `content` - TOML-formatted pattern definition
-///
-/// # Returns
-///
-/// A `Pattern` struct if parsing and validation succeed, or an `Error`
-/// if TOML is malformed, regex is invalid, or strategy configuration is incomplete.
-///
-/// # Errors
-///
-/// Returns `Error::Pattern` for:
-/// - TOML parsing failures
-/// - Invalid regular expressions
-/// - Missing required fields (e.g., grep pattern for grep strategy)
-/// - Unknown strategy namespub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
+/// Invalid files are silently skipped.
+pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -106,6 +89,27 @@ fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
     parse_pattern_str(&content)
 }
 
+/// Parse a pattern definition from TOML string content.
+///
+/// Deserializes a TOML pattern definition into a `Pattern` struct,
+/// validating regex patterns and strategy configurations.
+///
+/// # Arguments
+///
+/// * `content` - TOML-formatted pattern definition
+///
+/// # Returns
+///
+/// A `Pattern` struct if parsing and validation succeed, or an `Error`
+/// if TOML is malformed, regex is invalid, or strategy configuration is incomplete.
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` for:
+/// - TOML parsing failures
+/// - Invalid regular expressions
+/// - Missing required fields (e.g., grep pattern for grep strategy)
+/// - Unknown strategy names
 pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let pf: PatternFile =
         toml::from_str(content).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
