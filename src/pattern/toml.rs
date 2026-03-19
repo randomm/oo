@@ -110,6 +110,21 @@ fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
 /// - Invalid regular expressions
 /// - Missing required fields (e.g., grep pattern for grep strategy)
 /// - Unknown strategy names
+///
+/// # Examples
+///
+/// ```
+/// use double_o::pattern::parse_pattern_str;
+///
+/// let toml = r#"
+/// command_match = "myapp test"
+///
+/// [success]
+/// pattern = "(?P<passed>\\d+) passed"
+/// summary = "{passed} tests passed"
+/// "#;
+/// let pattern = parse_pattern_str(toml).unwrap();
+/// ```
 pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let pf: PatternFile =
         toml::from_str(content).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;

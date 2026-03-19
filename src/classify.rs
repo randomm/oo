@@ -214,6 +214,21 @@ pub fn detect_category(command: &str) -> CommandCategory {
 /// # Returns
 ///
 /// A [`Classification`] indicating how to present the output.
+///
+/// # Examples
+///
+/// ```
+/// use double_o::{classify, CommandOutput};
+/// use double_o::pattern::builtins;
+///
+/// let output = CommandOutput {
+///     stdout: b"test result: ok. 5 passed; 0 failed; finished in 0.3s".to_vec(),
+///     stderr: Vec::new(),
+///     exit_code: 0,
+/// };
+/// let patterns = builtins();
+/// let result = classify(&output, "cargo test", patterns);
+/// ```
 pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> Classification {
     let merged = output.merged_lossy();
     let lbl = label(command);

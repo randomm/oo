@@ -96,7 +96,6 @@ pub fn find_matching<'a>(command: &str, patterns: &'a [Pattern]) -> Option<&'a P
 }
 
 /// Like `find_matching` but works with a slice of references.
-/// Like `find_matching` but works with a slice of references.
 ///
 /// Useful when you have a slice of pattern references rather than values.
 pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<&'a Pattern> {
