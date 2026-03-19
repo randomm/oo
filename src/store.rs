@@ -10,19 +10,39 @@ use crate::util;
 // Types
 // ---------------------------------------------------------------------------
 
+/// Metadata for a stored command output entry.
+///
+/// Traces the origin of stored content for debugging and filtering.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
+    /// Source system (typically "oo").
     pub source: String,
+
+    /// Session identifier (parent process ID).
     pub session: String,
+
+    /// The command that generated this output.
     pub command: String,
+
+    /// Unix timestamp when this entry was created.
     pub timestamp: i64,
 }
 
+/// Result from a store search operation.
+///
+/// Contains the stored content along with its identifier and optional metadata.
 #[derive(Debug)]
 pub struct SearchResult {
+    /// Unique identifier for this entry.
     pub id: String,
+
+    /// The stored content (command output).
     pub content: String,
+
+    /// Optional metadata about this entry's origin.
     pub meta: Option<SessionMeta>,
+
+    /// Optional similarity score (for semantic search backends).
     #[allow(dead_code)] // Used by VipuneStore (behind feature flag)
     pub similarity: Option<f64>,
 }
@@ -31,7 +51,14 @@ pub struct SearchResult {
 // Store trait
 // ---------------------------------------------------------------------------
 
+/// Backend for storing and searching indexed command output.
+///
+/// Implementations can use different storage mechanisms (SQLite, Vipune, etc.)
+/// to persist and retrieve command output for later recall.
 pub trait Store {
+    /// Index a command output entry for later retrieval.
+    ///
+    /// Returns the unique identifier of the indexed entry.
     fn index(
         &mut self,
         project_id: &str,
@@ -39,6 +66,9 @@ pub trait Store {
         meta: &SessionMeta,
     ) -> Result<String, Error>;
 
+    /// Search for indexed entries matching a query.
+    ///
+    /// Returns up to `limit` results ordered by relevance.
     fn search(
         &mut self,
         project_id: &str,
@@ -46,8 +76,14 @@ pub trait Store {
         limit: usize,
     ) -> Result<Vec<SearchResult>, Error>;
 
+    /// Delete all entries for a specific session.
+    ///
+    /// Returns the number of entries deleted.
     fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error>;
 
+    /// Delete entries older than `max_age_secs` seconds.
+    ///
+    /// Returns the number of entries deleted.
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error>;
 }
 
@@ -55,6 +91,10 @@ pub trait Store {
 // SqliteStore — default backend using FTS5 for text search
 // ---------------------------------------------------------------------------
 
+/// SQLite-based store using FTS5 for full-text search.
+///
+/// The default backend for `oo`, indexes command output in SQLite's
+/// FTS5 virtual table for efficient full-text search.
 pub struct SqliteStore {
     conn: Connection,
 }
@@ -72,10 +112,16 @@ fn map_err(e: rusqlite::Error) -> Error {
 }
 
 impl SqliteStore {
+    /// Open the default SQLite store at `~/.local/share/.oo/oo.db`.
+    ///
+    /// Creates the database and tables if they don't exist.
     pub fn open() -> Result<Self, Error> {
         Self::open_at(&db_path())
     }
 
+    /// Open a SQLite store at a specific path.
+    ///
+    /// Creates the database and tables if they don't exist.
     pub fn open_at(path: &std::path::Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::Store(e.to_string()))?;
@@ -283,6 +329,10 @@ impl Store for SqliteStore {
 // VipuneStore — optional backend with semantic search
 // ---------------------------------------------------------------------------
 
+/// Vipune-backed store with semantic search capabilities.
+///
+/// Uses Vipune's cross-session memory with semantic embedding search.
+/// Available behind the `vipune-store` feature flag.
 #[cfg(feature = "vipune-store")]
 pub struct VipuneStore {
     store: vipune::MemoryStore,
@@ -290,6 +340,10 @@ pub struct VipuneStore {
 
 #[cfg(feature = "vipune-store")]
 impl VipuneStore {
+    /// Open the Vipune store with default configuration.
+    ///
+    /// Loads Vipune configuration from its usual location and initializes
+    /// the memory store with semantic search.
     pub fn open() -> Result<Self, Error> {
         let config = vipune::Config::load().map_err(|e| Error::Store(e.to_string()))?;
         let store =

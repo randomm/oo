@@ -1,4 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
+#![warn(missing_docs)]
+
+//! `oo` (double-o) — a context-efficient command runner for AI coding agents.
+//!
+//! This library helps AI agents run shell commands efficiently by classifying output
+//! and reducing context usage. Commands are executed, their output is analyzed, and
+//! results are compressed using pattern matching and intelligent categorization.
+//!
+//! # Core Concepts
+//!
+//! - **Classification**: Commands are categorized into four tiers based on success/failure
+//!   and output size. Small successful outputs pass through verbatim, while large outputs
+//!   are pattern-matched to extract terse summaries or indexed for later recall.
+//! - **Patterns**: Regular expressions define how to extract summaries from command output.
+//!   Built-in patterns exist for common tools (pytest, cargo test, npm test, etc.), and
+//!   user-defined patterns can be loaded from TOML files in `~/.config/oo/patterns/`.
+//! - **Storage**: Large unpatterned outputs are stored in a searchable database (SQLite by
+//!   default, with optional Vipune semantic search). Stored outputs can be recalled with
+//!   full-text search.
+//! - **Categories**: Commands are auto-detected as Status (tests, builds, linters),
+//!   Content (git show, diff, cat), Data (git log, ls, gh), or Unknown. This determines
+//!   default behavior when no pattern matches.
+//!
+//! # Example
+//!
+//! ```
+//! use oo::{classify, CommandOutput, Pattern};
+//! use oo::pattern::builtins;
+//!
+//! // Run a command
+//! let args = vec!["echo".into(), "hello".into()];
+//! let output = oo::exec::run(&args).unwrap();
+//!
+//! // Classify the output
+//! let command = "echo hello";
+//! let patterns = builtins(); // or load_user_patterns(&path)
+//! let result = classify(&output, command, &patterns);
+//!
+//! match result {
+//!     oo::Classification::Passthrough { output } => {
+//!         println!("Output: {}", output);
+//!     }
+//!     oo::Classification::Success { label, summary } => {
+//!         println!("✓ {}: {}", label, summary);
+//!     }
+//!     oo::Classification::Failure { label, output } => {
+//!         println!("✗ {}: {}", label, output);
+//!     }
+//!     oo::Classification::Large { label, size, .. } => {
+//!         println!("Indexed: {} ({} bytes)", label, size);
+//!     }
+//! }
+//! ```
+
 pub mod classify;
 pub mod commands;
 pub mod error;

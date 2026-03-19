@@ -1,5 +1,9 @@
 use thiserror::Error;
 
+/// Unified error type for the `oo` library.
+///
+/// Categorizes errors by their origin: command execution, storage,
+/// pattern parsing, configuration, learning, and more.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("command execution failed: {0}")]

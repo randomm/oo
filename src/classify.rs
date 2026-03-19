@@ -1,3 +1,16 @@
+//! Command output classification and intelligent truncation.
+//!
+//! This module is the core of `oo`'s context-efficient output handling. It analyzes
+//! command results and produces one of four [`Classification`] outcomes:
+//!
+//! - **Failure**: Non-zero exit codes → filtered error output
+//! - **Passthrough**: Small successful outputs (<4KB) → verbatim
+//! - **Success**: Large successful outputs with pattern match → compressed summary
+//! - **Large**: Large successful outputs without pattern → indexed for recall
+//!
+//! The [`classify`] function combines pattern matching with automatic command category
+//! detection to make intelligent decisions about how to present output.
+
 use crate::exec::CommandOutput;
 use crate::pattern::{self, Pattern};
 
@@ -11,6 +24,15 @@ const TRUNCATION_THRESHOLD: usize = 80;
 const MAX_LINES: usize = 120;
 
 /// Command category — determines default output handling when no pattern matches.
+///
+/// Categories are auto-detected from command strings using [`detect_category`].
+/// When a large output has no matching pattern, the category determines the fallback
+/// behavior:
+///
+/// - **Status**: Test runners, builds, linters → quiet success (empty summary)
+/// - **Content**: File viewers and diffs → always passthrough (never index)
+/// - **Data**: Listing and querying commands → index for recall
+/// - **Unknown**: Anything else → passthrough (safe default)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandCategory {
     /// test runners, linters, builds — agent wants pass/fail (quiet success)
@@ -38,6 +60,34 @@ pub enum Classification {
     },
 }
 
+/// Command output classification result.
+///
+/// Represents the outcome of analyzing a command's exit code and output.
+/// Each variant determines how the output should be presented to the AI agent.
+///
+/// # Variants
+///
+/// - **Failure**: Command exited non-zero. Contains filtered error output.
+/// - **Passthrough**: Command succeeded with small output. Contains verbatim output.
+/// - **Success**: Command succeeded with large output and pattern match. Contains compressed summary.
+/// - **Large**: Command succeeded with large output and no pattern. Output is indexed for recall.
+///
+/// The classification is produced by the [`classify`] function.
+pub enum Classification {
+    /// Exit ≠ 0. Filtered failure output.
+    Failure { label: String, output: String },
+    /// Exit 0, output ≤ threshold. Verbatim.
+    Passthrough { output: String },
+    /// Exit 0, output > threshold, pattern matched with summary.
+    Success { label: String, summary: String },
+    /// Exit 0, output > threshold, no pattern. Content needs indexing.
+    Large {
+        label: String,
+        output: String,
+        size: usize,
+    },
+}
+
 /// Derive label from command string (first path component's filename or word).
 pub fn label(command: &str) -> String {
     command
@@ -50,9 +100,45 @@ pub fn label(command: &str) -> String {
         .to_string()
 }
 
-/// Detect command category from command string.
-/// Returns CommandCategory based on binary and subcommand matching.
-pub fn detect_category(command: &str) -> CommandCategory {
+/// Classify command output using patterns and automatic category detection.
+///
+/// This is the main entry point for output classification. It analyzes the command's
+/// exit code, output size, and applies pattern matching to determine the appropriate
+/// presentation strategy.
+///
+/// # Algorithm
+///
+/// 1. **Failure path** (exit_code ≠ 0): Apply failure pattern or smart truncation
+/// 2. **Small success** (output ≤ 4KB): Pass through verbatim
+/// 3. **Pattern match**: Extract summary using success pattern
+/// 4. **Category fallback**: Use command category to determine behavior
+///
+/// # Arguments
+///
+/// * `output` - The command's exit code, stdout, and stderr
+/// * `command` - The command string (used for pattern matching and category detection)
+/// * `patterns` - List of patterns to try (typically [`pattern::builtins`] + user patterns)
+///
+/// # Returns
+///
+/// A [`Classification`] indicating how to present the output.
+///
+/// # Examples
+///
+/// ```
+/// use oo::{classify, Classification, CommandOutput};
+/// use oo::pattern::builtins;
+///
+/// // Small output passes through
+/// let output = CommandOutput {
+///     stdout: b"hello\n".to_vec(),
+///     stderr: vec![],
+///     exit_code: 0,
+/// };
+/// let result = classify(&output, "echo hello", &[]);
+/// assert!(matches!(result, Classification::Passthrough { .. }));
+/// ```
+pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> Classification {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
         return CommandCategory::Unknown;

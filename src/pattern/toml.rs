@@ -11,24 +11,41 @@ use crate::error::Error;
 
 #[derive(Deserialize)]
 pub struct PatternFile {
+    /// Regex that matches the command line.
     pub command_match: String,
+
+    /// Optional success pattern configuration.
     pub success: Option<SuccessSection>,
+
+    /// Optional failure pattern configuration.
     pub failure: Option<FailureSection>,
 }
 
 #[derive(Deserialize)]
 pub struct SuccessSection {
+    /// Regex pattern with named capture groups.
     pub pattern: String,
+
+    /// Summary template with {name} placeholders.
     pub summary: String,
 }
 
 #[derive(Deserialize)]
 pub struct FailureSection {
+    /// Strategy name: "tail", "head", "grep", or "between".
     pub(crate) strategy: Option<String>,
+
+    /// Number of lines (for tail/head strategies).
     pub(crate) lines: Option<usize>,
+
+    /// Grep pattern (for grep strategy).
     #[serde(rename = "grep")]
     pub(crate) grep_pattern: Option<String>,
+
+    /// Start delimiter (for between strategy).
     pub(crate) start: Option<String>,
+
+    /// End delimiter (for between strategy).
     pub(crate) end: Option<String>,
 }
 

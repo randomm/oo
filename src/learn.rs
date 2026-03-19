@@ -15,10 +15,18 @@ struct ConfigFile {
     learn: Option<LearnConfig>,
 }
 
+/// Configuration for the `oo learn` LLM integration.
+///
+/// Specifies the LLM provider, model, and environment variable for the API key.
 #[derive(Deserialize, Clone)]
 pub struct LearnConfig {
+    /// LLM provider name (currently only "anthropic" is supported).
     pub provider: String,
+
+    /// Model identifier (e.g., "claude-haiku-4-5").
     pub model: String,
+
+    /// Environment variable containing the API key.
     pub api_key_env: String,
 }
 
@@ -69,6 +77,9 @@ fn config_dir() -> PathBuf {
         .join("oo")
 }
 
+/// Get the directory containing user-defined patterns.
+///
+/// Returns `~/.config/oo/patterns` or the overridden `OO_CONFIG_DIR/patterns`.
 pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }
@@ -78,6 +89,9 @@ pub fn learn_status_path() -> PathBuf {
     config_dir().join("learn-status.log")
 }
 
+/// Load learn configuration from `~/.config/oo/config.toml`.
+///
+/// Returns the default configuration if the file doesn't exist.
 pub fn load_learn_config() -> Result<LearnConfig, Error> {
     let path = config_dir().join("config.toml");
     if !path.exists() {
@@ -211,6 +225,10 @@ pub(crate) fn run_learn_with_config(
 }
 
 /// Run the learn flow: call LLM, validate + save pattern.
+///
+/// Loads configuration from environment, calls the LLM to generate a pattern,
+/// validates the result, and saves the pattern to disk. Retries up to 2 times
+/// if the LLM returns invalid TOML.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
     let config = load_learn_config()?;
 
