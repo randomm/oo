@@ -224,6 +224,8 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
     let base_url = std::env::var("ANTHROPIC_API_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".to_string());
 
+    validate_anthropic_url(&base_url)?;
+
     let params = LearnParams {
         config: &config,
         api_key: &api_key,
@@ -378,6 +380,24 @@ fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+/// Validate ANTHROPIC_API_URL uses HTTPS (with localhost exceptions).
+fn validate_anthropic_url(url: &str) -> Result<(), Error> {
+    if url.starts_with("https://") {
+        return Ok(());
+    }
+    // HTTP only allowed for localhost/127.0.0.1
+    // Extract host portion: "http://HOST:port/path" or "http://HOST/path"
+    if let Some(rest) = url.strip_prefix("http://") {
+        let host = rest.split([':', '/']).next().unwrap_or("");
+        if host == "localhost" || host == "127.0.0.1" {
+            return Ok(());
+        }
+    }
+    Err(Error::Learn(format!(
+        "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1."
+    )))
 }
 
 fn strip_fences(s: &str) -> String {
