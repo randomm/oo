@@ -40,7 +40,7 @@ pub struct SuccessPattern {
     pub pattern: Regex,
 
     /// Template string with `{name}` placeholders for summary formatting.
-    pub summary,
+    pub summary: String,
 }
 
 /// Strategy for filtering failed command output.
