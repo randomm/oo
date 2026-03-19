@@ -1,10 +1,14 @@
-use std::path::Path;
+use regex::Regex;
 use std::sync::LazyLock;
 
-use regex::Regex;
-use serde::Deserialize;
+// Public API re-exports
+pub use self::builtins::builtin_patterns;
+pub use self::toml::{FailureSection, PatternFile, load_user_patterns, parse_pattern_str};
 
-use crate::error::Error;
+/// Get a reference to the static built-in patterns.
+pub fn builtins() -> &'static [Pattern] {
+    &BUILTINS
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,244 +102,12 @@ pub fn extract_failure(pat: &FailurePattern, output: &str) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Built-in patterns
-// ---------------------------------------------------------------------------
+// Submodules
+mod builtins;
+mod toml;
 
+// Static builtin patterns
 static BUILTINS: LazyLock<Vec<Pattern>> = LazyLock::new(builtin_patterns);
-
-pub fn builtins() -> &'static [Pattern] {
-    &BUILTINS
-}
-
-fn builtin_patterns() -> Vec<Pattern> {
-    vec![
-        // pytest
-        Pattern {
-            command_match: Regex::new(r"(?:^|\b)pytest\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?P<passed>\d+) passed.*in (?P<time>[\d.]+)s").unwrap(),
-                summary: "{passed} passed, {time}s".into(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // cargo test
-        Pattern {
-            command_match: Regex::new(r"\bcargo\s+test\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"test result: ok\. (?P<passed>\d+) passed; (?P<failed>\d+) failed.*finished in (?P<time>[\d.]+)s",
-                )
-                .unwrap(),
-                summary: "{passed} passed, {time}s".into(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 40 },
-            }),
-        },
-        // go test
-        Pattern {
-            command_match: Regex::new(r"\bgo\s+test\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"ok\s+\S+\s+(?P<time>[\d.]+)s").unwrap(),
-                summary: "ok ({time}s)".into(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // jest / vitest
-        Pattern {
-            command_match: Regex::new(r"\b(?:jest|vitest|npx\s+(?:jest|vitest))\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                )
-                .unwrap(),
-                summary: "{passed} passed, {time}s".into(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // ruff
-        Pattern {
-            command_match: Regex::new(r"\bruff\s+check\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"All checks passed").unwrap(),
-                summary: String::new(), // empty = quiet success
-            }),
-            failure: None, // show all violations
-        },
-        // eslint
-        Pattern {
-            command_match: Regex::new(r"\beslint\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*").unwrap(), // always matches
-                summary: String::new(),
-            }),
-            failure: None,
-        },
-        // cargo build
-        Pattern {
-            command_match: Regex::new(r"\bcargo\s+build\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*").unwrap(),
-                summary: String::new(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Head { lines: 20 },
-            }),
-        },
-        // go build
-        Pattern {
-            command_match: Regex::new(r"\bgo\s+build\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*").unwrap(),
-                summary: String::new(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Head { lines: 20 },
-            }),
-        },
-        // tsc
-        Pattern {
-            command_match: Regex::new(r"\btsc\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*").unwrap(),
-                summary: String::new(),
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Head { lines: 20 },
-            }),
-        },
-        // cargo clippy
-        Pattern {
-            command_match: Regex::new(r"\bcargo\s+clippy\b").unwrap(),
-            success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*").unwrap(),
-                summary: String::new(),
-            }),
-            failure: None,
-        },
-    ]
-}
-
-// ---------------------------------------------------------------------------
-// User patterns (TOML on disk)
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-struct PatternFile {
-    command_match: String,
-    success: Option<SuccessSection>,
-    failure: Option<FailureSection>,
-}
-
-#[derive(Deserialize)]
-struct SuccessSection {
-    pattern: String,
-    summary: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct FailureSection {
-    pub(crate) strategy: Option<String>,
-    pub(crate) lines: Option<usize>,
-    #[serde(rename = "grep")]
-    pub(crate) grep_pattern: Option<String>,
-    pub(crate) start: Option<String>,
-    pub(crate) end: Option<String>,
-}
-
-/// Load user-defined patterns from a directory of TOML files.
-/// Invalid files are silently skipped.
-pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
-    };
-
-    let mut patterns = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "toml") {
-            if let Ok(p) = load_pattern_file(&path) {
-                patterns.push(p);
-            }
-        }
-    }
-    patterns
-}
-
-fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| Error::Pattern(format!("{path:?}: {e}")))?;
-    parse_pattern_str(&content)
-}
-
-fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
-    let pf: PatternFile =
-        toml::from_str(content).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
-
-    let command_match =
-        Regex::new(&pf.command_match).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
-
-    let success = pf
-        .success
-        .map(|s| -> Result<SuccessPattern, Error> {
-            let pattern =
-                Regex::new(&s.pattern).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
-            Ok(SuccessPattern {
-                pattern,
-                summary: s.summary,
-            })
-        })
-        .transpose()?;
-
-    let failure = pf
-        .failure
-        .map(|f| -> Result<FailurePattern, Error> {
-            let strategy = match f.strategy.as_deref().unwrap_or("tail") {
-                "tail" => FailureStrategy::Tail {
-                    lines: f.lines.unwrap_or(30),
-                },
-                "head" => FailureStrategy::Head {
-                    lines: f.lines.unwrap_or(20),
-                },
-                "grep" => {
-                    let pat = f.grep_pattern.ok_or_else(|| {
-                        Error::Pattern("grep strategy requires 'grep' field".into())
-                    })?;
-                    let pattern =
-                        Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
-                    FailureStrategy::Grep { pattern }
-                }
-                "between" => {
-                    let start = f.start.ok_or_else(|| {
-                        Error::Pattern("between strategy requires 'start'".into())
-                    })?;
-                    let end = f
-                        .end
-                        .ok_or_else(|| Error::Pattern("between strategy requires 'end'".into()))?;
-                    FailureStrategy::Between { start, end }
-                }
-                other => {
-                    return Err(Error::Pattern(format!("unknown strategy: {other}")));
-                }
-            };
-            Ok(FailurePattern { strategy })
-        })
-        .transpose()?;
-
-    Ok(Pattern {
-        command_match,
-        success,
-        failure,
-    })
-}
 
 // ---------------------------------------------------------------------------
 // Tests
