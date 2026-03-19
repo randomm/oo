@@ -15,9 +15,25 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
 
-*"Double-o, agent's best friend."* 
+*"Double-o, agent's best friend."*
 
 *Or: how I learned to stop worrying and love my context-efficient command runner for AI coding agents.*
+
+---
+
+## Why oo?
+
+AI coding agents waste context tokens on verbose command output. A single `cargo build`
+can produce thousands of lines that the agent must process but rarely needs in full.
+
+**oo solves this transparently:**
+- Commands run normally — oo wraps them, not replaces them
+- Output is classified and compressed using patterns
+- Agents get the signal (pass/fail, errors, summaries) without the noise
+- No agent modification required — just prefix commands with `oo`
+
+Unlike manual truncation (`head`/`tail`), oo understands command semantics. Unlike
+agent-native output limits, oo preserves the information the agent actually needs.
 
 ---
 
@@ -153,6 +169,41 @@ and moves on.
 
 Add your own patterns with `oo learn <cmd>` (generates a TOML pattern file via
 LLM) or write one manually in `~/.local/share/oo/patterns/`.
+
+---
+
+## FAQ
+
+**What if oo doesn't recognize my command?**
+Unknown commands pass through unchanged (under 4KB) or get indexed for later retrieval
+via `oo recall`. Use `oo learn <command>` to teach oo a compression pattern.
+
+**Can I disable compression for a command?**
+Unknown commands already pass through by default. For commands with built-in patterns,
+you can override with a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
+
+**Does oo work in CI?**
+It can, but oo is designed for interactive AI agent sessions where context tokens matter.
+In CI, full output is usually fine.
+
+**Which LLM providers does `oo learn` support?**
+Anthropic only. Set `ANTHROPIC_API_KEY` in your environment.
+See [Learning Patterns](docs/learn.md).
+
+---
+
+## Troubleshooting
+
+**`oo: command not found`**
+Ensure `~/.cargo/bin` is in your PATH, or use the full path to the binary.
+
+**Pattern not matching my command**
+Run `oo patterns` to see all loaded patterns and their command regexes.
+Custom patterns in `~/.config/oo/patterns/` override built-ins.
+
+**`oo learn` fails or produces bad patterns**
+Ensure `ANTHROPIC_API_KEY` is set. Run the command normally first so oo has
+real output to analyze. See [Learning Patterns](docs/learn.md).
 
 ---
 
