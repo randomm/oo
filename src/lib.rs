@@ -25,12 +25,12 @@
 //! # Example
 //!
 //! ```
-//! use oo::{classify, CommandOutput, Pattern};
-//! use oo::pattern::builtins;
+//! use double_o::{classify, Classification, CommandOutput, Pattern};
+//! use double_o::pattern::builtins;
 //!
 //! // Run a command
 //! let args = vec!["echo".into(), "hello".into()];
-//! let output = oo::exec::run(&args).unwrap();
+//! let output = double_o::exec::run(&args).unwrap();
 //!
 //! // Classify the output
 //! let command = "echo hello";
@@ -38,33 +38,40 @@
 //! let result = classify(&output, command, &patterns);
 //!
 //! match result {
-//!     oo::Classification::Passthrough { output } => {
+//!     Classification::Passthrough { output } => {
 //!         println!("Output: {}", output);
 //!     }
-//!     oo::Classification::Success { label, summary } => {
+//!     Classification::Success { label, summary } => {
 //!         println!("✓ {}: {}", label, summary);
 //!     }
-//!     oo::Classification::Failure { label, output } => {
+//!     Classification::Failure { label, output } => {
 //!         println!("✗ {}: {}", label, output);
 //!     }
-//!     oo::Classification::Large { label, size, .. } => {
+//!     Classification::Large { label, size, .. } => {
 //!         println!("Indexed: {} ({} bytes)", label, size);
 //!     }
 //! }
 //! ```
 
+/// Command output classification and intelligent truncation.
 pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod commands;
+/// Error types for oo operations.
 pub mod error;
+/// Command execution and output capture.
 pub mod exec;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod init;
+/// LLM-powered pattern learning.
 pub mod learn;
+/// Pattern matching and output compression.
 pub mod pattern;
+/// Session tracking and management.
 pub mod session;
+/// Storage backends for indexed output.
 pub mod store;
 
 // CLI internals - hidden from documentation but accessible to binary crate
@@ -84,7 +91,6 @@ pub use store::{SessionMeta, Store};
 
 // CLI internals - re-exported for binary crate but hidden from documentation
 #[doc(hidden)]
-#[allow(missing_docs)]
 pub use commands::{
     Action, InitFormat, check_and_clear_learn_status, classify_with_refs, cmd_forget, cmd_help,
     cmd_init, cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_run, parse_action,

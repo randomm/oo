@@ -65,14 +65,22 @@ pub enum Classification {
     ///
     /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
     /// * `output` - Filtered error output, truncated if large.
-    Failure { label: String, output: String },
+    Failure {
+        /// Short label derived from the command (e.g., "cargo", "pytest").
+        label: String,
+        /// Filtered error output, truncated if large.
+        output: String,
+    },
 
     /// Exit 0, output ≤ threshold. Verbatim.
     ///
     /// # Fields
     ///
     /// * `output` - The full command output (merged stdout and stderr).
-    Passthrough { output: String },
+    Passthrough {
+        /// The full command output (merged stdout and stderr).
+        output: String,
+    },
 
     /// Exit 0, output > threshold, pattern matched with summary.
     ///
@@ -80,7 +88,12 @@ pub enum Classification {
     ///
     /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
     /// * `summary` - Compressed summary extracted using the pattern's template.
-    Success { label: String, summary: String },
+    Success {
+        /// Short label derived from the command (e.g., "cargo", "pytest").
+        label: String,
+        /// Compressed summary extracted using the pattern's template.
+        summary: String,
+    },
 
     /// Exit 0, output > threshold, no pattern. Content needs indexing.
     ///
@@ -90,8 +103,11 @@ pub enum Classification {
     /// * `output` - The full command output to be indexed for recall.
     /// * `size` - Size of the output in bytes.
     Large {
+        /// Short label derived from the command (e.g., "git", "gh").
         label: String,
+        /// The full command output to be indexed for recall.
         output: String,
+        /// Size of the output in bytes.
         size: usize,
     },
 }
