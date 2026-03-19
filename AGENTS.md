@@ -64,11 +64,11 @@ Fix failures locally. Never push to "see if CI catches anything."
 - **Unit tests** in-module (`#[cfg(test)]`) for pure logic
 - **Integration tests** in `tests/` for CLI behaviour — use `assert_cmd`
 - Integration tests are the primary coverage driver — they test real CLI invocations
-- Every new pattern in `src/pattern.rs` must have a corresponding test
+- Every new pattern in `src/pattern/` must have a corresponding test
 - Tests must provide real value — no trivial assertions like `assert!(true)` or `assert_eq!(1, 1)`
 - Every test must exercise a real code path and assert meaningful behaviour
 - Network-dependent tests must be marked `#[ignore]` with a comment explaining why
-- ~53 tests currently; do not reduce this count
+- ~197 tests currently; do not reduce this count
 
 ---
 
@@ -113,10 +113,10 @@ Orientation for agents new to the codebase:
 | `src/main.rs` | CLI entry point and subcommand dispatch |
 | `src/exec.rs` | Shell command execution and output capture |
 | `src/classify.rs` | Classification engine — touch carefully, well-tested |
-| `src/pattern.rs` | Built-in patterns (10) + user TOML loading |
+| `src/pattern/` | Built-in patterns (10), user TOML loading, pattern matching (split into `mod.rs`, `builtins.rs`, `toml.rs`) |
 | `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag |
 | `src/session.rs` | Session tracking and context management |
-| `src/learn.rs` | LLM integration, background re-exec, Anthropic + OpenAI |
+| `src/learn.rs` | LLM integration, background re-exec, Anthropic only |
 | `src/error.rs` | Unified error types via `thiserror` |
 
 **Key rules:**
