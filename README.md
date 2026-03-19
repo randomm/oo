@@ -9,6 +9,12 @@
 
 <br /><br />
 
+[![CI](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o)
+[![docs.rs](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+
 *"Double-o, agent's best friend."* 
 
 *Or: how I learned to stop worrying and love my context-efficient command runner for AI coding agents.*

@@ -7,10 +7,19 @@ description = "Context-efficient command runner for AI coding agents"
 license = "Apache-2.0"
 repository = "https://github.com/randomm/oo"
 homepage = "https://github.com/randomm/oo"
+documentation = "https://docs.rs/double-o"
 keywords = ["ai", "cli", "shell", "token-efficiency", "agents"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 authors = ["Janni Turunen"]
+exclude = [
+    ".github/",
+    "AGENTS.md",
+    "cliff.toml",
+    "release-plz.toml",
+    ".gitignore",
+    ".worktrees/",
+]
 
 [lib]
 name = "double_o"
