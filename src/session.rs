@@ -1,8 +1,16 @@
+/// Get the current session identifier.
+///
+/// Returns the parent process ID as a string, providing a stable identifier
+/// for all commands run within the same AI agent session.
 pub fn session_id() -> String {
     let ppid = unsafe { libc::getppid() };
     ppid.to_string()
 }
 
+/// Get the project identifier for the current working directory.
+///
+/// Returns a unique identifier for the project, used to scope store operations.
+/// Attempts to detect from git remote URL, git root directory, or current directory name.
 pub fn project_id() -> String {
     #[cfg(feature = "vipune-store")]
     {

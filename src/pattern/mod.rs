@@ -14,26 +14,76 @@ pub fn builtins() -> &'static [Pattern] {
 // Types
 // ---------------------------------------------------------------------------
 
+/// A pattern for matching and extracting information from command output.
+///
+/// Patterns define how to compress command output using regex matching.
+/// When a command matches the `command_match` regex, the pattern's
+/// success or failure logic is applied to extract compressed output.
 pub struct Pattern {
+    /// Regex that matches the command line (e.g., `r"cargo test"`).
     pub command_match: Regex,
+
+    /// Optional pattern for extracting a summary from successful command output.
     pub success: Option<SuccessPattern>,
+
+    /// Optional strategy for filtering failed command output.
     pub failure: Option<FailurePattern>,
 }
 
+/// Pattern for extracting a summary from successful command output.
+///
+/// The `pattern` field contains a regex with named capture groups.
+/// The `summary` field is a template string with placeholders like `{name}`
+/// that are replaced with captured values.
 pub struct SuccessPattern {
+    /// Regex with named capture groups for extracting values.
     pub pattern: Regex,
-    pub summary: String, // template with {name} placeholders
+
+    /// Template string with `{name}` placeholders for summary formatting.
+    pub summary: String,
 }
 
+/// Strategy for filtering failed command output.
+///
+/// When a command exits with a non-zero status, the failure strategy
+/// extracts relevant error information (e.g., tail N lines, head N lines,
+/// grep for error keywords, or extract text between delimiters).
 pub struct FailurePattern {
+    /// The strategy to apply for extracting error information.
     pub strategy: FailureStrategy,
 }
 
+/// Strategy for extracting error information from failed command output.
+///
+/// Each variant defines a different approach to identifying and extracting
+/// the most relevant error information from command output.
 pub enum FailureStrategy {
-    Tail { lines: usize },
-    Head { lines: usize },
-    Grep { pattern: Regex },
-    Between { start: String, end: String },
+    /// Keep the last N lines of output (tail).
+    Tail {
+        /// Number of lines to keep from the end.
+        lines: usize,
+    },
+
+    /// Keep the first N lines of output (head).
+    Head {
+        /// Number of lines to keep from the start.
+        lines: usize,
+    },
+
+    /// Filter lines matching a regex pattern.
+    Grep {
+        /// Regex pattern to match error lines.
+        pattern: Regex,
+    },
+
+    /// Extract text between two delimiter strings.
+    Between {
+        /// Starting delimiter string.
+        start: String,
+
+        /// Ending delimiter string.
+        end: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +96,9 @@ pub fn find_matching<'a>(command: &str, patterns: &'a [Pattern]) -> Option<&'a P
 }
 
 /// Like `find_matching` but works with a slice of references.
+/// Like `find_matching` but works with a slice of references.
+///
+/// Useful when you have a slice of pattern references rather than values.
 pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<&'a Pattern> {
     patterns
         .iter()

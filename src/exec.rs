@@ -2,9 +2,18 @@ use std::process::Command;
 
 use crate::error::Error;
 
+/// Output from executing a shell command.
+///
+/// Captures the standard output, standard error, and exit status of a command
+/// executed via `run()`.
 pub struct CommandOutput {
+    /// Standard output as raw bytes.
     pub stdout: Vec<u8>,
+
+    /// Standard error as raw bytes.
     pub stderr: Vec<u8>,
+
+    /// Process exit code (0 indicates success).
     pub exit_code: i32,
 }
 
@@ -22,6 +31,14 @@ impl CommandOutput {
     }
 }
 
+/// Execute a shell command and capture its output.
+///
+/// Runs the first argument as the program name with remaining arguments as parameters.
+/// Captures stdout, stderr, and exit status.
+///
+/// # Errors
+///
+/// Returns an error if the command cannot be spawned or if there's an I/O error during execution.
 pub fn run(args: &[String]) -> Result<CommandOutput, Error> {
     let output = Command::new(&args[0]).args(&args[1..]).output()?;
 

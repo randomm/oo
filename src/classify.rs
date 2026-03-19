@@ -1,3 +1,16 @@
+//! Command output classification and intelligent truncation.
+//!
+//! This module is the core of `oo`'s context-efficient output handling. It analyzes
+//! command results and produces one of four [`Classification`] outcomes:
+//!
+//! - **Failure**: Non-zero exit codes → filtered error output
+//! - **Passthrough**: Small successful outputs (<4KB) → verbatim
+//! - **Success**: Large successful outputs with pattern match → compressed summary
+//! - **Large**: Large successful outputs without pattern → indexed for recall
+//!
+//! The [`classify`] function combines pattern matching with automatic command category
+//! detection to make intelligent decisions about how to present output.
+
 use crate::exec::CommandOutput;
 use crate::pattern::{self, Pattern};
 
@@ -11,6 +24,15 @@ const TRUNCATION_THRESHOLD: usize = 80;
 const MAX_LINES: usize = 120;
 
 /// Command category — determines default output handling when no pattern matches.
+///
+/// Categories are auto-detected from command strings using [`detect_category`].
+/// When a large output has no matching pattern, the category determines the fallback
+/// behavior:
+///
+/// - **Status**: Test runners, builds, linters → quiet success (empty summary)
+/// - **Content**: File viewers and diffs → always passthrough (never index)
+/// - **Data**: Listing and querying commands → index for recall
+/// - **Unknown**: Anything else → passthrough (safe default)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandCategory {
     /// test runners, linters, builds — agent wants pass/fail (quiet success)
@@ -23,22 +45,88 @@ pub enum CommandCategory {
     Unknown,
 }
 
+/// Command output classification result.
+///
+/// Represents the outcome of analyzing a command's exit code and output.
+/// Each variant determines how the output should be presented to the AI agent.
+///
+/// # Variants
+///
+/// - **Failure**: Command exited non-zero. Contains filtered error output.
+/// - **Passthrough**: Command succeeded with small output. Contains verbatim output.
+/// - **Success**: Command succeeded with large output and pattern match. Contains compressed summary.
+/// - **Large**: Command succeeded with large output and no pattern. Output is indexed for recall.
+///
+/// The classification is produced by the [`classify`] function.
 pub enum Classification {
     /// Exit ≠ 0. Filtered failure output.
-    Failure { label: String, output: String },
-    /// Exit 0, output ≤ threshold. Verbatim.
-    Passthrough { output: String },
-    /// Exit 0, output > threshold, pattern matched with summary.
-    Success { label: String, summary: String },
-    /// Exit 0, output > threshold, no pattern. Content needs indexing.
-    Large {
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
+    /// * `output` - Filtered error output, truncated if large.
+    Failure {
+        /// Short label derived from the command (e.g., "cargo", "pytest").
         label: String,
+        /// Filtered error output, truncated if large.
         output: String,
+    },
+
+    /// Exit 0, output ≤ threshold. Verbatim.
+    ///
+    /// # Fields
+    ///
+    /// * `output` - The full command output (merged stdout and stderr).
+    Passthrough {
+        /// The full command output (merged stdout and stderr).
+        output: String,
+    },
+
+    /// Exit 0, output > threshold, pattern matched with summary.
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
+    /// * `summary` - Compressed summary extracted using the pattern's template.
+    Success {
+        /// Short label derived from the command (e.g., "cargo", "pytest").
+        label: String,
+        /// Compressed summary extracted using the pattern's template.
+        summary: String,
+    },
+
+    /// Exit 0, output > threshold, no pattern. Content needs indexing.
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "git", "gh").
+    /// * `output` - The full command output to be indexed for recall.
+    /// * `size` - Size of the output in bytes.
+    Large {
+        /// Short label derived from the command (e.g., "git", "gh").
+        label: String,
+        /// The full command output to be indexed for recall.
+        output: String,
+        /// Size of the output in bytes.
         size: usize,
     },
 }
 
-/// Derive label from command string (first path component's filename or word).
+/// Derive a short label from a command string.
+///
+/// Extracts the first word of the command (typically the binary name),
+/// stripping any path prefix. For example:
+/// - "cargo test" → "cargo"
+/// - "/usr/bin/python script.py" → "python"
+/// - "gh issue list" → "gh"
+///
+/// # Arguments
+///
+/// * `command` - The command string
+///
+/// # Returns
+///
+/// A short label derived from the command.
 pub fn label(command: &str) -> String {
     command
         .split_whitespace()
@@ -51,7 +139,24 @@ pub fn label(command: &str) -> String {
 }
 
 /// Detect command category from command string.
-/// Returns CommandCategory based on binary and subcommand matching.
+///
+/// Analyzes the command string to determine its category, which is used as
+/// a fallback when no pattern matches for large outputs.
+///
+/// # Categories
+///
+/// - **Status**: Test runners, builds, linters → quiet success
+/// - **Content**: File viewers and diffs → always passthrough
+/// - **Data**: Listing and querying commands → index for recall
+/// - **Unknown**: Anything else → passthrough (safe default)
+///
+/// # Arguments
+///
+/// * `command` - The command string to analyze
+///
+/// # Returns
+///
+/// A [`CommandCategory`] indicating the command's type.
 pub fn detect_category(command: &str) -> CommandCategory {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
@@ -87,6 +192,28 @@ pub fn detect_category(command: &str) -> CommandCategory {
     }
 }
 
+/// Classify command output using patterns and automatic category detection.
+///
+/// This is the main entry point for output classification. It analyzes the command's
+/// exit code, output size, and applies pattern matching to determine the appropriate
+/// presentation strategy.
+///
+/// # Algorithm
+///
+/// 1. **Failure path** (exit_code ≠ 0): Apply failure pattern or smart truncation
+/// 2. **Small success** (output ≤ 4KB): Pass through verbatim
+/// 3. **Pattern match**: Extract summary using success pattern
+/// 4. **Category fallback**: Use command category to determine behavior
+///
+/// # Arguments
+///
+/// * `output` - The command's exit code, stdout, and stderr
+/// * `command` - The command string (used for pattern matching and category detection)
+/// * `patterns` - List of patterns to try (typically [`pattern::builtins`] + user patterns)
+///
+/// # Returns
+///
+/// A [`Classification`] indicating how to present the output.
 pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> Classification {
     let merged = output.merged_lossy();
     let lbl = label(command);
