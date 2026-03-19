@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-03-19
+
+### Bug Fixes
+
+- Restore full README content with code-fence ASCII logo ([#84](https://github.com/randomm/oo/pull/84))
+
+### Features
+
+- New ascii logo ([#81](https://github.com/randomm/oo/pull/81))
+
+### Miscellaneous
+
+- *(#96,#97)* Add Cargo.toml metadata and README badges ([#103](https://github.com/randomm/oo/pull/103))
+
+
 ## [0.3.2] - 2026-03-05
 
 ### Bug Fixes
