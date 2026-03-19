@@ -36,9 +36,27 @@ impl CommandOutput {
 /// Runs the first argument as the program name with remaining arguments as parameters.
 /// Captures stdout, stderr, and exit status.
 ///
+/// # Arguments
+///
+/// * `args` - Command arguments where the first element is the program name
+///
+/// # Returns
+///
+/// A `CommandOutput` containing stdout, stderr, and exit code
+///
 /// # Errors
 ///
 /// Returns an error if the command cannot be spawned or if there's an I/O error during execution.
+///
+/// # Examples
+///
+/// ```
+/// use double_o::exec::run;
+///
+/// let output = run(&["echo".into(), "hello".into()]).unwrap();
+/// assert_eq!(output.exit_code, 0);
+/// assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));
+/// ```
 pub fn run(args: &[String]) -> Result<CommandOutput, Error> {
     let output = Command::new(&args[0]).args(&args[1..]).output()?;
 
