@@ -9,6 +9,11 @@ use crate::error::Error;
 // TOML deserialization types
 // ---------------------------------------------------------------------------
 
+/// TOML representation of a pattern file.
+///
+/// This struct deserializes from user-defined TOML pattern files
+/// loaded from `~/.config/oo/patterns/`. Each file defines a single pattern
+/// with optional success and failure configurations.
 #[derive(Deserialize)]
 pub struct PatternFile {
     /// Regex that matches the command line.
@@ -30,6 +35,10 @@ pub struct SuccessSection {
     pub summary: String,
 }
 
+/// TOML configuration for failure output filtering.
+///
+/// Defines how to extract relevant error information from failed command output.
+/// Multiple strategies are supported: tail, head, grep, and between.
 #[derive(Deserialize)]
 pub struct FailureSection {
     /// Strategy name: "tail", "head", "grep", or "between".
@@ -53,9 +62,27 @@ pub struct FailureSection {
 // User patterns (TOML on disk)
 // ---------------------------------------------------------------------------
 
-/// Load user-defined patterns from a directory of TOML files.
-/// Invalid files are silently skipped.
-pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
+/// Parse a pattern definition from TOML string content.
+///
+/// Deserializes a TOML pattern definition into a `Pattern` struct,
+/// validating regex patterns and strategy configurations.
+///
+/// # Arguments
+///
+/// * `content` - TOML-formatted pattern definition
+///
+/// # Returns
+///
+/// A `Pattern` struct if parsing and validation succeed, or an `Error`
+/// if TOML is malformed, regex is invalid, or strategy configuration is incomplete.
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` for:
+/// - TOML parsing failures
+/// - Invalid regular expressions
+/// - Missing required fields (e.g., grep pattern for grep strategy)
+/// - Unknown strategy namespub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),

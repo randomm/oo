@@ -60,12 +60,35 @@ pub enum CommandCategory {
 /// The classification is produced by the [`classify`] function.
 pub enum Classification {
     /// Exit ≠ 0. Filtered failure output.
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
+    /// * `output` - Filtered error output, truncated if large.
     Failure { label: String, output: String },
+
     /// Exit 0, output ≤ threshold. Verbatim.
+    ///
+    /// # Fields
+    ///
+    /// * `output` - The full command output (merged stdout and stderr).
     Passthrough { output: String },
+
     /// Exit 0, output > threshold, pattern matched with summary.
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
+    /// * `summary` - Compressed summary extracted using the pattern's template.
     Success { label: String, summary: String },
+
     /// Exit 0, output > threshold, no pattern. Content needs indexing.
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "git", "gh").
+    /// * `output` - The full command output to be indexed for recall.
+    /// * `size` - Size of the output in bytes.
     Large {
         label: String,
         output: String,

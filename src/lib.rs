@@ -54,9 +54,13 @@
 //! ```
 
 pub mod classify;
+#[doc(hidden)]
+#[allow(missing_docs)]
 pub mod commands;
 pub mod error;
 pub mod exec;
+#[doc(hidden)]
+#[allow(missing_docs)]
 pub mod init;
 pub mod learn;
 pub mod pattern;
@@ -65,8 +69,10 @@ pub mod store;
 
 // CLI internals - hidden from documentation but accessible to binary crate
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub mod help;
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub mod util;
 
 // Re-exports for library users
@@ -78,6 +84,7 @@ pub use store::{SessionMeta, Store};
 
 // CLI internals - re-exported for binary crate but hidden from documentation
 #[doc(hidden)]
+#[allow(missing_docs)]
 pub use commands::{
     Action, InitFormat, check_and_clear_learn_status, classify_with_refs, cmd_forget, cmd_help,
     cmd_init, cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_run, parse_action,
