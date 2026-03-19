@@ -2,8 +2,8 @@
 //!
 //! Run with: `cargo run --example custom_pattern`
 
-use double_o::{classify, CommandOutput};
 use double_o::pattern::parse_pattern_str;
+use double_o::{CommandOutput, classify};
 
 fn main() {
     // Define a custom pattern in TOML format
@@ -60,8 +60,7 @@ Total time: 2.5s"
 
     // Test with failure output
     let failure_output = CommandOutput {
-        stdout: br"Running test suite..."
-            .to_vec(),
+        stdout: br"Running test suite...".to_vec(),
         stderr: br"Test 1... OK
 Test 2... FAILED
   Error: assertion failed at line 42

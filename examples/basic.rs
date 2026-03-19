@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo run --example basic`
 
-use double_o::{classify, CommandOutput};
+use double_o::{CommandOutput, classify};
 
 fn main() {
     // Create a mock command output (as if we ran "pytest tests/")
