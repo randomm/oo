@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-03-20
+
+### Bug Fixes
+
+- Correct pattern directory path in README
+- Correct tarball extraction paths in installation instructions
+
+
 ## [0.4.2] - 2026-03-20
 
 
