@@ -28,11 +28,24 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.1] - 2026-03-04
 
+### Bug Fixes
+
+- Improved `oo learn` pattern quality with better system prompt framing
+- Corrected Anthropic model name and surfaced learn failures to users
+- Fixed pattern filenames to include subcommands (e.g., `cargo-test.toml`)
+- Replaced zalgo logo with plain "oo" text in CLI output
+
+### Documentation
+
+- Documented `oo learn` overwrite behavior
+
 
 ## [0.3.0] - 2026-03-03
 
+### Features
 
-## [0.2.0] - 2026-03-03
+- Initial implementation of `oo learn` for LLM-assisted pattern generation
+- Added ASCII art logo
 
 ### Bug Fixes
 
@@ -51,4 +64,3 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous
 
 - Regenerate release.yml for pr-run-mode upload
-
