@@ -60,7 +60,3 @@ All notable changes to this project will be documented in this file.
 - Change font style and size in README
 - Use bold text for zalgo logo to avoid h1 border clipping
 - Use processed PNG logo instead of SVG/text for zalgo header ([#23](https://github.com/randomm/oo/pull/23))
-
-### Miscellaneous
-
-- Regenerate release.yml for pr-run-mode upload

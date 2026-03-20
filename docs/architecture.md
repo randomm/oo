@@ -234,6 +234,6 @@ See [Security Model](security-model.md) for details on:
 
 ## Further Reading
 
-- [Testing Guide](testing.md) — How to test each component
+- [Testing Guide](testing.md) — How to test each component and testing walkthrough
 - [Patterns](patterns.md) — Creating custom patterns
 - [Learning Patterns](learn.md) — LLM-based pattern generation
