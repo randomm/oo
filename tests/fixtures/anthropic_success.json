@@ -1,0 +1,8 @@
+{
+  "id": "msg-test",
+  "type": "message",
+  "content": [{
+    "type": "text",
+    "text": "command_match = \"^echo\"\n\n[success]\npattern = '(?P<out>.+)'\nsummary = \"{out}\""
+  }]
+}
