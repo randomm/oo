@@ -48,35 +48,46 @@ commands for you and collapses their output to what the agent actually needs.
 
 ## Output Tiers
 
+**Without oo:** Your agent receives the full output.
 ```
-$ oo ls -la
-total 48
-drwxr-xr-x  8 user user 4096 Mar  2 09:00 .
-...
-```
-Small output (≤ 4 KB) passes through verbatim — no wrapping, no prefix.
+$ cargo test
+   Compiling myapp v0.1.0 (/path/to/myapp)
+    Finished test [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src/lib.rs (target/debug/deps/myapp)
 
+running 47 tests
+test auth::tests::login_success ... ok
+test auth::tests::login_invalid_password ... ok
+test db::tests::connection_pool ... ok
+... 44 more tests ...
+test result: ok. 47 passed; 0 failed; finished in 2.1s
 ```
-$ oo pytest tests/
-✓ pytest (47 passed, 3.2s)
+
+**With oo:** Your agent gets the signal.
 ```
+$ oo cargo test
+✓ cargo test (47 passed, 2.1s)
+```
+
 Large output with a known success pattern collapses to a single summary line.
 
+**When things fail:** Actionable errors, no noise.
 ```
 $ oo pytest tests/
 ✗ pytest
 
 FAILED tests/test_api.py::test_login - AssertionError: expected 200, got 401
-...
-[last 30 lines of output]
+FAILED tests/test_api.py::test_create_user - ValueError: email already exists
+=== 2 failed, 45 passed in 1.8s ===
 ```
-Failure output is filtered to the actionable tail (or custom strategy per tool).
+Failure output is filtered to the actionable tail.
 
+**Large unrecognised output:** Indexed for retrieval.
 ```
 $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
-Large unrecognised output is indexed locally; query it with `oo recall`.
+Query indexed output with `oo recall "<terms>"`. Small outputs pass through unchanged.
 Output handling depends on command category: content commands like `git show` and `git diff` always pass through regardless of size, while data commands like `git log` and `ls` are indexed when large. See the [patterns guide](docs/patterns.md#command-categories) for details.
 
 ---
@@ -145,7 +156,7 @@ Add this to your system prompt or `CLAUDE.md`:
 Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs.
 ```
 
-That's it. The agent runs `oo cargo test`, gets `✓ cargo test (53 passed, 1.4s)`,
+That's it. The agent runs `oo cargo test`, gets `✓ cargo test (47 passed, 2.1s)`,
 and moves on.
 
 ---
