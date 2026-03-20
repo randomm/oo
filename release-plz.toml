@@ -1,0 +1,12 @@
+[workspace]
+# Generate changelog from conventional commits
+changelog_config = "cliff.toml"
+# Publish to crates.io
+publish = true
+# Release flow: merge to main → release-plz creates v{version} tag → triggers cargo-dist release.yml
+# Create git tags automatically (triggers cargo-dist)
+git_tag_enable = true
+# Custom tag name format: v0.1.0 (matches cargo-dist trigger pattern 'v*')
+git_tag_name = "v{{ version }}"
+# Don't create GitHub releases (cargo-dist handles that)
+git_release_enable = false
