@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: ubicloud-standard-4
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
