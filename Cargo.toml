@@ -1,0 +1,87 @@
+[package]
+name = "double-o"
+version = "0.4.1"
+edition = "2024"
+rust-version = "1.85"
+description = "Context-efficient command runner for AI coding agents"
+license = "Apache-2.0"
+repository = "https://github.com/randomm/oo"
+homepage = "https://github.com/randomm/oo"
+documentation = "https://docs.rs/double-o"
+keywords = ["ai", "cli", "shell", "token-efficiency", "agents"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+authors = ["Janni Turunen"]
+exclude = [
+    ".github/",
+    "AGENTS.md",
+    "cliff.toml",
+    "release-plz.toml",
+    ".gitignore",
+    ".worktrees/",
+]
+
+[lib]
+name = "double_o"
+path = "src/lib.rs"
+
+[[bin]]
+name = "oo"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+humansize = "2"
+libc = "0.2"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+toml = "0.8"
+ureq = { version = "3", features = ["json"] }
+uuid = { version = "1", features = ["v4"] }
+vipune = { version = "0.1", optional = true }
+
+[features]
+default = []
+vipune-store = ["vipune"]
+
+[dev-dependencies]
+assert_cmd = "2"
+mockito = "1"
+predicates = "3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+strip = true
+
+[workspace]
+members = ["."]
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.30.4"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = []
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+# Which actions to run on pull requests
+pr-run-mode = "upload"
+
+[workspace.metadata.dist.github-custom-runners]
+aarch64-apple-darwin = "macos-14"
+aarch64-unknown-linux-gnu = "ubicloud-standard-4-arm"
+x86_64-unknown-linux-gnu = "ubicloud-standard-4"
+global = "ubicloud-standard-2"
