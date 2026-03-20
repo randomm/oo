@@ -1,6 +1,6 @@
 [package]
 name = "double-o"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.85"
 description = "Context-efficient command runner for AI coding agents"
