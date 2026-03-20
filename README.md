@@ -179,7 +179,7 @@ and moves on.
 | `cargo clippy` | quiet | smart truncate |
 
 Add your own patterns with `oo learn <cmd>` (generates a TOML pattern file via
-LLM) or write one manually in `~/.local/share/oo/patterns/`.
+LLM) or write one manually in `~/.config/oo/patterns/`.
 
 ---
 
