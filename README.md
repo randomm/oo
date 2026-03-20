@@ -102,17 +102,17 @@ Download from [GitHub Releases](https://github.com/randomm/oo/releases/latest):
 # macOS (Apple Silicon)
 curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-aarch64-apple-darwin.tar.xz
 tar xf double-o-aarch64-apple-darwin.tar.xz
-sudo mv oo /usr/local/bin/
+sudo mv double-o-aarch64-apple-darwin/oo /usr/local/bin/
 
 # Linux (x86_64)
 curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-x86_64-unknown-linux-gnu.tar.xz
 tar xf double-o-x86_64-unknown-linux-gnu.tar.xz
-sudo mv oo /usr/local/bin/
+sudo mv double-o-x86_64-unknown-linux-gnu/oo /usr/local/bin/
 
 # Linux (ARM64)
 curl -LO https://github.com/randomm/oo/releases/latest/download/double-o-aarch64-unknown-linux-gnu.tar.xz
 tar xf double-o-aarch64-unknown-linux-gnu.tar.xz
-sudo mv oo /usr/local/bin/
+sudo mv double-o-aarch64-unknown-linux-gnu/oo /usr/local/bin/
 ```
 
 ### From crates.io
