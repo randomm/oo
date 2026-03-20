@@ -207,6 +207,20 @@ real output to analyze. See [Learning Patterns](docs/learn.md).
 
 ---
 
+## Documentation
+
+**[Documentation Index](docs/README.md)** — Extensive project documentation:
+- [Testing Guide](docs/testing.md) — How to run, write, and understand tests
+- [Architecture](docs/architecture.md) — System design and module responsibilities
+- [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [Custom Patterns](docs/patterns.md) — Creating patterns for command output compression
+- [Learning Patterns](docs/learn.md) — Using `oo learn` to generate patterns automatically
+
+**For contributors**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and workflow.
+**For agents**: See [AGENTS.md](AGENTS.md) for project-specific agent conventions.
+
+---
+
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).

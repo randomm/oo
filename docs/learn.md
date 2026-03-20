@@ -18,7 +18,7 @@ pattern to `~/.config/oo/patterns/`.
 ```toml
 [learn]
 provider    = "anthropic"                    # default
-model       = "claude-haiku-4-5-20251001"    # optional
+model       = "claude-haiku-4-5"             # optional
 api_key_env = "ANTHROPIC_API_KEY"            # env var holding the key
 ```
 
@@ -29,7 +29,7 @@ the `ANTHROPIC_API_KEY` environment variable if the `[learn]` section is absent.
 
 | Provider | Env Var | Default Model |
 |----------|---------|---------------|
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 
 The provider is determined from the configured provider or auto-detected from
 the available API key.
