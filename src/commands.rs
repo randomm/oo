@@ -65,10 +65,15 @@ pub fn cmd_run(args: &[String]) -> i32 {
         return 1;
     }
 
-    // Load patterns: user patterns first (override), then builtins
+    // Load patterns: project-local first, then user config, then builtins.
+    // First match wins, so project patterns override user patterns override builtins.
+    let project_patterns = load_project_patterns();
     let user_patterns = pattern::load_user_patterns(&learn::patterns_dir());
     let builtin_patterns = pattern::builtins();
     let mut all_patterns: Vec<&pattern::Pattern> = Vec::new();
+    for p in &project_patterns {
+        all_patterns.push(p);
+    }
     for p in &user_patterns {
         all_patterns.push(p);
     }
@@ -406,16 +411,13 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// List learned pattern files from the given directory.
+/// Print pattern entries from a single directory, returning true if any were found.
 ///
-/// Extracted for testability — callers pass in the resolved patterns dir.
-pub fn cmd_patterns_in(dir: &Path) -> i32 {
+/// Each line is printed with a two-space indent so callers can add section headers.
+pub fn list_patterns_in(dir: &Path) -> bool {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => {
-            println!("no learned patterns yet");
-            return 0;
-        }
+        Err(_) => return false,
     };
 
     let mut found = false;
@@ -424,7 +426,6 @@ pub fn cmd_patterns_in(dir: &Path) -> i32 {
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        // Parse the file once, extract all three fields from the single Value
         let parsed = std::fs::read_to_string(&path)
             .ok()
             .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
@@ -435,7 +436,6 @@ pub fn cmd_patterns_in(dir: &Path) -> i32 {
         let has_success = parsed.as_ref().and_then(|v| v.get("success")).is_some();
         let has_failure = parsed.as_ref().and_then(|v| v.get("failure")).is_some();
 
-        // Only mark found after a valid parse; skip corrupt files silently
         if parsed.is_none() {
             continue;
         }
@@ -450,20 +450,50 @@ pub fn cmd_patterns_in(dir: &Path) -> i32 {
             flags.push("failure");
         }
         if flags.is_empty() {
-            println!("{cmd_match}");
+            println!("  {cmd_match}");
         } else {
-            println!("{cmd_match}  [{}]", flags.join("] ["));
+            println!("  {cmd_match}  [{}]", flags.join("] ["));
         }
     }
+    found
+}
 
-    if !found {
+/// List learned pattern files from a single directory (legacy test helper).
+pub fn cmd_patterns_in(dir: &Path) -> i32 {
+    if !list_patterns_in(dir) {
         println!("no learned patterns yet");
     }
     0
 }
 
+/// List patterns from both project-local and user config directories.
 pub fn cmd_patterns() -> i32 {
-    cmd_patterns_in(&learn::patterns_dir())
+    let project_dir = std::env::current_dir()
+        .map(|cwd| init::project_patterns_dir(&cwd))
+        .ok();
+    let user_dir = learn::patterns_dir();
+
+    let mut total_found = false;
+
+    if let Some(ref pdir) = project_dir {
+        if pdir.exists() {
+            println!("Project ({}):", pdir.display());
+            if list_patterns_in(pdir) {
+                total_found = true;
+            }
+            println!();
+        }
+    }
+
+    println!("User ({}):", user_dir.display());
+    if list_patterns_in(&user_dir) {
+        total_found = true;
+    }
+
+    if !total_found {
+        println!("no patterns yet");
+    }
+    0
 }
 
 pub fn cmd_help(cmd: &str) -> i32 {
@@ -487,6 +517,17 @@ pub fn cmd_init(format: InitFormat) -> i32 {
             1
         }
     }
+}
+
+/// Load project-local patterns from `<git-root>/.oo/patterns/`.
+///
+/// Returns an empty vec when cwd cannot be determined or the directory
+/// does not exist (gracefully handled by `load_user_patterns`).
+pub fn load_project_patterns() -> Vec<pattern::Pattern> {
+    let Ok(cwd) = std::env::current_dir() else {
+        return Vec::new();
+    };
+    pattern::load_user_patterns(&init::project_patterns_dir(&cwd))
 }
 
 #[cfg(test)]

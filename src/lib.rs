@@ -13,8 +13,9 @@
 //!   and output size. Small successful outputs pass through verbatim, while large outputs
 //!   are pattern-matched to extract terse summaries or indexed for later recall.
 //! - **Patterns**: Regular expressions define how to extract summaries from command output.
-//!   Built-in patterns exist for common tools (pytest, cargo test, npm test, etc.), and
-//!   user-defined patterns can be loaded from TOML files in `~/.config/oo/patterns/`.
+//!   Built-in patterns exist for common tools (pytest, cargo test, npm test, etc.).
+//!   Custom patterns can be loaded from project-local `<git-root>/.oo/patterns/` or
+//!   user-global `~/.config/oo/patterns/` TOML files (project patterns take precedence).
 //! - **Storage**: Large unpatterned outputs are stored in a searchable database (SQLite by
 //!   default, with optional Vipune semantic search). Stored outputs can be recalled with
 //!   full-text search.
@@ -93,8 +94,8 @@ pub use store::{SessionMeta, Store};
 #[doc(hidden)]
 pub use commands::{
     Action, InitFormat, check_and_clear_learn_status, classify_with_refs, cmd_forget, cmd_help,
-    cmd_init, cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_run, parse_action,
-    try_index, write_learn_status,
+    cmd_init, cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_run, load_project_patterns,
+    parse_action, try_index, write_learn_status,
 };
 
 // Internal type re-exported for learn module

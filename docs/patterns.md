@@ -1,7 +1,12 @@
 # Custom Patterns
 
-Patterns live in `~/.config/oo/patterns/` as `.toml` files — one per command.
-User patterns are checked before built-ins, so they override existing behaviour.
+Patterns are `.toml` files — one per command. They are loaded from two locations
+in order, with the first regex match winning:
+
+1. **Project:** `<git-root>/.oo/patterns/` — repo-specific, checked in with the project
+2. **User:** `~/.config/oo/patterns/` — personal patterns across all projects
+
+Both layers are checked before built-in patterns, so custom patterns always override.
 
 ## TOML format
 

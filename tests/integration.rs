@@ -444,15 +444,14 @@ fn test_dispatch_init() {
 
 #[test]
 fn test_patterns_no_learned_patterns() {
-    // When no patterns exist (or patterns dir is absent), exit 0 and print "no learned patterns yet"
-    // Set XDG_CONFIG_HOME so that dirs::config_dir() on Linux respects the temp HOME.
+    // When no patterns exist (or patterns dir is absent), exit 0 and print "no patterns yet"
     let dir = TempDir::new().unwrap();
     oo().arg("patterns")
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path().join(".config"))
         .assert()
         .success()
-        .stdout(predicate::str::contains("no learned patterns yet"));
+        .stdout(predicate::str::contains("no patterns yet"));
 }
 
 #[test]
@@ -536,4 +535,58 @@ fn test_help_with_valid_command() {
         .assert()
         .success()
         .stdout(predicate::str::is_empty().not());
+}
+
+// ---------------------------------------------------------------------------
+// project patterns (.oo/patterns)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_project_patterns_listed_when_present() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let pat_dir = dir.path().join(".oo").join("patterns");
+    std::fs::create_dir_all(&pat_dir).unwrap();
+    std::fs::write(
+        pat_dir.join("mytest.toml"),
+        "command_match = \"^mytest\"\n[success]\npattern = '(?P<n>\\d+) ok'\nsummary = \"{n} ok\"\n",
+    )
+    .unwrap();
+
+    oo().arg("patterns")
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path().join(".config"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Project"))
+        .stdout(predicate::str::contains("^mytest"));
+}
+
+#[test]
+fn test_project_patterns_override_builtins() {
+    // Create a project pattern for "echo" with a success pattern that matches
+    // the output, proving project patterns are loaded and take effect.
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let pat_dir = dir.path().join(".oo").join("patterns");
+    std::fs::create_dir_all(&pat_dir).unwrap();
+
+    // A pattern that matches "echo" and summarises any output as "proj-match"
+    std::fs::write(
+        pat_dir.join("echo.toml"),
+        "command_match = \"^echo\\\\b\"\n[success]\npattern = '(?s)(?P<all>.+)'\nsummary = \"proj-match\"\n",
+    )
+    .unwrap();
+
+    // Generate enough output to exceed SMALL_THRESHOLD so the pattern is consulted.
+    // SMALL_THRESHOLD is 4096 bytes; we need > 4096 bytes of output.
+    let big_arg = "x".repeat(5000);
+    oo().args(["echo", &big_arg])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path().join(".config"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("proj-match"));
 }
