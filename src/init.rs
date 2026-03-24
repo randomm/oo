@@ -68,6 +68,14 @@ pub const HOOKS_JSON: &str = r#"{
 }
 "#;
 
+/// Resolve the project-local patterns directory: `<git-root>/.oo/patterns`.
+///
+/// Used by the pattern loader to pick up repo-specific patterns before
+/// user-global ones (`~/.config/oo/patterns`).
+pub fn project_patterns_dir(cwd: &Path) -> PathBuf {
+    find_root(cwd).join(".oo").join("patterns")
+}
+
 /// Resolve the directory in which to create `.claude/`.
 ///
 /// Walks upward from `cwd` looking for a `.git` directory — this is the git
@@ -302,6 +310,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         // No .git → cwd is returned as-is.
         assert_eq!(find_root(dir.path()), dir.path());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_patterns_dir
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_patterns_dir_is_under_git_root() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let sub = dir.path().join("a").join("b");
+        fs::create_dir_all(&sub).unwrap();
+
+        let result = project_patterns_dir(&sub);
+        assert_eq!(result, dir.path().join(".oo").join("patterns"));
+    }
+
+    #[test]
+    fn project_patterns_dir_no_git_uses_cwd() {
+        let dir = TempDir::new().unwrap();
+        let result = project_patterns_dir(dir.path());
+        assert_eq!(result, dir.path().join(".oo").join("patterns"));
     }
 
     // -----------------------------------------------------------------------
