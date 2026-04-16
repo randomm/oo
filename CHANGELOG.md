@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2026-04-16
+
+### Features
+
+- *(distribution)* Enable shell installer ([#143](https://github.com/randomm/oo/pull/143)) ([#144](https://github.com/randomm/oo/pull/144))
+
+
 ## [0.4.4] - 2026-03-20
 
 
