@@ -538,6 +538,40 @@ fn test_help_with_valid_command() {
 }
 
 // ---------------------------------------------------------------------------
+// cargo-dist configuration verification
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cargo_toml_has_shell_installer_enabled() {
+    // Verify that Cargo.toml configures shell installer for cargo-dist
+    let cargo_toml = include_str!("../Cargo.toml");
+    assert!(
+        cargo_toml.contains(r#"installers = ["shell"]"#),
+        "Cargo.toml must have shell installer enabled: installers = [\"shell\"]"
+    );
+}
+
+#[test]
+fn test_cargo_toml_has_install_path_cargo_home() {
+    // Verify that Cargo.toml configures install-path as CARGO_HOME
+    let cargo_toml = include_str!("../Cargo.toml");
+    assert!(
+        cargo_toml.contains(r#"install-path = "CARGO_HOME""#),
+        "Cargo.toml must have install-path = \"CARGO_HOME\""
+    );
+}
+
+#[test]
+fn test_cargo_toml_has_cargo_dist_version() {
+    // Verify that Cargo.toml specifies a cargo-dist version
+    let cargo_toml = include_str!("../Cargo.toml");
+    assert!(
+        cargo_toml.contains("cargo-dist-version ="),
+        "Cargo.toml must specify cargo-dist-version for dist config"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // project patterns (.oo/patterns)
 // ---------------------------------------------------------------------------
 

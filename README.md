@@ -94,6 +94,14 @@ Output handling depends on command category: content commands like `git show` an
 
 ## Installation
 
+### Quick install (macOS and Linux)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/oo-installer.sh | sh
+```
+
+> The installer detects your platform, downloads the correct binary, and adds it to `~/.cargo/bin/` by default. If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available. Use `--prefix=/usr/local` for system-wide installs.
+
 ### Pre-built binaries (recommended)
 
 Download from [GitHub Releases](https://github.com/randomm/oo/releases/latest):
