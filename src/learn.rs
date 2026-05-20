@@ -5,11 +5,19 @@ use serde::Deserialize;
 
 use crate::error::Error;
 pub use crate::learn_prompt::SYSTEM_PROMPT;
-use crate::pattern::FailureSection;
 
 // ---------------------------------------------------------------------------
-// Config
+// Config & Validation limits
 // ---------------------------------------------------------------------------
+
+/// Maximum allowed length for hint text to prevent payload bloat.
+const MAX_HINT_LENGTH: usize = 1000;
+
+/// Maximum allowed length for command text used in LLM prompt.
+const MAX_COMMAND_LENGTH: usize = 100;
+
+/// Maximum allowed length for a single filename component after sanitization.
+const MAX_FILENAME_COMPONENT: usize = 50;
 
 #[derive(Deserialize)]
 struct ConfigFile {
@@ -127,14 +135,31 @@ pub(crate) fn run_learn_with_config(
     output: &str,
     exit_code: i32,
 ) -> Result<(), Error> {
-    let user_msg = if let Some(hint) = params.hint {
+    let hint = match params.hint {
+        Some(h) if h.len() > MAX_HINT_LENGTH => {
+            return Err(Error::Learn(format!(
+                "--hint too long ({} > {} chars)",
+                h.len(),
+                MAX_HINT_LENGTH
+            )));
+        }
+        h => h,
+    };
+
+    let truncated_command = if command.len() > MAX_COMMAND_LENGTH {
+        &command[..MAX_COMMAND_LENGTH]
+    } else {
+        command
+    };
+
+    let user_msg = if let Some(h) = hint {
         format!(
-            "Command: {command}\nExit code: {exit_code}\nHint: {hint}\nOutput:\n{}",
+            "Command: {truncated_command}\nExit code: {exit_code}\nHint: {h}\nOutput:\n{}",
             truncate_for_prompt(output)
         )
     } else {
         format!(
-            "Command: {command}\nExit code: {exit_code}\nOutput:\n{}",
+            "Command: {truncated_command}\nExit code: {exit_code}\nOutput:\n{}",
             truncate_for_prompt(output)
         )
     };
@@ -152,8 +177,25 @@ pub(crate) fn run_learn_with_config(
     let mut last_err;
     let toml = get_response(&user_msg)?;
     let clean = crate::learn_utils::strip_fences(&toml);
-    match validate_pattern_toml(&clean) {
-        Ok(()) => {
+    if validate_pattern_toml_with_limits(&clean).is_ok() {
+        std::fs::create_dir_all(params.patterns_dir).map_err(|e| Error::Learn(e.to_string()))?;
+        let filename = format!("{}.toml", label(command));
+        let path = params.patterns_dir.join(&filename);
+        std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
+        let _ =
+            crate::commands::write_learn_status(params.learn_status_path, &label(command), &path);
+        return Ok(());
+    }
+    last_err = "initial TOML validation failed".to_string();
+
+    // Up to 2 retries
+    for _ in 0..2 {
+        let retry_msg = format!(
+            "Your previous TOML was invalid: {last_err}. Here is what you returned:\n{clean}\nOutput ONLY the corrected TOML, nothing else."
+        );
+        let toml = get_response(&retry_msg)?;
+        let clean = crate::learn_utils::strip_fences(&toml);
+        if validate_pattern_toml_with_limits(&clean).is_ok() {
             std::fs::create_dir_all(params.patterns_dir)
                 .map_err(|e| Error::Learn(e.to_string()))?;
             let filename = format!("{}.toml", label(command));
@@ -166,32 +208,7 @@ pub(crate) fn run_learn_with_config(
             );
             return Ok(());
         }
-        Err(e) => last_err = e,
-    }
-
-    // Up to 2 retries
-    for _ in 0..2 {
-        let retry_msg = format!(
-            "Your previous TOML was invalid: {last_err}. Here is what you returned:\n{clean}\nOutput ONLY the corrected TOML, nothing else."
-        );
-        let toml = get_response(&retry_msg)?;
-        let clean = crate::learn_utils::strip_fences(&toml);
-        match validate_pattern_toml(&clean) {
-            Ok(()) => {
-                std::fs::create_dir_all(params.patterns_dir)
-                    .map_err(|e| Error::Learn(e.to_string()))?;
-                let filename = format!("{}.toml", label(command));
-                let path = params.patterns_dir.join(&filename);
-                std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
-                let _ = crate::commands::write_learn_status(
-                    params.learn_status_path,
-                    &label(command),
-                    &path,
-                );
-                return Ok(());
-            }
-            Err(e) => last_err = e,
-        }
+        last_err = "retry TOML validation failed".to_string();
     }
 
     Err(Error::Learn(format!("failed after 3 attempts: {last_err}")))
@@ -296,7 +313,15 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 
     let command = &data.command;
     let output = &data.output;
-    let exit_code = data.exit_code as i32;
+
+    // Explicit bounds check to avoid silent truncation i64→i32
+    let exit_code = i32::try_from(data.exit_code).map_err(|_| {
+        Error::Learn(format!(
+            "exit_code out of range for i32: {}",
+            data.exit_code
+        ))
+    })?;
+
     let hint = data.hint.as_deref();
 
     let result = run_learn_with_hint(command, output, exit_code, hint);
@@ -332,7 +357,17 @@ fn call_anthropic(
         "messages": [{"role": "user", "content": user_msg}],
     });
 
-    let response: serde_json::Value = ureq::post(base_url)
+    use std::time::Duration;
+
+    // Configure Agent with explicit timeout to prevent hanging on API calls
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(30)))
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .build()
+        .into();
+
+    let response: serde_json::Value = agent
+        .post(base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
@@ -360,22 +395,36 @@ fn label(command: &str) -> String {
         .rsplit('/')
         .next()
         .unwrap_or("unknown");
+
+    // Sanitize first word: keep only ASCII alphanumeric and hyphens,
+    // prevent path traversal, dotfiles, special chars, overlong filenames.
+    let sanitized_first: String = first
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(MAX_FILENAME_COMPONENT)
+        .collect();
+
+    if sanitized_first.is_empty() {
+        return "unknown".to_string();
+    }
+
     // Include the second word only when it is a subcommand (not a flag).
     match words.next() {
         Some(second) if !second.starts_with('-') => {
             // Sanitize: keep only ASCII alphanumeric and hyphens to ensure
             // the label is safe as a filename component.
-            let sanitized: String = second
+            let sanitized_second: String = second
                 .chars()
                 .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(MAX_FILENAME_COMPONENT)
                 .collect();
-            if sanitized.is_empty() {
-                first.to_string()
+            if sanitized_second.is_empty() {
+                sanitized_first
             } else {
-                format!("{first}-{sanitized}")
+                format!("{sanitized_first}-{sanitized_second}")
             }
         }
-        _ => first.to_string(),
+        _ => sanitized_first,
     }
 }
 
@@ -401,75 +450,12 @@ fn validate_anthropic_url(url: &str) -> Result<(), Error> {
     )))
 }
 
-fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {
-    // Try to parse as our pattern format
-    #[derive(Deserialize)]
-    struct Check {
-        command_match: String,
-        // Deserialization target: field must exist for TOML parsing even if not read in code
-        #[allow(dead_code)] // used only for TOML deserialization validation
-        success: Option<SuccessCheck>,
-        failure: Option<FailureSection>,
-    }
-    #[derive(Deserialize)]
-    struct SuccessCheck {
-        pattern: String,
-        // Deserialization target: field must exist for TOML parsing even if not read in code
-        #[allow(dead_code)] // used only for TOML deserialization validation
-        summary: String,
-    }
-
-    let check: Check =
-        toml::from_str(toml_str).map_err(|e| Error::Learn(format!("invalid TOML: {e}")))?;
-
-    // Verify regexes compile
-    regex::Regex::new(&check.command_match)
-        .map_err(|e| Error::Learn(format!("invalid command_match regex: {e}")))?;
-
-    if let Some(s) = &check.success {
-        regex::Regex::new(&s.pattern)
-            .map_err(|e| Error::Learn(format!("invalid success pattern regex: {e}")))?;
-    }
-
-    if let Some(f) = &check.failure {
-        match f.strategy.as_deref().unwrap_or("tail") {
-            "grep" => {
-                let pat = f.grep_pattern.as_deref().ok_or_else(|| {
-                    Error::Learn("failure grep strategy requires a 'grep' field".into())
-                })?;
-                if pat.is_empty() {
-                    return Err(Error::Learn("failure grep regex must not be empty".into()));
-                }
-                regex::Regex::new(pat)
-                    .map_err(|e| Error::Learn(format!("invalid failure grep regex: {e}")))?;
-            }
-            "between" => {
-                let start = f.start.as_deref().ok_or_else(|| {
-                    Error::Learn("between strategy requires 'start' field".into())
-                })?;
-                if start.is_empty() {
-                    return Err(Error::Learn("between 'start' must not be empty".into()));
-                }
-                regex::Regex::new(start)
-                    .map_err(|e| Error::Learn(format!("invalid start regex: {e}")))?;
-                let end = f
-                    .end
-                    .as_deref()
-                    .ok_or_else(|| Error::Learn("between strategy requires 'end' field".into()))?;
-                if end.is_empty() {
-                    return Err(Error::Learn("between 'end' must not be empty".into()));
-                }
-                regex::Regex::new(end)
-                    .map_err(|e| Error::Learn(format!("invalid end regex: {e}")))?;
-            }
-            "tail" | "head" => {} // no regex to validate
-            other => {
-                return Err(Error::Learn(format!("unknown failure strategy: {other}")));
-            }
-        }
-    }
-
-    Ok(())
+/// Validate a TOML pattern string using the same regex limits as TOML loading.
+///
+/// Uses `validate_pattern_regexes` from pattern::toml module for consistency.
+fn validate_pattern_toml_with_limits(toml_str: &str) -> Result<(), Error> {
+    crate::pattern::validate_pattern_regexes(toml_str)
+        .map_err(|e| Error::Learn(format!("pattern validation: {e}")))
 }
 
 // Tests live in separate files to keep this module under 500 lines.

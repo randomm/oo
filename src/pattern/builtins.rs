@@ -153,74 +153,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             }),
             failure: None,
         },
-        // npm test
-        Pattern {
-            command_match: Regex::new(r"\bnpm\s+test\b")
-                .expect("valid regex: npm test command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(
-                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                    )
-                    .expect("valid regex: npm test success pattern"),
-                    summary: "{passed} passed, {time}s".into(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // yarn test
-        Pattern {
-            command_match: Regex::new(r"\byarn\s+test\b")
-                .expect("valid regex: yarn test command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(
-                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                    )
-                    .expect("valid regex: yarn test success pattern"),
-                    summary: "{passed} passed, {time}s".into(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // pnpm test
-        Pattern {
-            command_match: Regex::new(r"\bpnpm\s+test\b")
-                .expect("valid regex: pnpm test command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(
-                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                    )
-                    .expect("valid regex: pnpm test success pattern"),
-                    summary: "{passed} passed, {time}s".into(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
-        // bun test
-        Pattern {
-            command_match: Regex::new(r"\bbun\s+test\b")
-                .expect("valid regex: bun test command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(
-                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                    )
-                    .expect("valid regex: bun test success pattern"),
-                    summary: "{passed} passed, {time}s".into(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Tail { lines: 30 },
-            }),
-        },
+        // npm/yarn/pnpm/bun test (shared pattern)
+        nodejs_test_pattern(r"npm\s+test"),
+        nodejs_test_pattern(r"yarn\s+test"),
+        nodejs_test_pattern(r"pnpm\s+test"),
+        nodejs_test_pattern(r"bun\s+test"),
         // cargo tarpaulin (coverage)
         Pattern {
             command_match: Regex::new(r"\bcargo\s+tarpaulin\b")
@@ -343,35 +280,54 @@ pub fn builtin_patterns() -> Vec<Pattern> {
                 strategy: FailureStrategy::Head { lines: 20 },
             }),
         },
-        // pnpm build
-        Pattern {
-            command_match: Regex::new(r"\bpnpm\s+build\b")
-                .expect("valid regex: pnpm build command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(r"(?s).*")
-                        .expect("valid regex: pnpm build success pattern (always matches)"),
-                    summary: String::new(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Head { lines: 20 },
-            }),
-        },
-        // bun build
-        Pattern {
-            command_match: Regex::new(r"\bbun\s+build\b")
-                .expect("valid regex: bun build command_match"),
-            success: Some(SuccessPattern {
-                strategy: SuccessStrategy::Regex {
-                    pattern: Regex::new(r"(?s).*")
-                        .expect("valid regex: bun build success pattern (always matches)"),
-                    summary: String::new(),
-                },
-            }),
-            failure: Some(FailurePattern {
-                strategy: FailureStrategy::Head { lines: 20 },
-            }),
-        },
+        // pnpm build (quiet)
+        nodejs_quiet_build_pattern(r"pnpm\s+build"),
+        // bun build (quiet)
+        nodejs_quiet_build_pattern(r"bun\s+build"),
     ]
+}
+
+/// Create a test pattern for Node.js package managers (npm/yarn/pnpm/bun).
+///
+/// All these tools report test output in the same format:
+/// - Success: "Tests: N passed... Time: X.XX s"
+/// - Failure: show last 30 lines
+fn nodejs_test_pattern(command_match: &str) -> Pattern {
+    Pattern {
+        command_match: Regex::new(command_match)
+            .unwrap_or_else(|e| panic!("valid regex: {command_match} command_match: {e}")),
+        success: Some(SuccessPattern {
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(
+                    r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
+                )
+                .expect("valid regex: nodejs test success pattern"),
+                summary: "{passed} passed, {time}s".into(),
+            },
+        }),
+        failure: Some(FailurePattern {
+            strategy: FailureStrategy::Tail { lines: 30 },
+        }),
+    }
+}
+
+/// Create a quiet build pattern for Node.js package managers (pnpm/bun).
+///
+/// These tools succeed with verbose output that should be hidden.
+/// On failure, show the first 20 lines where errors typically appear.
+fn nodejs_quiet_build_pattern(command_match: &str) -> Pattern {
+    Pattern {
+        command_match: Regex::new(command_match)
+            .unwrap_or_else(|e| panic!("valid regex: {command_match} command_match: {e}")),
+        success: Some(SuccessPattern {
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(r"(?s).*")
+                    .expect("valid regex: nodejs quiet build success pattern (always matches)"),
+                summary: String::new(),
+            },
+        }),
+        failure: Some(FailurePattern {
+            strategy: FailureStrategy::Head { lines: 20 },
+        }),
+    }
 }

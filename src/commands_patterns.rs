@@ -4,6 +4,25 @@ use std::path::Path;
 
 use crate::{init, learn, pattern};
 
+/// Print a single pattern entry with flags.
+///
+/// Helper function to reduce duplication in pattern listing code.
+/// Prints the command_match with optional success/failure flags.
+fn print_pattern_entry(cmd_match: &str, has_success: bool, has_failure: bool) {
+    if has_success || has_failure {
+        let mut flags = Vec::new();
+        if has_success {
+            flags.push("success");
+        }
+        if has_failure {
+            flags.push("failure");
+        }
+        println!("  {cmd_match}  [{}]", flags.join("] ["));
+    } else {
+        println!("  {cmd_match}");
+    }
+}
+
 /// Print pattern entries from a single directory, returning true if any were found.
 ///
 /// Each line is printed with a two-space indent so callers can add section headers.
@@ -35,18 +54,7 @@ pub fn list_patterns_in(dir: &Path) -> bool {
         found = true;
         let cmd_match = cmd_match.unwrap_or_else(|| "(unknown)".into());
 
-        let mut flags = Vec::new();
-        if has_success {
-            flags.push("success");
-        }
-        if has_failure {
-            flags.push("failure");
-        }
-        if flags.is_empty() {
-            println!("  {cmd_match}");
-        } else {
-            println!("  {cmd_match}  [{}]", flags.join("] ["));
-        }
+        print_pattern_entry(&cmd_match, has_success, has_failure);
     }
     found
 }
@@ -71,18 +79,7 @@ fn list_builtins_in() -> bool {
         let has_success = pat.success.is_some();
         let has_failure = pat.failure.is_some();
 
-        let mut flags = Vec::new();
-        if has_success {
-            flags.push("success");
-        }
-        if has_failure {
-            flags.push("failure");
-        }
-        if flags.is_empty() {
-            println!("  {cmd_match}");
-        } else {
-            println!("  {cmd_match}  [{}]", flags.join("] ["));
-        }
+        print_pattern_entry(cmd_match, has_success, has_failure);
     }
     true
 }

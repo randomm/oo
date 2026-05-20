@@ -19,8 +19,8 @@ const MAX_REGEX_LENGTH: usize = 500;
 /// Size limit for regex compilation (in bytes).
 ///
 /// Prevents pathological regex patterns from consuming excessive memory.
-/// Set to 1 MB - high enough for reasonable patterns but limits pathological cases.
-const REGEX_SIZE_LIMIT: usize = 1024 * 1024; // 1 MB
+/// Set to 100 KB - ample for all reasonable patterns while still limiting ReDOS risk.
+const REGEX_SIZE_LIMIT: usize = 100 * 1024; // 100 KB
 
 /// Validate and compile a user-provided regex string with safety limits.
 ///
@@ -282,4 +282,90 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
         success,
         failure,
     })
+}
+
+/// Validate all regexes in a TOML pattern string with safety limits.
+///
+/// This is used by the learn module to ensure LLM-generated patterns
+/// pass the same validation as manually-written TOML patterns.
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` if TOML is malformed, regex is invalid,
+/// or strategy configuration is incomplete.
+pub fn validate_pattern_regexes(toml_str: &str) -> Result<(), Error> {
+    #[derive(Deserialize)]
+    struct Check {
+        command_match: String,
+        #[serde(default)]
+        success: Option<SuccessSection>,
+        #[serde(default)]
+        failure: Option<FailureSection>,
+    }
+
+    let check: Check =
+        toml::from_str(toml_str).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
+
+    // Validate command_match regex
+    validate_and_compile_regex(&check.command_match)?;
+
+    // Validate success regex if present
+    if let Some(ref s) = check.success {
+        match s.strategy.as_deref().unwrap_or("regex") {
+            "tail" | "head" => {} // no regex to validate
+            "grep" => {
+                let pat = s
+                    .grep_pattern
+                    .as_ref()
+                    .ok_or_else(|| Error::Pattern("grep strategy requires 'grep' field".into()))?;
+                if pat.is_empty() {
+                    return Err(Error::Pattern("grep regex must not be empty".into()));
+                }
+                validate_and_compile_regex(pat)?;
+            }
+            "regex" => {
+                let pattern = s.success_pattern.as_ref().ok_or_else(|| {
+                    Error::Pattern("regex strategy requires 'pattern' field".into())
+                })?;
+                validate_and_compile_regex(pattern)?;
+            }
+            other => return Err(Error::Pattern(format!("unknown success strategy: {other}"))),
+        }
+    }
+
+    // Validate failure regex if present
+    if let Some(ref f) = check.failure {
+        match f.strategy.as_deref().unwrap_or("tail") {
+            "tail" | "head" => {} // no regex to validate
+            "grep" => {
+                let pat = f
+                    .grep_pattern
+                    .as_ref()
+                    .ok_or_else(|| Error::Pattern("grep strategy requires 'grep' field".into()))?;
+                if pat.is_empty() {
+                    return Err(Error::Pattern("grep regex must not be empty".into()));
+                }
+                validate_and_compile_regex(pat)?;
+            }
+            "between" => {
+                let start = f.start.as_ref().ok_or_else(|| {
+                    Error::Pattern("between strategy requires 'start' field".into())
+                })?;
+                let end = f.end.as_ref().ok_or_else(|| {
+                    Error::Pattern("between strategy requires 'end' field".into())
+                })?;
+                if start.is_empty() {
+                    return Err(Error::Pattern("between 'start' must not be empty".into()));
+                }
+                if end.is_empty() {
+                    return Err(Error::Pattern("between 'end' must not be empty".into()));
+                }
+                validate_and_compile_regex(start)?;
+                validate_and_compile_regex(end)?;
+            }
+            other => return Err(Error::Pattern(format!("unknown failure strategy: {other}"))),
+        }
+    }
+
+    Ok(())
 }

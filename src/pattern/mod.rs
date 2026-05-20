@@ -5,6 +5,10 @@ use std::sync::LazyLock;
 pub use self::builtins::builtin_patterns;
 pub use self::toml::{FailureSection, PatternFile, load_user_patterns, parse_pattern_str};
 
+// Internal re-export for learn module
+#[doc(hidden)]
+pub use self::toml::validate_pattern_regexes;
+
 /// Get a reference to the static built-in patterns.
 pub fn builtins() -> &'static [Pattern] {
     &BUILTINS
@@ -120,6 +124,24 @@ pub enum SuccessStrategy {
 // Matching & extraction
 // ---------------------------------------------------------------------------
 
+/// Extract lines matching a regex pattern.
+///
+/// Shared helper for both success and failure grep strategies.
+fn extract_grep(output: &str, pattern: &Regex) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for line in output.lines() {
+        if pattern.is_match(line) {
+            if !first {
+                result.push('\n');
+            }
+            result.push_str(line);
+            first = false;
+        }
+    }
+    result
+}
+
 /// Extract the last N lines from output.
 fn extract_tail(output: &str, lines: usize) -> Option<String> {
     let all: Vec<&str> = output.lines().collect();
@@ -140,20 +162,6 @@ fn extract_head(output: &str, lines: usize) -> Option<String> {
     } else {
         Some(all[..end].join("\n"))
     }
-}
-
-/// Extract the last N lines from output (failure version, never empty).
-fn extract_tail_failure(output: &str, lines: usize) -> String {
-    let all: Vec<&str> = output.lines().collect();
-    let start = all.len().saturating_sub(lines);
-    all[start..].join("\n")
-}
-
-/// Extract the first N lines from output (failure version, never empty).
-fn extract_head_failure(output: &str, lines: usize) -> String {
-    let all: Vec<&str> = output.lines().collect();
-    let end = lines.min(all.len());
-    all[..end].join("\n")
 }
 
 /// Find the first pattern whose `command_match` matches `command`.
@@ -187,17 +195,7 @@ pub fn extract_summary(pat: &SuccessPattern, output: &str) -> Option<String> {
         SuccessStrategy::Tail { lines } => extract_tail(output, *lines),
         SuccessStrategy::Head { lines } => extract_head(output, *lines),
         SuccessStrategy::Grep { pattern } => {
-            let mut result = String::new();
-            let mut first = true;
-            for line in output.lines() {
-                if pattern.is_match(line) {
-                    if !first {
-                        result.push('\n');
-                    }
-                    result.push_str(line);
-                    first = false;
-                }
-            }
+            let result = extract_grep(output, pattern);
             if result.is_empty() {
                 None
             } else {
@@ -210,22 +208,16 @@ pub fn extract_summary(pat: &SuccessPattern, output: &str) -> Option<String> {
 /// Apply a failure strategy to extract actionable output.
 pub fn extract_failure(pat: &FailurePattern, output: &str) -> String {
     match &pat.strategy {
-        FailureStrategy::Tail { lines } => extract_tail_failure(output, *lines),
-        FailureStrategy::Head { lines } => extract_head_failure(output, *lines),
-        FailureStrategy::Grep { pattern } => {
-            let mut result = String::new();
-            let mut first = true;
-            for line in output.lines() {
-                if pattern.is_match(line) {
-                    if !first {
-                        result.push('\n');
-                    }
-                    result.push_str(line);
-                    first = false;
-                }
-            }
-            result
+        FailureStrategy::Tail { lines } => {
+            let all: Vec<&str> = output.lines().collect();
+            let start = all.len().saturating_sub(*lines);
+            all[start..].join("\n")
         }
+        FailureStrategy::Head { lines } => {
+            let all: Vec<&str> = output.lines().collect();
+            all[..*lines.min(&all.len())].join("\n")
+        }
+        FailureStrategy::Grep { pattern, .. } => extract_grep(output, pattern),
         FailureStrategy::Between { start, end } => {
             let mut capturing = false;
             let mut lines = Vec::new();
