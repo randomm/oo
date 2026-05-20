@@ -65,6 +65,9 @@ pub mod error;
 pub mod exec;
 #[doc(hidden)]
 #[allow(missing_docs)]
+pub mod help;
+#[doc(hidden)]
+#[allow(missing_docs)]
 pub mod init;
 /// LLM-powered pattern learning.
 pub mod learn;
@@ -75,10 +78,11 @@ pub mod session;
 /// Storage backends for indexed output.
 pub mod store;
 
+pub mod commands_patterns;
+pub mod learn_prompt;
+pub mod learn_utils;
+
 // CLI internals - hidden from documentation but accessible to binary crate
-#[doc(hidden)]
-#[allow(missing_docs)]
-pub mod help;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod util;

@@ -51,7 +51,7 @@ fn main() {
             println!("Usage: oo <command> [args...]");
             println!("       oo recall <query>");
             println!("       oo forget");
-            println!("       oo learn <command> [args...]");
+            println!("       oo learn [--hint <text>] <command> [args...]");
             println!("       oo help <cmd>");
             println!("       oo version");
             0
@@ -64,7 +64,7 @@ fn main() {
         Action::Run(args) => cmd_run(&args),
         Action::Recall(query) => cmd_recall(&query),
         Action::Forget => cmd_forget(),
-        Action::Learn(args) => cmd_learn(&args),
+        Action::Learn(args, hint) => cmd_learn(&args, hint.as_deref()),
         Action::Init(format) => cmd_init(format),
         Action::Patterns => cmd_patterns(),
     };

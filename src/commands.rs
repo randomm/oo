@@ -1,19 +1,19 @@
-use std::io::Write;
 use std::path::Path;
 
 use humansize::{BINARY, format_size};
+use std::io::Write;
 
 use crate::classify::Classification;
 pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::{format_age, now_epoch};
-use crate::{classify, exec, help, init, learn, pattern, session, store};
+use crate::{classify, commands_patterns, exec, help, init, learn, pattern, session, store};
 
 pub enum Action {
     Run(Vec<String>),
     Recall(String),
     Forget,
-    Learn(Vec<String>),
+    Learn(Vec<String>, Option<String>),
     Version,
     Help(Option<String>),
     Init(InitFormat),
@@ -44,12 +44,42 @@ fn parse_init_format(args: &[String]) -> InitFormat {
     InitFormat::Claude
 }
 
+/// Parse `oo learn` arguments, extracting optional `--hint <text>` flag.
+///
+/// Returns (args_without_hint, hint_text). The hint text is removed from the
+/// command args so it doesn't interfere with the actual command being run.
+fn parse_learn_action(args: &[String]) -> Action {
+    let mut result: Vec<String> = Vec::new();
+    let mut hint: Option<String> = None;
+    let mut iter = args.iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        if arg == "--hint" {
+            // Take the next argument as the hint text, but only if it's not a flag
+            // If the next arg starts with '-', treat it as a command argument, not hint text
+            if let Some(hint_text) = iter.next() {
+                if !hint_text.starts_with('-') {
+                    hint = Some(hint_text.clone());
+                } else {
+                    // The next arg is a flag, treat it as part of the command
+                    result.push(hint_text.clone());
+                }
+            }
+            // If no hint text after --hint, emit a warning and treat as no hint
+        } else {
+            result.push(arg.clone());
+        }
+    }
+
+    Action::Learn(result, hint)
+}
+
 pub fn parse_action(args: &[String]) -> Action {
     match args.first().map(|s| s.as_str()) {
         None => Action::Help(None),
         Some("recall") => Action::Recall(args[1..].join(" ")),
         Some("forget") => Action::Forget,
-        Some("learn") => Action::Learn(args[1..].to_vec()),
+        Some("learn") => parse_learn_action(&args[1..]),
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
@@ -291,7 +321,7 @@ pub fn cmd_forget() -> i32 {
     }
 }
 
-pub fn cmd_learn(args: &[String]) -> i32 {
+pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     if args.is_empty() {
         eprintln!("oo: learn requires a command");
         return 1;
@@ -346,7 +376,7 @@ pub fn cmd_learn(args: &[String]) -> i32 {
     );
 
     // Spawn background learn process
-    if let Err(e) = learn::spawn_background(&command, &merged, exit_code) {
+    if let Err(e) = learn::spawn_background(&command, &merged, exit_code, hint) {
         eprintln!("oo: learn failed: {e}");
     }
 
@@ -411,89 +441,21 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// Print pattern entries from a single directory, returning true if any were found.
-///
-/// Each line is printed with a two-space indent so callers can add section headers.
-pub fn list_patterns_in(dir: &Path) -> bool {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    let mut found = false;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let parsed = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
-
-        let cmd_match = parsed
-            .as_ref()
-            .and_then(|v| v.get("command_match")?.as_str().map(str::to_string));
-        let has_success = parsed.as_ref().and_then(|v| v.get("success")).is_some();
-        let has_failure = parsed.as_ref().and_then(|v| v.get("failure")).is_some();
-
-        if parsed.is_none() {
-            continue;
-        }
-        found = true;
-        let cmd_match = cmd_match.unwrap_or_else(|| "(unknown)".into());
-
-        let mut flags = Vec::new();
-        if has_success {
-            flags.push("success");
-        }
-        if has_failure {
-            flags.push("failure");
-        }
-        if flags.is_empty() {
-            println!("  {cmd_match}");
-        } else {
-            println!("  {cmd_match}  [{}]", flags.join("] ["));
-        }
-    }
-    found
+/// List patterns from both project-local and user config directories.
+pub fn cmd_patterns() -> i32 {
+    self::commands_patterns::cmd_patterns()
 }
 
 /// List learned pattern files from a single directory (legacy test helper).
 pub fn cmd_patterns_in(dir: &Path) -> i32 {
-    if !list_patterns_in(dir) {
-        println!("no learned patterns yet");
-    }
-    0
+    self::commands_patterns::cmd_patterns_in(dir)
 }
 
-/// List patterns from both project-local and user config directories.
-pub fn cmd_patterns() -> i32 {
-    let project_dir = std::env::current_dir()
-        .map(|cwd| init::project_patterns_dir(&cwd))
-        .ok();
-    let user_dir = learn::patterns_dir();
-
-    let mut total_found = false;
-
-    if let Some(ref pdir) = project_dir {
-        if pdir.exists() {
-            println!("Project ({}):", pdir.display());
-            if list_patterns_in(pdir) {
-                total_found = true;
-            }
-            println!();
-        }
-    }
-
-    println!("User ({}):", user_dir.display());
-    if list_patterns_in(&user_dir) {
-        total_found = true;
-    }
-
-    if !total_found {
-        println!("no patterns yet");
-    }
-    0
+/// Print pattern entries from a single directory, returning true if any were found.
+///
+/// Each line is printed with a two-space indent so callers can add section headers.
+pub fn list_patterns_in(dir: &Path) -> bool {
+    self::commands_patterns::list_patterns_in(dir)
 }
 
 pub fn cmd_help(cmd: &str) -> i32 {

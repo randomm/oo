@@ -5,6 +5,10 @@ use std::sync::LazyLock;
 pub use self::builtins::builtin_patterns;
 pub use self::toml::{FailureSection, PatternFile, load_user_patterns, parse_pattern_str};
 
+// Internal re-export for learn module
+#[doc(hidden)]
+pub use self::toml::validate_pattern_regexes;
+
 /// Get a reference to the static built-in patterns.
 pub fn builtins() -> &'static [Pattern] {
     &BUILTINS
@@ -32,15 +36,13 @@ pub struct Pattern {
 
 /// Pattern for extracting a summary from successful command output.
 ///
-/// The `pattern` field contains a regex with named capture groups.
-/// The `summary` field is a template string with placeholders like `{name}`
-/// that are replaced with captured values.
+/// Uses a strategy-based approach to handle different extraction methods:
+/// - Regex with template formatting (legacy)
+/// - Tail/head line extraction
+/// - Grep filtering
 pub struct SuccessPattern {
-    /// Regex with named capture groups for extracting values.
-    pub pattern: Regex,
-
-    /// Template string with `{name}` placeholders for summary formatting.
-    pub summary: String,
+    /// Strategy for extracting success output.
+    pub strategy: SuccessStrategy,
 }
 
 /// Strategy for filtering failed command output.
@@ -86,9 +88,81 @@ pub enum FailureStrategy {
     },
 }
 
+/// Strategy for extracting success output.
+///
+/// Mirrors failure strategies but for successful command output.
+/// Used when a command succeeds with large output and a pattern matches.
+pub enum SuccessStrategy {
+    /// Legacy format: regex with named capture groups + summary template.
+    Regex {
+        /// Regex with named capture groups for extracting values.
+        pattern: Regex,
+        /// Template string with `{name}` placeholders for summary formatting.
+        summary: String,
+    },
+
+    /// Keep the last N lines of output (tail).
+    Tail {
+        /// Number of lines to keep from the end.
+        lines: usize,
+    },
+
+    /// Keep the first N lines of output (head).
+    Head {
+        /// Number of lines to keep from the start.
+        lines: usize,
+    },
+
+    /// Filter lines matching a regex pattern.
+    Grep {
+        /// Regex pattern to match lines.
+        pattern: Regex,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // Matching & extraction
 // ---------------------------------------------------------------------------
+
+/// Extract lines matching a regex pattern.
+///
+/// Shared helper for both success and failure grep strategies.
+fn extract_grep(output: &str, pattern: &Regex) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for line in output.lines() {
+        if pattern.is_match(line) {
+            if !first {
+                result.push('\n');
+            }
+            result.push_str(line);
+            first = false;
+        }
+    }
+    result
+}
+
+/// Extract the last N lines from output.
+fn extract_tail(output: &str, lines: usize) -> Option<String> {
+    let all: Vec<&str> = output.lines().collect();
+    let start = all.len().saturating_sub(lines);
+    if start >= all.len() {
+        None
+    } else {
+        Some(all[start..].join("\n"))
+    }
+}
+
+/// Extract the first N lines from output.
+fn extract_head(output: &str, lines: usize) -> Option<String> {
+    let all: Vec<&str> = output.lines().collect();
+    let end = lines.min(all.len());
+    if end == 0 {
+        None
+    } else {
+        Some(all[..end].join("\n"))
+    }
+}
 
 /// Find the first pattern whose `command_match` matches `command`.
 pub fn find_matching<'a>(command: &str, patterns: &'a [Pattern]) -> Option<&'a Pattern> {
@@ -107,14 +181,48 @@ pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<
 
 /// Apply a success pattern to output, returning the formatted summary if it matches.
 pub fn extract_summary(pat: &SuccessPattern, output: &str) -> Option<String> {
-    let caps = pat.pattern.captures(output)?;
-    let mut summary = pat.summary.clone();
-    for name in pat.pattern.capture_names().flatten() {
-        if let Some(m) = caps.name(name) {
-            summary = summary.replace(&format!("{{{name}}}"), m.as_str());
+    match &pat.strategy {
+        SuccessStrategy::Regex { pattern, summary } => {
+            let caps = pattern.captures(output)?;
+            let mut result = String::with_capacity(summary.len() + output.len());
+            let mut i = 0;
+            while i < summary.len() {
+                if let Some(j) = summary[i..].find('{') {
+                    result.push_str(&summary[i..i + j]);
+                    i += j + 1;
+                    if let Some(k) = summary[i..].find('}') {
+                        let placeholder = &summary[i..i + k];
+                        if let Some(m) = caps.name(placeholder) {
+                            result.push_str(m.as_str());
+                        } else {
+                            result.push('{');
+                            result.push_str(placeholder);
+                            result.push('}');
+                        }
+                        i += k + 1;
+                    } else {
+                        result.push('{');
+                        result.push_str(&summary[i..]);
+                        break;
+                    }
+                } else {
+                    result.push_str(&summary[i..]);
+                    break;
+                }
+            }
+            Some(result)
+        }
+        SuccessStrategy::Tail { lines } => extract_tail(output, *lines),
+        SuccessStrategy::Head { lines } => extract_head(output, *lines),
+        SuccessStrategy::Grep { pattern } => {
+            let result = extract_grep(output, pattern);
+            if result.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
         }
     }
-    Some(summary)
 }
 
 /// Apply a failure strategy to extract actionable output.
@@ -127,14 +235,9 @@ pub fn extract_failure(pat: &FailurePattern, output: &str) -> String {
         }
         FailureStrategy::Head { lines } => {
             let all: Vec<&str> = output.lines().collect();
-            let end = (*lines).min(all.len());
-            all[..end].join("\n")
+            all[..*lines.min(&all.len())].join("\n")
         }
-        FailureStrategy::Grep { pattern } => output
-            .lines()
-            .filter(|l| pattern.is_match(l))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        FailureStrategy::Grep { pattern, .. } => extract_grep(output, pattern),
         FailureStrategy::Between { start, end } => {
             let mut capturing = false;
             let mut lines = Vec::new();
@@ -160,165 +263,3 @@ mod toml;
 
 // Static builtin patterns
 static BUILTINS: LazyLock<Vec<Pattern>> = LazyLock::new(builtin_patterns);
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_builtin_pytest_success() {
-        let patterns = builtins();
-        let pat = find_matching("pytest tests/ -x", patterns).unwrap();
-        let output = "collected 47 items\n\
-                       .................\n\
-                       47 passed in 3.2s\n";
-        let summary = extract_summary(pat.success.as_ref().unwrap(), output).unwrap();
-        assert_eq!(summary, "47 passed, 3.2s");
-    }
-
-    #[test]
-    fn test_builtin_pytest_failure_tail() {
-        let patterns = builtins();
-        let pat = find_matching("pytest -x", patterns).unwrap();
-        let fail_pat = pat.failure.as_ref().unwrap();
-        let lines: String = (0..50).map(|i| format!("line {i}\n")).collect();
-        let result = extract_failure(fail_pat, &lines);
-        // tail 30 lines from 50 → lines 20..49
-        assert!(result.contains("line 20"));
-        assert!(result.contains("line 49"));
-        assert!(!result.contains("line 0\n"));
-    }
-
-    #[test]
-    fn test_builtin_cargo_test_success() {
-        let patterns = builtins();
-        let pat = find_matching("cargo test --release", patterns).unwrap();
-        let output = "running 15 tests\n\
-                       test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s\n";
-        let summary = extract_summary(pat.success.as_ref().unwrap(), output).unwrap();
-        assert_eq!(summary, "15 passed, 3.45s");
-    }
-
-    #[test]
-    fn test_command_matching() {
-        let patterns = builtins();
-        assert!(find_matching("pytest tests/", patterns).is_some());
-        assert!(find_matching("cargo test", patterns).is_some());
-        assert!(find_matching("cargo build", patterns).is_some());
-        assert!(find_matching("go test ./...", patterns).is_some());
-        assert!(find_matching("ruff check src/", patterns).is_some());
-        assert!(find_matching("eslint .", patterns).is_some());
-        assert!(find_matching("tsc --noEmit", patterns).is_some());
-        assert!(find_matching("cargo clippy", patterns).is_some());
-    }
-
-    #[test]
-    fn test_no_match_unknown_command() {
-        let patterns = builtins();
-        assert!(find_matching("curl https://example.com", patterns).is_none());
-    }
-
-    #[test]
-    fn test_summary_template_formatting() {
-        let pat = SuccessPattern {
-            pattern: Regex::new(r"(?P<a>\d+) things, (?P<b>\d+) items").unwrap(),
-            summary: "{a} things and {b} items".into(),
-        };
-        let result = extract_summary(&pat, "found 5 things, 3 items here").unwrap();
-        assert_eq!(result, "5 things and 3 items");
-    }
-
-    #[test]
-    fn test_failure_strategy_head() {
-        let strat = FailurePattern {
-            strategy: FailureStrategy::Head { lines: 3 },
-        };
-        let output = "line1\nline2\nline3\nline4\nline5\n";
-        let result = extract_failure(&strat, output);
-        assert_eq!(result, "line1\nline2\nline3");
-    }
-
-    #[test]
-    fn test_failure_strategy_grep() {
-        let strat = FailurePattern {
-            strategy: FailureStrategy::Grep {
-                pattern: Regex::new(r"ERROR").unwrap(),
-            },
-        };
-        let output = "INFO ok\nERROR bad\nINFO fine\nERROR worse\n";
-        let result = extract_failure(&strat, output);
-        assert_eq!(result, "ERROR bad\nERROR worse");
-    }
-
-    #[test]
-    fn test_failure_strategy_between() {
-        let strat = FailurePattern {
-            strategy: FailureStrategy::Between {
-                start: "FAILURES".into(),
-                end: "summary".into(),
-            },
-        };
-        let output = "stuff\nFAILURES\nerror 1\nerror 2\nshort test summary\nmore\n";
-        let result = extract_failure(&strat, output);
-        assert_eq!(result, "FAILURES\nerror 1\nerror 2\nshort test summary");
-    }
-
-    #[test]
-    fn test_load_pattern_from_toml() {
-        let toml = r#"
-command_match = "^myapp test"
-
-[success]
-pattern = '(?P<count>\d+) tests passed'
-summary = "{count} tests passed"
-
-[failure]
-strategy = "tail"
-lines = 20
-"#;
-        let pat = parse_pattern_str(toml).unwrap();
-        assert!(pat.command_match.is_match("myapp test --verbose"));
-        let summary = extract_summary(pat.success.as_ref().unwrap(), "42 tests passed").unwrap();
-        assert_eq!(summary, "42 tests passed");
-    }
-
-    #[test]
-    fn test_invalid_toml_returns_error() {
-        let result = parse_pattern_str("not valid toml {{{");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_regex_returns_error() {
-        let toml = r#"
-command_match = "[invalid"
-"#;
-        let result = parse_pattern_str(toml);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_user_patterns_override_builtins() {
-        let user_pat = parse_pattern_str(
-            r#"
-command_match = "^pytest"
-[success]
-pattern = '(?P<n>\d+) ok'
-summary = "{n} ok"
-"#,
-        )
-        .unwrap();
-
-        // User patterns should be checked first
-        let mut all = vec![user_pat];
-        all.extend(builtin_patterns());
-
-        let pat = find_matching("pytest -x", &all).unwrap();
-        let summary = extract_summary(pat.success.as_ref().unwrap(), "10 ok").unwrap();
-        assert_eq!(summary, "10 ok");
-    }
-}

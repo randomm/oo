@@ -14,7 +14,7 @@ strategy = "grep"
 grep = "error|Error|FAILED"
 "#;
     assert!(
-        validate_pattern_toml(toml).is_ok(),
+        validate_pattern_toml_with_limits(toml).is_ok(),
         "valid failure grep section should pass"
     );
 }
@@ -28,7 +28,7 @@ command_match = "^myapp"
 strategy = "grep"
 grep = "error("
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(result.is_err(), "invalid grep regex should fail validation");
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -45,7 +45,7 @@ command_match = "^myapp"
 [failure]
 strategy = "grep"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(
         result.is_err(),
         "missing grep field with grep strategy should fail"
@@ -67,7 +67,7 @@ strategy = "tail"
 lines = 10
 "#;
     assert!(
-        validate_pattern_toml(toml).is_ok(),
+        validate_pattern_toml_with_limits(toml).is_ok(),
         "strategy=tail with lines count should pass"
     );
 }
@@ -81,7 +81,7 @@ command_match = "^myapp"
 strategy = "grep"
 grep = ""
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(result.is_err(), "empty grep regex should fail validation");
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -98,7 +98,7 @@ command_match = "^myapp"
 [failure]
 strategy = "bogus_strategy"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(result.is_err(), "unknown strategy should fail validation");
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -120,7 +120,7 @@ strategy = "grep"
 grep = "FAILED|ERROR"
 "#;
     assert!(
-        validate_pattern_toml(toml).is_ok(),
+        validate_pattern_toml_with_limits(toml).is_ok(),
         "valid success + failure sections should pass"
     );
 }
@@ -136,7 +136,7 @@ start = "^error"
 end = "^$"
 "#;
     assert!(
-        validate_pattern_toml(toml).is_ok(),
+        validate_pattern_toml_with_limits(toml).is_ok(),
         "valid between strategy should pass"
     );
 }
@@ -151,7 +151,7 @@ strategy = "between"
 start = "error("
 end = "^$"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(
         result.is_err(),
         "invalid start regex should fail validation"
@@ -172,7 +172,7 @@ command_match = "^myapp"
 strategy = "between"
 end = "^$"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(
         result.is_err(),
         "between strategy without start should fail"
@@ -193,7 +193,7 @@ command_match = "^myapp"
 strategy = "between"
 start = "^error"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(result.is_err(), "between strategy without end should fail");
     let err = format!("{}", result.unwrap_err());
     assert!(
@@ -212,7 +212,7 @@ strategy = "between"
 start = ""
 end = "^$"
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(
         result.is_err(),
         "empty between start should fail validation"
@@ -234,7 +234,7 @@ strategy = "between"
 start = "^error"
 end = ""
 "#;
-    let result = validate_pattern_toml(toml);
+    let result = validate_pattern_toml_with_limits(toml);
     assert!(result.is_err(), "empty between end should fail validation");
     let err = format!("{}", result.unwrap_err());
     assert!(

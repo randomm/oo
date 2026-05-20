@@ -1,9 +1,57 @@
 use regex::Regex;
+use regex::RegexBuilder;
 use serde::Deserialize;
 use std::path::Path;
 
-use super::{FailurePattern, FailureStrategy, Pattern, SuccessPattern};
+use super::{FailurePattern, FailureStrategy, Pattern, SuccessPattern, SuccessStrategy};
 use crate::error::Error;
+
+// ---------------------------------------------------------------------------
+// Regex validation limits
+// ---------------------------------------------------------------------------
+
+/// Maximum allowed length for user-provided regex patterns.
+///
+/// This limit prevents overly complex regex patterns that could cause
+/// performance issues or unexpected ReDOS attacks.
+const MAX_REGEX_LENGTH: usize = 500;
+
+/// Size limit for regex compilation (in bytes).
+///
+/// Prevents pathological regex patterns from consuming excessive memory.
+/// Set to 100 KB - ample for all reasonable patterns while still limiting ReDOS risk.
+const REGEX_SIZE_LIMIT: usize = 100 * 1024; // 100 KB
+
+/// Validate and compile a user-provided regex string with safety limits.
+///
+/// This function checks that the regex string is not overly long and compiles
+/// it with a reasonable size limit to prevent resource exhaustion issues.
+///
+/// # Arguments
+///
+/// * `pattern` - The regex pattern string to compile
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` if the regex is too long or fails to compile.
+fn validate_and_compile_regex(pattern: &str) -> Result<Regex, Error> {
+    if pattern.len() > MAX_REGEX_LENGTH {
+        return Err(Error::Pattern(format!(
+            "regex too long ({} > {} chars)",
+            pattern.len(),
+            MAX_REGEX_LENGTH
+        )));
+    }
+
+    RegexBuilder::new(pattern)
+        .size_limit(REGEX_SIZE_LIMIT)
+        .build()
+        .map_err(|e| Error::Pattern(format!("regex compilation failed: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// TOML deserialization types
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TOML deserialization types
@@ -26,13 +74,28 @@ pub struct PatternFile {
     pub failure: Option<FailureSection>,
 }
 
+/// TOML configuration for success output extraction.
+///
+/// Supports both legacy pattern+summary format and new strategy-based format.
 #[derive(Deserialize)]
 pub struct SuccessSection {
-    /// Regex pattern with named capture groups.
-    pub pattern: String,
+    /// Strategy name: "regex" (legacy), "tail", "head", or "grep".
+    #[serde(default)]
+    pub(crate) strategy: Option<String>,
 
-    /// Summary template with {name} placeholders.
-    pub summary: String,
+    /// Regex pattern with named capture groups (for legacy format or grep strategy).
+    #[serde(rename = "pattern")]
+    pub(crate) success_pattern: Option<String>,
+
+    /// Summary template with {name} placeholders (for legacy format).
+    pub(crate) summary: Option<String>,
+
+    /// Number of lines (for tail/head strategies).
+    pub(crate) lines: Option<usize>,
+
+    /// Grep pattern (for grep strategy).
+    #[serde(rename = "grep")]
+    pub(crate) grep_pattern: Option<String>,
 }
 
 /// TOML configuration for failure output filtering.
@@ -86,7 +149,14 @@ pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
 fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
     let content =
         std::fs::read_to_string(path).map_err(|e| Error::Pattern(format!("{path:?}: {e}")))?;
-    parse_pattern_str(&content)
+    parse_pattern_str(&content).map_err(|e| {
+        // Add file path context to any parse errors
+        if let Error::Pattern(msg) = e {
+            Error::Pattern(format!("{path:?}: {msg}"))
+        } else {
+            e
+        }
+    })
 }
 
 /// Parse a pattern definition from TOML string content.
@@ -110,6 +180,7 @@ fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
 /// - Invalid regular expressions
 /// - Missing required fields (e.g., grep pattern for grep strategy)
 /// - Unknown strategy names
+/// - Regex patterns exceeding maximum length (500 characters)
 ///
 /// # Examples
 ///
@@ -129,18 +200,46 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let pf: PatternFile =
         toml::from_str(content).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
 
-    let command_match =
-        Regex::new(&pf.command_match).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+    // Validate and compile command_match regex with safety limits
+    let command_match = validate_and_compile_regex(&pf.command_match)?;
 
     let success = pf
         .success
         .map(|s| -> Result<SuccessPattern, Error> {
-            let pattern =
-                Regex::new(&s.pattern).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
-            Ok(SuccessPattern {
-                pattern,
-                summary: s.summary,
-            })
+            // Determine strategy: explicit strategy field, or default to "regex" for legacy format
+            let strategy = match s.strategy.as_deref().unwrap_or("regex") {
+                "tail" => SuccessStrategy::Tail {
+                    lines: s.lines.unwrap_or(30),
+                },
+                "head" => SuccessStrategy::Head {
+                    lines: s.lines.unwrap_or(20),
+                },
+                "grep" => {
+                    let pat = s.grep_pattern.ok_or_else(|| {
+                        Error::Pattern("grep strategy requires 'grep' field".into())
+                    })?;
+                    let pattern = validate_and_compile_regex(&pat)?;
+                    SuccessStrategy::Grep { pattern }
+                }
+                "regex" => {
+                    // Legacy format: pattern + summary
+                    let pattern = s.success_pattern.ok_or_else(|| {
+                        Error::Pattern("regex strategy requires 'pattern' field".into())
+                    })?;
+                    let summary = s.summary.ok_or_else(|| {
+                        Error::Pattern("regex strategy requires 'summary' field".into())
+                    })?;
+                    let regex = validate_and_compile_regex(&pattern)?;
+                    SuccessStrategy::Regex {
+                        pattern: regex,
+                        summary,
+                    }
+                }
+                other => {
+                    return Err(Error::Pattern(format!("unknown success strategy: {other}")));
+                }
+            };
+            Ok(SuccessPattern { strategy })
         })
         .transpose()?;
 
@@ -158,8 +257,7 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
                     let pat = f.grep_pattern.ok_or_else(|| {
                         Error::Pattern("grep strategy requires 'grep' field".into())
                     })?;
-                    let pattern =
-                        Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    let pattern = validate_and_compile_regex(&pat)?;
                     FailureStrategy::Grep { pattern }
                 }
                 "between" => {
@@ -184,4 +282,90 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
         success,
         failure,
     })
+}
+
+/// Validate all regexes in a TOML pattern string with safety limits.
+///
+/// This is used by the learn module to ensure LLM-generated patterns
+/// pass the same validation as manually-written TOML patterns.
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` if TOML is malformed, regex is invalid,
+/// or strategy configuration is incomplete.
+pub fn validate_pattern_regexes(toml_str: &str) -> Result<(), Error> {
+    #[derive(Deserialize)]
+    struct Check {
+        command_match: String,
+        #[serde(default)]
+        success: Option<SuccessSection>,
+        #[serde(default)]
+        failure: Option<FailureSection>,
+    }
+
+    let check: Check =
+        toml::from_str(toml_str).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
+
+    // Validate command_match regex
+    validate_and_compile_regex(&check.command_match)?;
+
+    // Validate success regex if present
+    if let Some(ref s) = check.success {
+        match s.strategy.as_deref().unwrap_or("regex") {
+            "tail" | "head" => {} // no regex to validate
+            "grep" => {
+                let pat = s
+                    .grep_pattern
+                    .as_ref()
+                    .ok_or_else(|| Error::Pattern("grep strategy requires 'grep' field".into()))?;
+                if pat.is_empty() {
+                    return Err(Error::Pattern("grep regex must not be empty".into()));
+                }
+                validate_and_compile_regex(pat)?;
+            }
+            "regex" => {
+                let pattern = s.success_pattern.as_ref().ok_or_else(|| {
+                    Error::Pattern("regex strategy requires 'pattern' field".into())
+                })?;
+                validate_and_compile_regex(pattern)?;
+            }
+            other => return Err(Error::Pattern(format!("unknown success strategy: {other}"))),
+        }
+    }
+
+    // Validate failure regex if present
+    if let Some(ref f) = check.failure {
+        match f.strategy.as_deref().unwrap_or("tail") {
+            "tail" | "head" => {} // no regex to validate
+            "grep" => {
+                let pat = f
+                    .grep_pattern
+                    .as_ref()
+                    .ok_or_else(|| Error::Pattern("grep strategy requires 'grep' field".into()))?;
+                if pat.is_empty() {
+                    return Err(Error::Pattern("grep regex must not be empty".into()));
+                }
+                validate_and_compile_regex(pat)?;
+            }
+            "between" => {
+                let start = f.start.as_ref().ok_or_else(|| {
+                    Error::Pattern("between strategy requires 'start' field".into())
+                })?;
+                let end = f.end.as_ref().ok_or_else(|| {
+                    Error::Pattern("between strategy requires 'end' field".into())
+                })?;
+                if start.is_empty() {
+                    return Err(Error::Pattern("between 'start' must not be empty".into()));
+                }
+                if end.is_empty() {
+                    return Err(Error::Pattern("between 'end' must not be empty".into()));
+                }
+                validate_and_compile_regex(start)?;
+                validate_and_compile_regex(end)?;
+            }
+            other => return Err(Error::Pattern(format!("unknown failure strategy: {other}"))),
+        }
+    }
+
+    Ok(())
 }

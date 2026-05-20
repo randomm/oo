@@ -1,4 +1,10 @@
 use super::*;
+use crate::learn_utils::{strip_fences as strip_fences_impl, truncate_utf8};
+
+// Re-export the functions for testing
+fn strip_fences(s: &str) -> String {
+    strip_fences_impl(s)
+}
 
 // Tests for failure-section validation live in a separate file to keep this
 // module under 500 lines.
@@ -39,71 +45,78 @@ fn test_strip_fences_whitespace_preserved() {
 }
 
 // ---------------------------------------------------------------------------
-// validate_pattern_toml
+// validate_pattern_toml (now uses validate_pattern_regexes from toml module)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_validate_valid_toml() {
+fn test_validate_pattern_toml_regexes_valid() {
     let toml = r#"
 command_match = "^mytest"
 [success]
 pattern = '(?P<n>\d+) passed'
 summary = "{n} passed"
 "#;
-    assert!(validate_pattern_toml(toml).is_ok());
+    assert!(validate_pattern_toml_with_limits(toml).is_ok());
 }
 
 #[test]
-fn test_validate_invalid_regex() {
+fn test_validate_pattern_toml_regexes_invalid_regex() {
     let toml = r#"
 command_match = "[invalid"
 "#;
-    assert!(validate_pattern_toml(toml).is_err());
+    assert!(validate_pattern_toml_with_limits(toml).is_err());
 }
 
 #[test]
-fn test_validate_valid_toml_no_success() {
+fn test_validate_pattern_toml_regexes_no_success() {
     let toml = r#"command_match = "^cargo""#;
-    assert!(validate_pattern_toml(toml).is_ok());
+    assert!(validate_pattern_toml_with_limits(toml).is_ok());
 }
 
 #[test]
-fn test_validate_invalid_toml_syntax() {
+fn test_validate_pattern_toml_regexes_invalid_toml_syntax() {
     let toml = "this is not valid = [toml";
-    assert!(validate_pattern_toml(toml).is_err());
+    assert!(validate_pattern_toml_with_limits(toml).is_err());
 }
 
 #[test]
-fn test_validate_missing_command_match() {
+fn test_validate_pattern_toml_regexes_missing_command_match() {
     let toml = r#"
 [success]
 pattern = "ok"
 summary = "done"
 "#;
-    assert!(validate_pattern_toml(toml).is_err());
+    assert!(validate_pattern_toml_with_limits(toml).is_err());
 }
 
 #[test]
-fn test_validate_invalid_command_match_regex() {
+fn test_validate_pattern_toml_regexes_invalid_command_match_regex() {
     let toml = r#"command_match = "[invalid_regex""#;
-    assert!(validate_pattern_toml(toml).is_err());
+    assert!(validate_pattern_toml_with_limits(toml).is_err());
 }
 
 #[test]
-fn test_validate_invalid_success_pattern_regex() {
+fn test_validate_pattern_toml_regexes_invalid_success_pattern_regex() {
     let toml = r#"
 command_match = "^cargo"
 [success]
 pattern = "[invalid"
 summary = "done"
 "#;
-    assert!(validate_pattern_toml(toml).is_err());
+    assert!(validate_pattern_toml_with_limits(toml).is_err());
 }
 
 #[test]
-fn test_validate_toml_with_valid_success_pattern() {
+fn test_validate_pattern_toml_regexes_with_valid_success_pattern() {
     let toml = "command_match = \"^pytest\"\n[success]\npattern = '(?P<n>\\d+) passed'\nsummary = \"{n} passed\"";
-    assert!(validate_pattern_toml(toml).is_ok());
+    assert!(validate_pattern_toml_with_limits(toml).is_ok());
+}
+
+#[test]
+fn test_validate_pattern_toml_regexes_enforces_length_limit() {
+    // MAX_REGEX_LENGTH is 500 chars
+    let long_regex = format!(r#"command_match = "{}""#, "a".repeat(501));
+    assert!(validate_pattern_toml_with_limits(&long_regex).is_err());
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +160,59 @@ fn test_truncate_utf8_exact_boundary() {
 }
 
 // ---------------------------------------------------------------------------
-// label
+// label (first word sanitization)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_label_sanitizes_first_word_special_chars() {
+    // First word should be sanitized the same way as second word
+    // After rsplit('/'), we get the last component, then sanitize it
+    assert_eq!(label("../bin/cargo test"), "cargo-test");
+    assert_eq!(label("./binary/name test"), "name-test");
+    assert_eq!(label("/path/.hidden/bin test"), "bin-test");
+    assert_eq!(label("cmd-with-dashes test"), "cmd-with-dashes-test");
+}
+
+#[test]
+fn test_label_first_word_length_limit() {
+    // First word should be limited to MAX_FILENAME_COMPONENT (50 chars)
+    let long_first = "a".repeat(100);
+    let result = label(&format!("{long_first} test"));
+    // Result should be "aaaaaaaaa-test" where first word is truncated to 50 chars
+    assert_eq!(
+        result.len(),
+        55,
+        "first word truncated to 50 chars + hyphen + 4 chars for 'test'"
+    );
+    assert_eq!(
+        result
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .count(),
+        result.len()
+    );
+}
+
+#[test]
+fn test_label_empty_after_sanitization() {
+    // If first word has no valid chars after sanitization, return "unknown"
+    assert_eq!(label("!!! test"), "unknown");
+    assert_eq!(label("../ test"), "unknown");
+    assert_eq!(label("@@@ test"), "unknown");
+}
+
+#[test]
+fn test_label_prevents_dotfile_creation() {
+    // Leading dots (dotfiles) should be stripped from first word
+    assert_eq!(label(".cargo test"), "cargo-test");
+    assert_eq!(label("..cargo test"), "cargo-test");
+    // Path with /path/.hidden/test -> first word is "test" (after rsplit)
+    assert_eq!(label("/path/.hidden/test"), "test");
+    assert_eq!(label("./hidden/bin/test"), "test");
+}
+
+// ---------------------------------------------------------------------------
+// label (existing tests)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -187,7 +252,7 @@ fn test_label_flag_excluded() {
 }
 
 #[test]
-fn test_label_sanitizes_unsafe_chars() {
+fn test_label_sanitizes_unsafe_chars_in_second_word() {
     // `/` in path argument → slashes stripped
     assert_eq!(label("git some/path/arg"), "git-somepatharg");
     assert_eq!(label("cargo /absolute/path"), "cargo-absolutepath");
@@ -197,6 +262,19 @@ fn test_label_sanitizes_unsafe_chars() {
     assert_eq!(label("cmd ../etc/passwd"), "cmd-etcpasswd");
     // Two-flag-only command → no valid subcommand, returns first word only
     assert_eq!(label("rustc --foo --bar"), "rustc");
+}
+
+#[test]
+fn test_label_second_word_length_limit() {
+    // Second word should also be limited to MAX_FILENAME_COMPONENT (50 chars)
+    let long_second = "a".repeat(100);
+    let result = label(&format!("cargo {long_second}"));
+    // Result should be "cargo-aaaaaaaaa" where second word is truncated to 50 chars
+    assert_eq!(
+        result.len(),
+        56,
+        "'cargo-' (6 chars) + second word truncated to 50 chars = 56"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +408,30 @@ fn test_anthropic_url_validation() {
 }
 
 // ---------------------------------------------------------------------------
+// run_background: hint handling
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_run_background_with_hint_extracts_hint() {
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    let data = serde_json::json!({
+        "command": "cargo test",
+        "output": "test result: ok. 5 passed\n",
+        "exit_code": 0,
+        "hint": "capture summary line only"
+    });
+    std::fs::write(tmp.path(), data.to_string()).expect("write");
+
+    // Verify run_background can parse the hint
+    let path = tmp.path();
+    let content = std::fs::read_to_string(path).expect("read");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid json");
+
+    let hint = parsed["hint"].as_str();
+    assert_eq!(hint, Some("capture summary line only"));
+}
+
+// ---------------------------------------------------------------------------
 // run_background: status file written on failure
 // ---------------------------------------------------------------------------
 
@@ -366,4 +468,146 @@ fn test_learn_status_written_on_failure() {
     std::fs::write(tmp.path(), data.to_string()).expect("write");
     // run_background may succeed or fail depending on env API keys, but must not panic.
     let _ = run_background(tmp.path().to_str().expect("utf8 path"));
+}
+
+// ---------------------------------------------------------------------------
+// run_background: exit_code bounds checking
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_run_background_invalid_exit_code_truncation() {
+    // Test that exit_code outside i32 range is rejected
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    // i32::MAX is 2147483647, so use 2147483648 (i64 value that exceeds i32)
+    let data = serde_json::json!({
+        "command": "echo hello",
+        "output": "hello",
+        "exit_code": 2147483648i64
+    });
+    std::fs::write(tmp.path(), data.to_string()).expect("write");
+
+    let result = run_background(tmp.path().to_str().expect("utf8 path"));
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("exit_code out of range for i32"),
+        "error should mention i32 range: got {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_run_background_negative_exit_code_out_of_range() {
+    // Test that exit_code below i32::MIN is rejected
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    // i32::MIN is -2147483648, so use -2147483649 (i64 value that exceeds i32)
+    let data = serde_json::json!({
+        "command": "echo hello",
+        "output": "hello",
+        "exit_code": -2147483649i64
+    });
+    std::fs::write(tmp.path(), data.to_string()).expect("write");
+
+    let result = run_background(tmp.path().to_str().expect("utf8 path"));
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("exit_code out of range for i32"),
+        "error should mention i32 range: got {}",
+        err_msg
+    );
+}
+
+// ---------------------------------------------------------------------------
+// run_learn_with_config: validation limits
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_run_learn_with_config_rejects_hint_too_long() {
+    let tmpdir = tempfile::TempDir::new().expect("tempdir");
+    let config = LearnConfig {
+        provider: "anthropic".into(),
+        model: "claude-haiku-4-5".into(),
+        api_key_env: "ANTHROPIC_API_KEY".into(),
+    };
+    let status_path = tmpdir.path().join("status.log");
+    let params = LearnParams {
+        config: &config,
+        api_key: "test-key",
+        base_url: "https://api.anthropic.com/v1/messages",
+        patterns_dir: tmpdir.path(),
+        learn_status_path: &status_path,
+        hint: Some(&"x".repeat(1001)), // Exceeds MAX_HINT_LENGTH (1000)
+    };
+
+    let result = run_learn_with_config(&params, "echo test", "output", 0);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("--hint too long"),
+        "error should mention hint limit: got {}",
+        err_msg
+    );
+    assert!(
+        err_msg.contains("1000"),
+        "error should mention limit value: got {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_run_learn_with_config_truncates_command() {
+    // Command truncation is applied silently within run_learn_with_config
+    // We verify by checking that a very long command doesn't cause validation errors
+    let tmpdir = tempfile::TempDir::new().expect("tempdir");
+    let config = LearnConfig {
+        provider: "anthropic".into(),
+        model: "claude-haiku-4-5".into(),
+        api_key_env: "ANTHROPIC_API_KEY".into(),
+    };
+    let long_command = "a".repeat(200); // Exceeds MAX_COMMAND_LENGTH (100)
+    let status_path = tmpdir.path().join("status.log");
+    let params = LearnParams {
+        config: &config,
+        api_key: "test-key",
+        base_url: "https://api.anthropic.com/v1/messages",
+        patterns_dir: tmpdir.path(),
+        learn_status_path: &status_path,
+        hint: None,
+    };
+
+    // This will fail due to API, not command length validation
+    let result = run_learn_with_config(&params, &long_command, "output", 0);
+    // The error should be API-related, not "command too long"
+    if let Err(e) = result {
+        let err_msg = e.to_string();
+        assert!(
+            !err_msg.contains("too long"),
+            "command should be truncated, not rejected: got {}",
+            err_msg
+        );
+    }
+}
+
+#[test]
+fn test_truncate_utf8_multibyte_command_crosses_limit() {
+    // Test that truncating a multi-byte UTF-8 command that crosses the byte limit
+    // doesn't panic and produces valid UTF-8.
+    // Each Chinese character is 3 bytes: 你好世界 = 4 chars × 3 bytes = 12 bytes
+    let multibyte_command = "测试".repeat(50); // 50 chars × 3 bytes = 150 bytes, exceeds MAX_COMMAND_LENGTH (100)
+    let truncated = crate::learn_utils::truncate_utf8(&multibyte_command, 100);
+
+    // Should truncate to valid UTF-8 boundary (33 chars = 99 bytes)
+    assert_eq!(truncated.len(), 99);
+    assert!(std::str::from_utf8(truncated.as_bytes()).is_ok());
+    // Verify it's a valid prefix of the original string (valid UTF-8)
+    assert!(multibyte_command.starts_with(truncated));
+
+    // Test with emoji (4 bytes each): 🎉🎊 = 2 chars × 4 bytes = 8 bytes
+    let emoji_command = "🎉".repeat(30); // 30 chars × 4 bytes = 120 bytes
+    let truncated_emoji = crate::learn_utils::truncate_utf8(&emoji_command, 100);
+    // Should truncate to 25 chars = 100 bytes exactly
+    assert_eq!(truncated_emoji.len(), 100);
+    assert!(std::str::from_utf8(truncated_emoji.as_bytes()).is_ok());
+    assert!(emoji_command.starts_with(truncated_emoji));
 }

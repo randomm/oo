@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+- Added 14 new built-in patterns for common commands ([#58](https://github.com/randomm/oo/issues/58)):
+  - `npm test`, `yarn test`, `pnpm test`, `bun test` - JavaScript/TypeScript test frameworks
+  - `cargo tarpaulin` - Rust code coverage
+  - `cargo fmt` - Rust formatting
+  - `mypy` - Python type checking
+  - `rubocop` - Ruby linting
+  - `ruff format` - Python formatting
+  - `prettier` - Code formatting
+  - `npm run build`, `yarn build`, `pnpm build`, `bun build` - JavaScript/TypeScript build tools
+
+### Documentation
+- Updated README with expanded built-in patterns table (now 24 total patterns)
+
 ## [0.4.5] - 2026-04-16
 
 ### Features

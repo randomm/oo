@@ -171,20 +171,34 @@ and moves on.
 
 ## Built-in Patterns
 
-`oo` ships with 10 patterns that match commands automatically:
+`oo` ships with 24 patterns that match commands automatically:
 
 | Command | Success | Failure strategy |
 |---|---|---|
 | `pytest` | `{passed} passed, {time}s` | tail 30 lines |
 | `cargo test` | `{passed} passed, {time}s` | tail 40 lines |
 | `go test` | `ok ({time}s)` | tail 30 lines |
-| `jest` / `vitest` | `{passed} passed, {time}s` | tail 30 lines |
+| `jest` / `vitest` / `npx jest` | `{passed} passed, {time}s` | tail 30 lines |
 | `ruff check` | quiet (no output on pass) | smart truncate |
 | `eslint` | quiet | smart truncate |
 | `cargo build` | quiet | head 20 lines |
 | `go build` | quiet | head 20 lines |
 | `tsc` | quiet | head 20 lines |
 | `cargo clippy` | quiet | smart truncate |
+| `npm test` | `{passed} passed, {time}s` | tail 30 lines |
+| `yarn test` | `{passed} passed, {time}s` | tail 30 lines |
+| `pnpm test` | `{passed} passed, {time}s` | tail 30 lines |
+| `bun test` | `{passed} passed, {time}s` | tail 30 lines |
+| `cargo tarpaulin` | `{cov}% coverage` | tail 20 lines |
+| `cargo fmt` | quiet | grep for "Diff in" |
+| `mypy` | `Success: no issues found` / error count | head 20 lines |
+| `rubocop` | `{offenses} offenses` | head 30 lines |
+| `ruff format` | `{count} files reformatted` | head 20 lines |
+| `prettier` | quiet | head 20 lines |
+| `npm run build` | quiet | head 20 lines |
+| `yarn build` | `Done in {time}s` | head 20 lines |
+| `pnpm build` | quiet | head 20 lines |
+| `bun build` | quiet | head 20 lines |
 
 Add your own patterns with `oo learn <cmd>` (generates a TOML pattern file via
 LLM) or write one manually in `~/.config/oo/patterns/`.

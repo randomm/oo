@@ -140,13 +140,62 @@ fn test_parse_action_forget() {
 #[test]
 fn test_parse_action_learn() {
     let args = vec![s("learn"), s("cargo"), s("test")];
-    assert!(matches!(parse_action(&args), Action::Learn(a) if a == vec!["cargo", "test"]));
+    assert!(matches!(parse_action(&args), Action::Learn(a, None) if a == vec!["cargo", "test"]));
 }
 
 #[test]
 fn test_parse_action_learn_no_subargs() {
     let args = vec![s("learn")];
-    assert!(matches!(parse_action(&args), Action::Learn(a) if a.is_empty()));
+    assert!(matches!(parse_action(&args), Action::Learn(a, None) if a.is_empty()));
+}
+
+#[test]
+fn test_parse_action_learn_with_hint() {
+    let args = vec![
+        s("learn"),
+        s("--hint"),
+        s("keep last 10 lines"),
+        s("cargo"),
+        s("test"),
+    ];
+    assert!(
+        matches!(parse_action(&args), Action::Learn(a, Some(h)) if a == vec!["cargo", "test"] && h == "keep last 10 lines")
+    );
+}
+
+#[test]
+fn test_parse_action_learn_hint_missing_value() {
+    // When --hint is the last argument with no value, treat as no hint
+    let args = vec![s("learn"), s("--hint")];
+    assert!(matches!(parse_action(&args), Action::Learn(a, None) if a.is_empty()));
+}
+
+#[test]
+fn test_parse_action_learn_with_hint_followed_by_command() {
+    // When --hint is followed by a value, use it as the hint
+    let args = vec![
+        s("learn"),
+        s("--hint"),
+        s("capture summary only"),
+        s("cargo"),
+        s("test"),
+    ];
+    assert!(
+        matches!(parse_action(&args), Action::Learn(a, Some(h)) if a == vec!["cargo", "test"] && h == "capture summary only")
+    );
+}
+
+#[test]
+fn test_parse_action_learn_hint_multiple_words() {
+    let args = vec![
+        s("learn"),
+        s("--hint"),
+        s("show summary line and keep last 5 on failure"),
+        s("pytest"),
+    ];
+    assert!(
+        matches!(parse_action(&args), Action::Learn(a, Some(h)) if a == vec!["pytest"] && h == "show summary line and keep last 5 on failure")
+    );
 }
 
 #[test]
@@ -267,7 +316,7 @@ fn test_cmd_recall_empty_query_returns_1() {
 
 #[test]
 fn test_cmd_learn_no_args_returns_1() {
-    assert_eq!(cmd_learn(&[]), 1);
+    assert_eq!(cmd_learn(&[], None), 1);
 }
 
 #[test]
@@ -355,14 +404,14 @@ fn test_cmd_learn_passthrough_small_output() {
     // cmd_learn with a command that produces small output (< 4 KiB) → Passthrough branch.
     // spawn_background will fail (no binary in PATH during test), but that is non-fatal.
     // We only care that the exit code matches the command's actual exit code.
-    let code = cmd_learn(&[s("echo"), s("hello_learn_test")]);
+    let code = cmd_learn(&[s("echo"), s("hello_learn_test")], None);
     assert_eq!(code, 0, "echo must succeed, got: {code}");
 }
 
 #[test]
 fn test_cmd_learn_failure_branch() {
     // cmd_learn with a command that fails → Failure branch in classification.
-    let code = cmd_learn(&[s("false")]);
+    let code = cmd_learn(&[s("false")], None);
     assert_ne!(
         code, 0,
         "false must produce non-zero exit code, got: {code}"
