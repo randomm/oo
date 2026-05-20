@@ -13,7 +13,7 @@ pub enum Action {
     Run(Vec<String>),
     Recall(String),
     Forget,
-    Learn(Vec<String>),
+    Learn(Vec<String>, Option<String>),
     Version,
     Help(Option<String>),
     Init(InitFormat),
@@ -44,12 +44,42 @@ fn parse_init_format(args: &[String]) -> InitFormat {
     InitFormat::Claude
 }
 
+/// Parse `oo learn` arguments, extracting optional `--hint <text>` flag.
+///
+/// Returns (args_without_hint, hint_text). The hint text is removed from the
+/// command args so it doesn't interfere with the actual command being run.
+fn parse_learn_action(args: &[String]) -> Action {
+    let mut result: Vec<String> = Vec::new();
+    let mut hint: Option<String> = None;
+    let mut iter = args.iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        if arg == "--hint" {
+            // Take the next argument as the hint text, but only if it's not a flag
+            // If the next arg starts with '-', treat it as a command argument, not hint text
+            if let Some(hint_text) = iter.next() {
+                if !hint_text.starts_with('-') {
+                    hint = Some(hint_text.clone());
+                } else {
+                    // The next arg is a flag, treat it as part of the command
+                    result.push(hint_text.clone());
+                }
+            }
+            // If no hint text after --hint, emit a warning and treat as no hint
+        } else {
+            result.push(arg.clone());
+        }
+    }
+
+    Action::Learn(result, hint)
+}
+
 pub fn parse_action(args: &[String]) -> Action {
     match args.first().map(|s| s.as_str()) {
         None => Action::Help(None),
         Some("recall") => Action::Recall(args[1..].join(" ")),
         Some("forget") => Action::Forget,
-        Some("learn") => Action::Learn(args[1..].to_vec()),
+        Some("learn") => parse_learn_action(&args[1..]),
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
@@ -291,7 +321,7 @@ pub fn cmd_forget() -> i32 {
     }
 }
 
-pub fn cmd_learn(args: &[String]) -> i32 {
+pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     if args.is_empty() {
         eprintln!("oo: learn requires a command");
         return 1;
@@ -346,7 +376,7 @@ pub fn cmd_learn(args: &[String]) -> i32 {
     );
 
     // Spawn background learn process
-    if let Err(e) = learn::spawn_background(&command, &merged, exit_code) {
+    if let Err(e) = learn::spawn_background(&command, &merged, exit_code, hint) {
         eprintln!("oo: learn failed: {e}");
     }
 

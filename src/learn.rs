@@ -37,6 +37,7 @@ pub(crate) struct LearnParams<'a> {
     pub base_url: &'a str,
     pub patterns_dir: &'a Path,
     pub learn_status_path: &'a Path,
+    pub hint: Option<&'a str>,
 }
 
 impl Default for LearnConfig {
@@ -161,10 +162,17 @@ pub(crate) fn run_learn_with_config(
     output: &str,
     exit_code: i32,
 ) -> Result<(), Error> {
-    let user_msg = format!(
-        "Command: {command}\nExit code: {exit_code}\nOutput:\n{}",
-        truncate_for_prompt(output)
-    );
+    let user_msg = if let Some(hint) = params.hint {
+        format!(
+            "Command: {command}\nExit code: {exit_code}\nHint: {hint}\nOutput:\n{}",
+            truncate_for_prompt(output)
+        )
+    } else {
+        format!(
+            "Command: {command}\nExit code: {exit_code}\nOutput:\n{}",
+            truncate_for_prompt(output)
+        )
+    };
 
     let get_response = |msg: &str| -> Result<String, Error> {
         match params.config.provider.as_str() {
@@ -230,6 +238,18 @@ pub(crate) fn run_learn_with_config(
 /// validates the result, and saves the pattern to disk. Retries up to 2 times
 /// if the LLM returns invalid TOML.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
+    run_learn_with_hint(command, output, exit_code, None)
+}
+
+/// Internal variant of run_learn that accepts an optional hint.
+///
+/// Used by run_background to pass through agent-provided hints.
+fn run_learn_with_hint(
+    command: &str,
+    output: &str,
+    exit_code: i32,
+    hint: Option<&str>,
+) -> Result<(), Error> {
     let config = load_learn_config()?;
 
     let api_key = std::env::var(&config.api_key_env).map_err(|_| {
@@ -250,23 +270,32 @@ pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Erro
         base_url: &base_url,
         patterns_dir: &patterns_dir(),
         learn_status_path: &learn_status_path(),
+        hint,
     };
 
     run_learn_with_config(&params, command, output, exit_code)
 }
 
 /// Spawn the learning process in the background by re-exec'ing ourselves.
-pub fn spawn_background(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
+pub fn spawn_background(
+    command: &str,
+    output: &str,
+    exit_code: i32,
+    hint: Option<&str>,
+) -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Learn(e.to_string()))?;
 
     // Use a secure named temp file to avoid PID-based predictable filenames
     // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
     let mut tmp = tempfile::NamedTempFile::new().map_err(|e| Error::Learn(e.to_string()))?;
-    let data = serde_json::json!({
+    let mut data = serde_json::json!({
         "command": command,
         "output": output,
         "exit_code": exit_code,
     });
+    if let Some(h) = hint {
+        data["hint"] = serde_json::Value::String(h.to_string());
+    }
     tmp.write_all(data.to_string().as_bytes())
         .map_err(|e| Error::Learn(e.to_string()))?;
 
@@ -303,8 +332,9 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
     let command = data["command"].as_str().unwrap_or("");
     let output = data["output"].as_str().unwrap_or("");
     let exit_code = data["exit_code"].as_i64().unwrap_or(0) as i32;
+    let hint = data["hint"].as_str();
 
-    let result = run_learn(command, output, exit_code);
+    let result = run_learn_with_hint(command, output, exit_code, hint);
 
     // Clean up temp file
     let _ = std::fs::remove_file(path);

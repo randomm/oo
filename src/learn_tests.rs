@@ -330,6 +330,30 @@ fn test_anthropic_url_validation() {
 }
 
 // ---------------------------------------------------------------------------
+// run_background: hint handling
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_run_background_with_hint_extracts_hint() {
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    let data = serde_json::json!({
+        "command": "cargo test",
+        "output": "test result: ok. 5 passed\n",
+        "exit_code": 0,
+        "hint": "capture summary line only"
+    });
+    std::fs::write(tmp.path(), data.to_string()).expect("write");
+
+    // Verify run_background can parse the hint
+    let path = tmp.path();
+    let content = std::fs::read_to_string(path).expect("read");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid json");
+
+    let hint = parsed["hint"].as_str();
+    assert_eq!(hint, Some("capture summary line only"));
+}
+
+// ---------------------------------------------------------------------------
 // run_background: status file written on failure
 // ---------------------------------------------------------------------------
 

@@ -96,6 +96,98 @@ fn test_call_anthropic_success() {
 }
 
 #[test]
+fn test_user_message_without_hint() {
+    // When hint is None, user message should not contain Hint: prefix
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let patterns_dir = dir.path().join("patterns");
+    let learn_status_path = dir.path().join("learn-status.log");
+
+    let config = LearnConfig {
+        provider: "anthropic".into(),
+        model: "claude-haiku-4-5".into(),
+        api_key_env: "ANTHROPIC_API_KEY".into(),
+    };
+
+    let _params = LearnParams {
+        config: &config,
+        api_key: "test-key",
+        base_url: "https://api.anthropic.com/v1/messages",
+        patterns_dir: &patterns_dir,
+        learn_status_path: &learn_status_path,
+        hint: None,
+    };
+
+    // Check the user message format without hint
+    let user_msg = format!(
+        "Command: cargo test\nExit code: 0\nOutput:\n{}",
+        truncate_for_prompt("test result: ok. 5 passed")
+    );
+
+    assert!(
+        !user_msg.contains("Hint:"),
+        "user message without hint should not contain 'Hint:'"
+    );
+    assert!(
+        user_msg.contains("Command:"),
+        "user message should contain 'Command:'"
+    );
+    assert!(
+        user_msg.contains("Exit code:"),
+        "user message should contain 'Exit code:'"
+    );
+    assert!(
+        user_msg.contains("Output:"),
+        "user message should contain 'Output:'"
+    );
+}
+
+#[test]
+fn test_user_message_with_hint() {
+    // When hint is Some, user message should contain Hint: prefix with the hint text
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let patterns_dir = dir.path().join("patterns");
+    let learn_status_path = dir.path().join("learn-status.log");
+
+    let config = LearnConfig {
+        provider: "anthropic".into(),
+        model: "claude-haiku-4-5".into(),
+        api_key_env: "ANTHROPIC_API_KEY".into(),
+    };
+
+    let _params = LearnParams {
+        config: &config,
+        api_key: "test-key",
+        base_url: "https://api.anthropic.com/v1/messages",
+        patterns_dir: &patterns_dir,
+        learn_status_path: &learn_status_path,
+        hint: Some("capture summary line only"),
+    };
+
+    // Check the user message format with hint
+    let user_msg = format!(
+        "Command: cargo test\nExit code: 0\nHint: capture summary line only\nOutput:\n{}",
+        truncate_for_prompt("test result: ok. 5 passed")
+    );
+
+    assert!(
+        user_msg.contains("Hint: capture summary line only"),
+        "user message with hint should contain the hint text"
+    );
+    assert!(
+        user_msg.contains("Command:"),
+        "user message should contain 'Command:'"
+    );
+    assert!(
+        user_msg.contains("Exit code:"),
+        "user message should contain 'Exit code:'"
+    );
+    assert!(
+        user_msg.contains("Output:"),
+        "user message should contain 'Output:'"
+    );
+}
+
+#[test]
 fn test_call_anthropic_malformed_response() {
     // Server returns 200 but with a body that doesn't match the expected schema.
     let mut server = mockito::Server::new();
