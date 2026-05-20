@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-20
+
+### Features
+
+- *(#55,#57,#58)* Learn hints and expanded command patterns
+
+
 ### Features
 - Added 14 new built-in patterns for common commands ([#58](https://github.com/randomm/oo/issues/58)):
   - `npm test`, `yarn test`, `pnpm test`, `bun test` - JavaScript/TypeScript test frameworks
