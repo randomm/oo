@@ -146,11 +146,7 @@ pub(crate) fn run_learn_with_config(
         h => h,
     };
 
-    let truncated_command = if command.len() > MAX_COMMAND_LENGTH {
-        &command[..MAX_COMMAND_LENGTH]
-    } else {
-        command
-    };
+    let truncated_command = crate::learn_utils::truncate_utf8(command, MAX_COMMAND_LENGTH);
 
     let user_msg = if let Some(h) = hint {
         format!(

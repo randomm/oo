@@ -184,10 +184,30 @@ pub fn extract_summary(pat: &SuccessPattern, output: &str) -> Option<String> {
     match &pat.strategy {
         SuccessStrategy::Regex { pattern, summary } => {
             let caps = pattern.captures(output)?;
-            let mut result = summary.clone();
-            for name in pattern.capture_names().flatten() {
-                if let Some(m) = caps.name(name) {
-                    result = result.replace(&format!("{{{name}}}"), m.as_str());
+            let mut result = String::with_capacity(summary.len() + output.len());
+            let mut i = 0;
+            while i < summary.len() {
+                if let Some(j) = summary[i..].find('{') {
+                    result.push_str(&summary[i..i + j]);
+                    i += j + 1;
+                    if let Some(k) = summary[i..].find('}') {
+                        let placeholder = &summary[i..i + k];
+                        if let Some(m) = caps.name(placeholder) {
+                            result.push_str(m.as_str());
+                        } else {
+                            result.push('{');
+                            result.push_str(placeholder);
+                            result.push('}');
+                        }
+                        i += k + 1;
+                    } else {
+                        result.push('{');
+                        result.push_str(&summary[i..]);
+                        break;
+                    }
+                } else {
+                    result.push_str(&summary[i..]);
+                    break;
                 }
             }
             Some(result)

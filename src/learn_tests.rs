@@ -179,7 +179,11 @@ fn test_label_first_word_length_limit() {
     let long_first = "a".repeat(100);
     let result = label(&format!("{long_first} test"));
     // Result should be "aaaaaaaaa-test" where first word is truncated to 50 chars
-    assert_eq!(result.len(), 55, "first word truncated to 50 chars + hyphen + 4 chars for 'test'");
+    assert_eq!(
+        result.len(),
+        55,
+        "first word truncated to 50 chars + hyphen + 4 chars for 'test'"
+    );
     assert_eq!(
         result
             .chars()
@@ -266,7 +270,11 @@ fn test_label_second_word_length_limit() {
     let long_second = "a".repeat(100);
     let result = label(&format!("cargo {long_second}"));
     // Result should be "cargo-aaaaaaaaa" where second word is truncated to 50 chars
-    assert_eq!(result.len(), 56, "'cargo-' (6 chars) + second word truncated to 50 chars = 56");
+    assert_eq!(
+        result.len(),
+        56,
+        "'cargo-' (6 chars) + second word truncated to 50 chars = 56"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -579,4 +587,27 @@ fn test_run_learn_with_config_truncates_command() {
             err_msg
         );
     }
+}
+
+#[test]
+fn test_truncate_utf8_multibyte_command_crosses_limit() {
+    // Test that truncating a multi-byte UTF-8 command that crosses the byte limit
+    // doesn't panic and produces valid UTF-8.
+    // Each Chinese character is 3 bytes: 你好世界 = 4 chars × 3 bytes = 12 bytes
+    let multibyte_command = "测试".repeat(50); // 50 chars × 3 bytes = 150 bytes, exceeds MAX_COMMAND_LENGTH (100)
+    let truncated = crate::learn_utils::truncate_utf8(&multibyte_command, 100);
+
+    // Should truncate to valid UTF-8 boundary (33 chars = 99 bytes)
+    assert_eq!(truncated.len(), 99);
+    assert!(std::str::from_utf8(truncated.as_bytes()).is_ok());
+    // Verify it's a valid prefix of the original string (valid UTF-8)
+    assert!(multibyte_command.starts_with(truncated));
+
+    // Test with emoji (4 bytes each): 🎉🎊 = 2 chars × 4 bytes = 8 bytes
+    let emoji_command = "🎉".repeat(30); // 30 chars × 4 bytes = 120 bytes
+    let truncated_emoji = crate::learn_utils::truncate_utf8(&emoji_command, 100);
+    // Should truncate to 25 chars = 100 bytes exactly
+    assert_eq!(truncated_emoji.len(), 100);
+    assert!(std::str::from_utf8(truncated_emoji.as_bytes()).is_ok());
+    assert!(emoji_command.starts_with(truncated_emoji));
 }
