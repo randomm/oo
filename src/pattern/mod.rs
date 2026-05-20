@@ -32,15 +32,13 @@ pub struct Pattern {
 
 /// Pattern for extracting a summary from successful command output.
 ///
-/// The `pattern` field contains a regex with named capture groups.
-/// The `summary` field is a template string with placeholders like `{name}`
-/// that are replaced with captured values.
+/// Uses a strategy-based approach to handle different extraction methods:
+/// - Regex with template formatting (legacy)
+/// - Tail/head line extraction
+/// - Grep filtering
 pub struct SuccessPattern {
-    /// Regex with named capture groups for extracting values.
-    pub pattern: Regex,
-
-    /// Template string with `{name}` placeholders for summary formatting.
-    pub summary: String,
+    /// Strategy for extracting success output.
+    pub strategy: SuccessStrategy,
 }
 
 /// Strategy for filtering failed command output.
@@ -86,6 +84,38 @@ pub enum FailureStrategy {
     },
 }
 
+/// Strategy for extracting success output.
+///
+/// Mirrors failure strategies but for successful command output.
+/// Used when a command succeeds with large output and a pattern matches.
+pub enum SuccessStrategy {
+    /// Legacy format: regex with named capture groups + summary template.
+    Regex {
+        /// Regex with named capture groups for extracting values.
+        pattern: Regex,
+        /// Template string with `{name}` placeholders for summary formatting.
+        summary: String,
+    },
+
+    /// Keep the last N lines of output (tail).
+    Tail {
+        /// Number of lines to keep from the end.
+        lines: usize,
+    },
+
+    /// Keep the first N lines of output (head).
+    Head {
+        /// Number of lines to keep from the start.
+        lines: usize,
+    },
+
+    /// Filter lines matching a regex pattern.
+    Grep {
+        /// Regex pattern to match lines.
+        pattern: Regex,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // Matching & extraction
 // ---------------------------------------------------------------------------
@@ -107,14 +137,44 @@ pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<
 
 /// Apply a success pattern to output, returning the formatted summary if it matches.
 pub fn extract_summary(pat: &SuccessPattern, output: &str) -> Option<String> {
-    let caps = pat.pattern.captures(output)?;
-    let mut summary = pat.summary.clone();
-    for name in pat.pattern.capture_names().flatten() {
-        if let Some(m) = caps.name(name) {
-            summary = summary.replace(&format!("{{{name}}}"), m.as_str());
+    match &pat.strategy {
+        SuccessStrategy::Regex { pattern, summary } => {
+            let caps = pattern.captures(output)?;
+            let mut result = summary.clone();
+            for name in pattern.capture_names().flatten() {
+                if let Some(m) = caps.name(name) {
+                    result = result.replace(&format!("{{{name}}}"), m.as_str());
+                }
+            }
+            Some(result)
+        }
+        SuccessStrategy::Tail { lines } => {
+            let all: Vec<&str> = output.lines().collect();
+            let start = all.len().saturating_sub(*lines);
+            if start >= all.len() {
+                None
+            } else {
+                Some(all[start..].join("\n"))
+            }
+        }
+        SuccessStrategy::Head { lines } => {
+            let all: Vec<&str> = output.lines().collect();
+            let end = (*lines).min(all.len());
+            if end == 0 {
+                None
+            } else {
+                Some(all[..end].join("\n"))
+            }
+        }
+        SuccessStrategy::Grep { pattern } => {
+            let filtered: Vec<&str> = output.lines().filter(|l| pattern.is_match(l)).collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered.join("\n"))
+            }
         }
     }
-    Some(summary)
 }
 
 /// Apply a failure strategy to extract actionable output.
@@ -225,8 +285,10 @@ mod tests {
     #[test]
     fn test_summary_template_formatting() {
         let pat = SuccessPattern {
-            pattern: Regex::new(r"(?P<a>\d+) things, (?P<b>\d+) items").unwrap(),
-            summary: "{a} things and {b} items".into(),
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(r"(?P<a>\d+) things, (?P<b>\d+) items").unwrap(),
+                summary: "{a} things and {b} items".into(),
+            },
         };
         let result = extract_summary(&pat, "found 5 things, 3 items here").unwrap();
         assert_eq!(result, "5 things and 3 items");
@@ -284,6 +346,171 @@ lines = 20
         assert!(pat.command_match.is_match("myapp test --verbose"));
         let summary = extract_summary(pat.success.as_ref().unwrap(), "42 tests passed").unwrap();
         assert_eq!(summary, "42 tests passed");
+    }
+
+    #[test]
+    fn test_success_strategy_tail() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Tail { lines: 10 },
+        };
+        let lines: String = (0..50).map(|i| format!("line {i}\n")).collect();
+        let result = extract_summary(&pat, &lines).unwrap();
+        // tail 10 lines from 50 → lines 40..49
+        assert!(result.contains("line 40"));
+        assert!(result.contains("line 49"));
+        assert!(!result.contains("line 0\n"));
+    }
+
+    #[test]
+    fn test_success_strategy_head() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Head { lines: 5 },
+        };
+        let lines: String = (0..20).map(|i| format!("line {i}\n")).collect();
+        let result = extract_summary(&pat, &lines).unwrap();
+        assert_eq!(result, "line 0\nline 1\nline 2\nline 3\nline 4");
+    }
+
+    #[test]
+    fn test_success_strategy_grep() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Grep {
+                pattern: Regex::new(r"passed").unwrap(),
+            },
+        };
+        let output = "test 1 passed\ntest 2 failed\ntest 3 passed\n";
+        let result = extract_summary(&pat, output).unwrap();
+        assert_eq!(result, "test 1 passed\ntest 3 passed");
+    }
+
+    #[test]
+    fn test_success_strategy_regex_template() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(r"(?P<a>\d+) things, (?P<b>\d+) items").unwrap(),
+                summary: "{a} things and {b} items".into(),
+            },
+        };
+        let result = extract_summary(&pat, "found 5 things, 3 items here").unwrap();
+        assert_eq!(result, "5 things and 3 items");
+    }
+
+    #[test]
+    fn test_success_strategy_tail_empty_when_lines_exceeds_output() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Tail { lines: 0 },
+        };
+        let output = "line1\nline2\n";
+        assert!(extract_summary(&pat, output).is_none());
+    }
+
+    #[test]
+    fn test_success_strategy_head_empty_on_zero_lines() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Head { lines: 0 },
+        };
+        let output = "line1\nline2\n";
+        assert!(extract_summary(&pat, output).is_none());
+    }
+
+    #[test]
+    fn test_success_strategy_grep_empty_when_no_matches() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Grep {
+                pattern: Regex::new(r"NOMATCH").unwrap(),
+            },
+        };
+        let output = "line1\nline2\n";
+        assert!(extract_summary(&pat, output).is_none());
+    }
+
+    #[test]
+    fn test_success_strategy_regex_none_when_no_match() {
+        let pat = SuccessPattern {
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(r"(?P<n>\d+) tests").unwrap(),
+                summary: "{n} tests".into(),
+            },
+        };
+        let output = "no tests here";
+        assert!(extract_summary(&pat, output).is_none());
+    }
+
+    #[test]
+    fn test_success_strategy_toml_tail() {
+        let toml = r#"
+command_match = "^myapp"
+
+[success]
+strategy = "tail"
+lines = 5
+"#;
+        let pat = parse_pattern_str(toml).unwrap();
+        let output = (0..20).map(|i| format!("line {i}\n")).collect::<String>();
+        let result = extract_summary(pat.success.as_ref().unwrap(), &output).unwrap();
+        assert!(result.contains("line 15"));
+        assert!(result.contains("line 19"));
+    }
+
+    #[test]
+    fn test_success_strategy_toml_head() {
+        let toml = r#"
+command_match = "^myapp"
+
+[success]
+strategy = "head"
+lines = 3
+"#;
+        let pat = parse_pattern_str(toml).unwrap();
+        let output = (0..10).map(|i| format!("line {i}\n")).collect::<String>();
+        let result = extract_summary(pat.success.as_ref().unwrap(), &output).unwrap();
+        assert_eq!(result, "line 0\nline 1\nline 2");
+    }
+
+    #[test]
+    fn test_success_strategy_toml_grep() {
+        let toml = r#"
+command_match = "^myapp"
+
+[success]
+strategy = "grep"
+grep = "ERROR"
+"#;
+        let pat = parse_pattern_str(toml).unwrap();
+        let output = "INFO ok\nERROR bad\nINFO fine\n";
+        let result = extract_summary(pat.success.as_ref().unwrap(), &output).unwrap();
+        assert_eq!(result, "ERROR bad");
+    }
+
+    #[test]
+    fn test_success_strategy_toml_regex_backward_compat() {
+        // Verify old pattern+summary format still works
+        let toml = r#"
+command_match = "^myapp"
+
+[success]
+pattern = '(?P<count>\d+) passed'
+summary = "{count} passed"
+"#;
+        let pat = parse_pattern_str(toml).unwrap();
+        let result = extract_summary(pat.success.as_ref().unwrap(), "42 passed").unwrap();
+        assert_eq!(result, "42 passed");
+    }
+
+    #[test]
+    fn test_success_strategy_toml_defaults() {
+        let toml = r#"
+command_match = "^myapp"
+
+[success]
+strategy = "tail"
+"#;
+        let pat = parse_pattern_str(toml).unwrap();
+        // tail strategy should default to 30 lines (same as failure)
+        assert!(matches!(
+            pat.success.unwrap().strategy,
+            SuccessStrategy::Tail { lines: 30 }
+        ));
     }
 
     #[test]

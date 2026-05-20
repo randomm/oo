@@ -2,7 +2,7 @@ use regex::Regex;
 use serde::Deserialize;
 use std::path::Path;
 
-use super::{FailurePattern, FailureStrategy, Pattern, SuccessPattern};
+use super::{FailurePattern, FailureStrategy, Pattern, SuccessPattern, SuccessStrategy};
 use crate::error::Error;
 
 // ---------------------------------------------------------------------------
@@ -26,13 +26,28 @@ pub struct PatternFile {
     pub failure: Option<FailureSection>,
 }
 
+/// TOML configuration for success output extraction.
+///
+/// Supports both legacy pattern+summary format and new strategy-based format.
 #[derive(Deserialize)]
 pub struct SuccessSection {
-    /// Regex pattern with named capture groups.
-    pub pattern: String,
+    /// Strategy name: "regex" (legacy), "tail", "head", or "grep".
+    #[serde(default)]
+    pub(crate) strategy: Option<String>,
 
-    /// Summary template with {name} placeholders.
-    pub summary: String,
+    /// Regex pattern with named capture groups (for legacy format or grep strategy).
+    #[serde(rename = "pattern")]
+    pub(crate) success_pattern: Option<String>,
+
+    /// Summary template with {name} placeholders (for legacy format).
+    pub(crate) summary: Option<String>,
+
+    /// Number of lines (for tail/head strategies).
+    pub(crate) lines: Option<usize>,
+
+    /// Grep pattern (for grep strategy).
+    #[serde(rename = "grep")]
+    pub(crate) grep_pattern: Option<String>,
 }
 
 /// TOML configuration for failure output filtering.
@@ -135,12 +150,42 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let success = pf
         .success
         .map(|s| -> Result<SuccessPattern, Error> {
-            let pattern =
-                Regex::new(&s.pattern).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
-            Ok(SuccessPattern {
-                pattern,
-                summary: s.summary,
-            })
+            // Determine strategy: explicit strategy field, or default to "regex" for legacy format
+            let strategy = match s.strategy.as_deref().unwrap_or("regex") {
+                "tail" => SuccessStrategy::Tail {
+                    lines: s.lines.unwrap_or(30),
+                },
+                "head" => SuccessStrategy::Head {
+                    lines: s.lines.unwrap_or(20),
+                },
+                "grep" => {
+                    let pat = s.grep_pattern.ok_or_else(|| {
+                        Error::Pattern("grep strategy requires 'grep' field".into())
+                    })?;
+                    let pattern =
+                        Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    SuccessStrategy::Grep { pattern }
+                }
+                "regex" => {
+                    // Legacy format: pattern + summary
+                    let pattern = s.success_pattern.ok_or_else(|| {
+                        Error::Pattern("regex strategy requires 'pattern' field".into())
+                    })?;
+                    let summary = s.summary.ok_or_else(|| {
+                        Error::Pattern("regex strategy requires 'summary' field".into())
+                    })?;
+                    let regex =
+                        Regex::new(&pattern).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    SuccessStrategy::Regex {
+                        pattern: regex,
+                        summary,
+                    }
+                }
+                other => {
+                    return Err(Error::Pattern(format!("unknown success strategy: {other}")));
+                }
+            };
+            Ok(SuccessPattern { strategy })
         })
         .transpose()?;
 
