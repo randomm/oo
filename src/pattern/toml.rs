@@ -1,9 +1,57 @@
 use regex::Regex;
+use regex::RegexBuilder;
 use serde::Deserialize;
 use std::path::Path;
 
 use super::{FailurePattern, FailureStrategy, Pattern, SuccessPattern, SuccessStrategy};
 use crate::error::Error;
+
+// ---------------------------------------------------------------------------
+// Regex validation limits
+// ---------------------------------------------------------------------------
+
+/// Maximum allowed length for user-provided regex patterns.
+///
+/// This limit prevents overly complex regex patterns that could cause
+/// performance issues or unexpected ReDOS attacks.
+const MAX_REGEX_LENGTH: usize = 500;
+
+/// Size limit for regex compilation (in bytes).
+///
+/// Prevents pathological regex patterns from consuming excessive memory.
+/// Set to 1 MB - high enough for reasonable patterns but limits pathological cases.
+const REGEX_SIZE_LIMIT: usize = 1024 * 1024; // 1 MB
+
+/// Validate and compile a user-provided regex string with safety limits.
+///
+/// This function checks that the regex string is not overly long and compiles
+/// it with a reasonable size limit to prevent resource exhaustion issues.
+///
+/// # Arguments
+///
+/// * `pattern` - The regex pattern string to compile
+///
+/// # Errors
+///
+/// Returns `Error::Pattern` if the regex is too long or fails to compile.
+fn validate_and_compile_regex(pattern: &str) -> Result<Regex, Error> {
+    if pattern.len() > MAX_REGEX_LENGTH {
+        return Err(Error::Pattern(format!(
+            "regex too long ({} > {} chars)",
+            pattern.len(),
+            MAX_REGEX_LENGTH
+        )));
+    }
+
+    RegexBuilder::new(pattern)
+        .size_limit(REGEX_SIZE_LIMIT)
+        .build()
+        .map_err(|e| Error::Pattern(format!("regex compilation failed: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// TOML deserialization types
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TOML deserialization types
@@ -101,7 +149,14 @@ pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
 fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
     let content =
         std::fs::read_to_string(path).map_err(|e| Error::Pattern(format!("{path:?}: {e}")))?;
-    parse_pattern_str(&content)
+    parse_pattern_str(&content).map_err(|e| {
+        // Add file path context to any parse errors
+        if let Error::Pattern(msg) = e {
+            Error::Pattern(format!("{path:?}: {msg}"))
+        } else {
+            e
+        }
+    })
 }
 
 /// Parse a pattern definition from TOML string content.
@@ -125,6 +180,7 @@ fn load_pattern_file(path: &Path) -> Result<Pattern, Error> {
 /// - Invalid regular expressions
 /// - Missing required fields (e.g., grep pattern for grep strategy)
 /// - Unknown strategy names
+/// - Regex patterns exceeding maximum length (500 characters)
 ///
 /// # Examples
 ///
@@ -144,8 +200,8 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
     let pf: PatternFile =
         toml::from_str(content).map_err(|e| Error::Pattern(format!("TOML parse: {e}")))?;
 
-    let command_match =
-        Regex::new(&pf.command_match).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+    // Validate and compile command_match regex with safety limits
+    let command_match = validate_and_compile_regex(&pf.command_match)?;
 
     let success = pf
         .success
@@ -162,8 +218,7 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
                     let pat = s.grep_pattern.ok_or_else(|| {
                         Error::Pattern("grep strategy requires 'grep' field".into())
                     })?;
-                    let pattern =
-                        Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    let pattern = validate_and_compile_regex(&pat)?;
                     SuccessStrategy::Grep { pattern }
                 }
                 "regex" => {
@@ -174,8 +229,7 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
                     let summary = s.summary.ok_or_else(|| {
                         Error::Pattern("regex strategy requires 'summary' field".into())
                     })?;
-                    let regex =
-                        Regex::new(&pattern).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    let regex = validate_and_compile_regex(&pattern)?;
                     SuccessStrategy::Regex {
                         pattern: regex,
                         summary,
@@ -203,8 +257,7 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
                     let pat = f.grep_pattern.ok_or_else(|| {
                         Error::Pattern("grep strategy requires 'grep' field".into())
                     })?;
-                    let pattern =
-                        Regex::new(&pat).map_err(|e| Error::Pattern(format!("regex: {e}")))?;
+                    let pattern = validate_and_compile_regex(&pat)?;
                     FailureStrategy::Grep { pattern }
                 }
                 "between" => {

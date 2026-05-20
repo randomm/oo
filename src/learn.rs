@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::Error;
+pub use crate::learn_prompt::SYSTEM_PROMPT;
 use crate::pattern::FailureSection;
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,15 @@ pub(crate) struct LearnParams<'a> {
     pub patterns_dir: &'a Path,
     pub learn_status_path: &'a Path,
     pub hint: Option<&'a str>,
+}
+
+/// Typed struct for the JSON data passed to the background learn process.
+#[derive(Deserialize)]
+struct LearnData {
+    command: String,
+    output: String,
+    exit_code: i64,
+    hint: Option<String>,
 }
 
 impl Default for LearnConfig {
@@ -107,51 +117,6 @@ pub fn load_learn_config() -> Result<LearnConfig, Error> {
 
 // ---------------------------------------------------------------------------
 // Background learning
-// ---------------------------------------------------------------------------
-
-const SYSTEM_PROMPT: &str = r#"You generate output classification patterns for `oo`, a shell command runner used by an LLM coding agent.
-
-The agent reads your pattern to decide its next action. Returning nothing is the WORST outcome — an empty summary forces a costly recall cycle.
-
-IMPORTANT: Use named capture groups (?P<name>...) only — never numbered groups like (\d+). Summary templates use {name} placeholders matching the named groups.
-
-## oo's 4-tier system
-
-- Passthrough: output <4 KB passes through unchanged
-- Failure: failed commands get ✗ prefix with filtered error output
-- Success: successful commands get ✓ prefix with a pattern-extracted summary
-- Large: if regex fails to match, output is FTS5 indexed for recall
-
-## Examples
-
-Test runner — capture RESULT line, not header; strategy=tail for failures:
-    command_match = "\\bcargo\\s+test\\b"
-    [success]
-    pattern = 'test result: ok\. (?P<passed>\d+) passed.*finished in (?P<time>[\d.]+)s'
-    summary = "{passed} passed, {time}s"
-    [failure]
-    strategy = "tail"
-    lines = 30
-
-Build/lint — quiet on success (only useful when failing); strategy=head for failures:
-    command_match = "\\bcargo\\s+build\\b"
-    [success]
-    pattern = "(?s).*"
-    summary = ""
-    [failure]
-    strategy = "head"
-    lines = 20
-
-## Rules
-
-- Test runners: capture SUMMARY line (e.g. 'test result: ok. 5 passed'), NOT headers (e.g. 'running 5 tests')
-- Build/lint tools: empty summary for success; head/lines=20 for failures
-- Large tabular output (ls, git log): omit success section — falls to Large tier
-
-## Command Categories
-
-Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Content commands always pass through regardless of size; Data commands are indexed when large and unpatterned."#;
-
 /// Run the learn flow with explicit config and base URL — testable variant.
 ///
 /// This internal function bypasses `load_learn_config()` and env var lookup,
@@ -186,7 +151,7 @@ pub(crate) fn run_learn_with_config(
     // First attempt
     let mut last_err;
     let toml = get_response(&user_msg)?;
-    let clean = strip_fences(&toml);
+    let clean = crate::learn_utils::strip_fences(&toml);
     match validate_pattern_toml(&clean) {
         Ok(()) => {
             std::fs::create_dir_all(params.patterns_dir)
@@ -210,7 +175,7 @@ pub(crate) fn run_learn_with_config(
             "Your previous TOML was invalid: {last_err}. Here is what you returned:\n{clean}\nOutput ONLY the corrected TOML, nothing else."
         );
         let toml = get_response(&retry_msg)?;
-        let clean = strip_fences(&toml);
+        let clean = crate::learn_utils::strip_fences(&toml);
         match validate_pattern_toml(&clean) {
             Ok(()) => {
                 std::fs::create_dir_all(params.patterns_dir)
@@ -326,13 +291,13 @@ pub fn spawn_background(
 pub fn run_background(data_path: &str) -> Result<(), Error> {
     let path = Path::new(data_path);
     let content = std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))?;
-    let data: serde_json::Value =
+    let data: LearnData =
         serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
 
-    let command = data["command"].as_str().unwrap_or("");
-    let output = data["output"].as_str().unwrap_or("");
-    let exit_code = data["exit_code"].as_i64().unwrap_or(0) as i32;
-    let hint = data["hint"].as_str();
+    let command = &data.command;
+    let output = &data.output;
+    let exit_code = data.exit_code as i32;
+    let hint = data.hint.as_deref();
 
     let result = run_learn_with_hint(command, output, exit_code, hint);
 
@@ -415,19 +380,7 @@ fn label(command: &str) -> String {
 }
 
 fn truncate_for_prompt(output: &str) -> &str {
-    truncate_utf8(output, 4000)
-}
-
-// Truncate at a char boundary to avoid panics on multibyte UTF-8 sequences.
-fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
+    crate::learn_utils::truncate_utf8(output, 4000)
 }
 
 /// Validate ANTHROPIC_API_URL uses HTTPS (with localhost exceptions).
@@ -446,17 +399,6 @@ fn validate_anthropic_url(url: &str) -> Result<(), Error> {
     Err(Error::Learn(format!(
         "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1."
     )))
-}
-
-fn strip_fences(s: &str) -> String {
-    let trimmed = s.trim();
-    if let Some(rest) = trimmed.strip_prefix("```toml") {
-        rest.strip_suffix("```").unwrap_or(rest).trim().to_string()
-    } else if let Some(rest) = trimmed.strip_prefix("```") {
-        rest.strip_suffix("```").unwrap_or(rest).trim().to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 fn validate_pattern_toml(toml_str: &str) -> Result<(), Error> {

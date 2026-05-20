@@ -1,4 +1,10 @@
 use super::*;
+use crate::learn_utils::{strip_fences as strip_fences_impl, truncate_utf8};
+
+// Re-export the functions for testing
+fn strip_fences(s: &str) -> String {
+    strip_fences_impl(s)
+}
 
 // Tests for failure-section validation live in a separate file to keep this
 // module under 500 lines.

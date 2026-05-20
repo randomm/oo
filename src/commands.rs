@@ -1,13 +1,13 @@
-use std::io::Write;
 use std::path::Path;
 
 use humansize::{BINARY, format_size};
+use std::io::Write;
 
 use crate::classify::Classification;
 pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::{format_age, now_epoch};
-use crate::{classify, exec, help, init, learn, pattern, session, store};
+use crate::{classify, commands_patterns, exec, help, init, learn, pattern, session, store};
 
 pub enum Action {
     Run(Vec<String>),
@@ -441,113 +441,21 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// Print pattern entries from a single directory, returning true if any were found.
-///
-/// Each line is printed with a two-space indent so callers can add section headers.
-pub fn list_patterns_in(dir: &Path) -> bool {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    let mut found = false;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let parsed = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
-
-        let cmd_match = parsed
-            .as_ref()
-            .and_then(|v| v.get("command_match")?.as_str().map(str::to_string));
-        let has_success = parsed.as_ref().and_then(|v| v.get("success")).is_some();
-        let has_failure = parsed.as_ref().and_then(|v| v.get("failure")).is_some();
-
-        if parsed.is_none() {
-            continue;
-        }
-        found = true;
-        let cmd_match = cmd_match.unwrap_or_else(|| "(unknown)".into());
-
-        let mut flags = Vec::new();
-        if has_success {
-            flags.push("success");
-        }
-        if has_failure {
-            flags.push("failure");
-        }
-        if flags.is_empty() {
-            println!("  {cmd_match}");
-        } else {
-            println!("  {cmd_match}  [{}]", flags.join("] ["));
-        }
-    }
-    found
+/// List patterns from both project-local and user config directories.
+pub fn cmd_patterns() -> i32 {
+    self::commands_patterns::cmd_patterns()
 }
 
 /// List learned pattern files from a single directory (legacy test helper).
 pub fn cmd_patterns_in(dir: &Path) -> i32 {
-    if !list_patterns_in(dir) {
-        println!("no learned patterns yet");
-    }
-    0
+    self::commands_patterns::cmd_patterns_in(dir)
 }
 
-/// List built-in patterns.
-fn list_builtins_in() -> bool {
-    let patterns = pattern::builtins();
-    if patterns.is_empty() {
-        return false;
-    }
-
-    for pat in patterns {
-        let cmd_match = pat.command_match.as_str();
-        let has_success = pat.success.is_some();
-        let has_failure = pat.failure.is_some();
-
-        let mut flags = Vec::new();
-        if has_success {
-            flags.push("success");
-        }
-        if has_failure {
-            flags.push("failure");
-        }
-        if flags.is_empty() {
-            println!("  {cmd_match}");
-        } else {
-            println!("  {cmd_match}  [{}]", flags.join("] ["));
-        }
-    }
-    true
-}
-
-/// List patterns from both project-local and user config directories.
-pub fn cmd_patterns() -> i32 {
-    let project_dir = std::env::current_dir()
-        .map(|cwd| init::project_patterns_dir(&cwd))
-        .ok();
-    let user_dir = learn::patterns_dir();
-
-    // Show built-in patterns first
-    println!("Built-in ({} patterns):", pattern::builtins().len());
-    list_builtins_in();
-    println!();
-
-    if let Some(ref pdir) = project_dir {
-        if pdir.exists() {
-            println!("Project ({}):", pdir.display());
-            list_patterns_in(pdir);
-            println!();
-        }
-    }
-
-    println!("User ({}):", user_dir.display());
-    list_patterns_in(&user_dir);
-
-    0
+/// Print pattern entries from a single directory, returning true if any were found.
+///
+/// Each line is printed with a two-space indent so callers can add section headers.
+pub fn list_patterns_in(dir: &Path) -> bool {
+    self::commands_patterns::list_patterns_in(dir)
 }
 
 pub fn cmd_help(cmd: &str) -> i32 {
