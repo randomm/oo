@@ -158,11 +158,13 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bnpm\s+test\b")
                 .expect("valid regex: npm test command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                )
-                .expect("valid regex: npm test success pattern"),
-                summary: "{passed} passed, {time}s".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(
+                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
+                    )
+                    .expect("valid regex: npm test success pattern"),
+                    summary: "{passed} passed, {time}s".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Tail { lines: 30 },
@@ -173,11 +175,13 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\byarn\s+test\b")
                 .expect("valid regex: yarn test command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                )
-                .expect("valid regex: yarn test success pattern"),
-                summary: "{passed} passed, {time}s".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(
+                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
+                    )
+                    .expect("valid regex: yarn test success pattern"),
+                    summary: "{passed} passed, {time}s".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Tail { lines: 30 },
@@ -188,11 +192,13 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bpnpm\s+test\b")
                 .expect("valid regex: pnpm test command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                )
-                .expect("valid regex: pnpm test success pattern"),
-                summary: "{passed} passed, {time}s".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(
+                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
+                    )
+                    .expect("valid regex: pnpm test success pattern"),
+                    summary: "{passed} passed, {time}s".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Tail { lines: 30 },
@@ -203,11 +209,13 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bbun\s+test\b")
                 .expect("valid regex: bun test command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(
-                    r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
-                )
-                .expect("valid regex: bun test success pattern"),
-                summary: "{passed} passed, {time}s".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(
+                        r"(?s)Tests:\s+(?P<passed>\d+) passed.*Time:\s+(?P<time>[\d.]+)\s*s",
+                    )
+                    .expect("valid regex: bun test success pattern"),
+                    summary: "{passed} passed, {time}s".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Tail { lines: 30 },
@@ -218,9 +226,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bcargo\s+tarpaulin\b")
                 .expect("valid regex: cargo tarpaulin command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"Overall coverage: (?P<cov>[\d.]+)%")
-                    .expect("valid regex: cargo tarpaulin success pattern"),
-                summary: "{cov}% coverage".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"Overall coverage: (?P<cov>[\d.]+)%")
+                        .expect("valid regex: cargo tarpaulin success pattern"),
+                    summary: "{cov}% coverage".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Tail { lines: 20 },
@@ -231,9 +241,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bcargo\s+fmt\b")
                 .expect("valid regex: cargo fmt command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*")
-                    .expect("valid regex: cargo fmt success pattern (always matches)"),
-                summary: String::new(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?s).*")
+                        .expect("valid regex: cargo fmt success pattern (always matches)"),
+                    summary: String::new(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Grep {
@@ -246,9 +258,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bmypy\b")
                 .expect("valid regex: mypy command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"Success: no issues found")
-                    .expect("valid regex: mypy success pattern"),
-                summary: "Success: no issues found".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"Success: no issues found")
+                        .expect("valid regex: mypy success pattern"),
+                    summary: "Success: no issues found".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -259,9 +273,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\brubocop\b")
                 .expect("valid regex: rubocop command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?P<offenses>\d+) offenses detected")
-                    .expect("valid regex: rubocop success pattern"),
-                summary: "{offenses} offenses".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?P<offenses>\d+) offenses detected")
+                        .expect("valid regex: rubocop success pattern"),
+                    summary: "{offenses} offenses".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 30 },
@@ -272,9 +288,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bruff\s+format\b")
                 .expect("valid regex: ruff format command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?P<count>\d+) files reformatted")
-                    .expect("valid regex: ruff format success pattern"),
-                summary: "{count} files reformatted".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?P<count>\d+) files reformatted")
+                        .expect("valid regex: ruff format success pattern"),
+                    summary: "{count} files reformatted".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -285,9 +303,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bprettier\b")
                 .expect("valid regex: prettier command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*")
-                    .expect("valid regex: prettier success pattern (always matches)"),
-                summary: String::new(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?s).*")
+                        .expect("valid regex: prettier success pattern (always matches)"),
+                    summary: String::new(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -298,9 +318,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bnpm\s+run\s+build\b")
                 .expect("valid regex: npm run build command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*")
-                    .expect("valid regex: npm run build success pattern (always matches)"),
-                summary: String::new(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?s).*")
+                        .expect("valid regex: npm run build success pattern (always matches)"),
+                    summary: String::new(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -311,9 +333,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\byarn\s+build\b")
                 .expect("valid regex: yarn build command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"Done in (?P<time>[\d.]+)s")
-                    .expect("valid regex: yarn build success pattern"),
-                summary: "Done in {time}s".into(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"Done in (?P<time>[\d.]+)s")
+                        .expect("valid regex: yarn build success pattern"),
+                    summary: "Done in {time}s".into(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -324,9 +348,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bpnpm\s+build\b")
                 .expect("valid regex: pnpm build command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*")
-                    .expect("valid regex: pnpm build success pattern (always matches)"),
-                summary: String::new(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?s).*")
+                        .expect("valid regex: pnpm build success pattern (always matches)"),
+                    summary: String::new(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
@@ -337,9 +363,11 @@ pub fn builtin_patterns() -> Vec<Pattern> {
             command_match: Regex::new(r"\bbun\s+build\b")
                 .expect("valid regex: bun build command_match"),
             success: Some(SuccessPattern {
-                pattern: Regex::new(r"(?s).*")
-                    .expect("valid regex: bun build success pattern (always matches)"),
-                summary: String::new(),
+                strategy: SuccessStrategy::Regex {
+                    pattern: Regex::new(r"(?s).*")
+                        .expect("valid regex: bun build success pattern (always matches)"),
+                    summary: String::new(),
+                },
             }),
             failure: Some(FailurePattern {
                 strategy: FailureStrategy::Head { lines: 20 },
