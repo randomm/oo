@@ -1,2 +1,4 @@
 /target
 .worktrees/
+/test_*
+/libtest_*.rlib
