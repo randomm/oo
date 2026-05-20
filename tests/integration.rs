@@ -444,14 +444,15 @@ fn test_dispatch_init() {
 
 #[test]
 fn test_patterns_no_learned_patterns() {
-    // When no patterns exist (or patterns dir is absent), exit 0 and print "no patterns yet"
+    // When no learned patterns exist, built-in patterns are still shown
     let dir = TempDir::new().unwrap();
     oo().arg("patterns")
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path().join(".config"))
         .assert()
         .success()
-        .stdout(predicate::str::contains("no patterns yet"));
+        .stdout(predicate::str::contains("Built-in"))
+        .stdout(predicate::str::contains("User"));
 }
 
 #[test]

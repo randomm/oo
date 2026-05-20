@@ -466,6 +466,34 @@ pub fn cmd_patterns_in(dir: &Path) -> i32 {
     0
 }
 
+/// List built-in patterns.
+fn list_builtins_in() -> bool {
+    let patterns = pattern::builtins();
+    if patterns.is_empty() {
+        return false;
+    }
+
+    for pat in patterns {
+        let cmd_match = pat.command_match.as_str();
+        let has_success = pat.success.is_some();
+        let has_failure = pat.failure.is_some();
+
+        let mut flags = Vec::new();
+        if has_success {
+            flags.push("success");
+        }
+        if has_failure {
+            flags.push("failure");
+        }
+        if flags.is_empty() {
+            println!("  {cmd_match}");
+        } else {
+            println!("  {cmd_match}  [{}]", flags.join("] ["));
+        }
+    }
+    true
+}
+
 /// List patterns from both project-local and user config directories.
 pub fn cmd_patterns() -> i32 {
     let project_dir = std::env::current_dir()
@@ -473,26 +501,22 @@ pub fn cmd_patterns() -> i32 {
         .ok();
     let user_dir = learn::patterns_dir();
 
-    let mut total_found = false;
+    // Show built-in patterns first
+    println!("Built-in ({} patterns):", pattern::builtins().len());
+    list_builtins_in();
+    println!();
 
     if let Some(ref pdir) = project_dir {
         if pdir.exists() {
             println!("Project ({}):", pdir.display());
-            if list_patterns_in(pdir) {
-                total_found = true;
-            }
+            list_patterns_in(pdir);
             println!();
         }
     }
 
     println!("User ({}):", user_dir.display());
-    if list_patterns_in(&user_dir) {
-        total_found = true;
-    }
+    list_patterns_in(&user_dir);
 
-    if !total_found {
-        println!("no patterns yet");
-    }
     0
 }
 
