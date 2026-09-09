@@ -45,6 +45,15 @@ pub struct SearchResult {
     /// Optional similarity score (for semantic search backends).
     #[allow(dead_code)] // Used by VipuneStore (behind feature flag)
     pub similarity: Option<f64>,
+
+    /// Optional bounded excerpt centered on the best match.
+    ///
+    /// Populated by the FTS5 branch of `SqliteStore::search` via the
+    /// `snippet()` FTS5 function. `None` for the short-query LIKE fallback
+    /// and for backends without FTS5 (e.g. `VipuneStore`). Callers should
+    /// fall back to a client-side bounded prefix of `content` when this is
+    /// `None`.
+    pub snippet: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +203,13 @@ impl Store for SqliteStore {
             let mut stmt = self
                 .conn
                 .prepare(
-                    "SELECT e.id, e.content, e.metadata, rank
+                    // snippet(entries_fts, 0, '…', '…', '…', 32) — one bounded
+                    // fragment centered on the best-scoring match. Column 0 is
+                    // `content`. 32 tokens ≈ ~200 chars for typical ASCII output.
+                    // Markers are fixed literals (not derived from user query) so
+                    // there is no injection surface.
+                    "SELECT e.id, e.content, e.metadata, rank,
+                     snippet(entries_fts, 0, '…', '…', '…', 32)
                      FROM entries_fts f
                      JOIN entries e ON e.rowid = f.rowid
                      WHERE entries_fts MATCH ?1 AND e.project = ?2
@@ -220,11 +235,21 @@ impl Store for SqliteStore {
                 let content: String = row.get(1)?;
                 let meta_json: Option<String> = row.get(2)?;
                 let rank: f64 = row.get(3)?;
+                let snippet: String = row.get(4)?;
+                let snippet = if snippet.is_empty() || snippet.len() >= content.len() {
+                    None
+                } else {
+                    Some(snippet)
+                };
                 Ok(SearchResult {
                     id,
                     content,
                     meta: meta_json.as_deref().and_then(parse_meta),
                     similarity: Some(-rank), // FTS5 rank is negative
+                    // snippet() returns the full row when the match covers the
+                    // entire content (no room to trim) — map that to None so
+                    // callers fall back to a client-side bounded prefix.
+                    snippet,
                 })
             })
             .map_err(map_err)?
@@ -252,6 +277,9 @@ impl Store for SqliteStore {
                     content,
                     meta: meta_json.as_deref().and_then(parse_meta),
                     similarity: None,
+                    // No FTS5 match context in the LIKE branch — callers must
+                    // fall back to a client-side bounded prefix of `content`.
+                    snippet: None,
                 })
             })
             .map_err(map_err)?
@@ -393,6 +421,9 @@ impl Store for VipuneStore {
                 meta: m.metadata.as_deref().and_then(parse_meta),
                 content: m.content,
                 similarity: m.similarity,
+                // VipuneStore has no FTS5 — callers fall back to a bounded
+                // client-side prefix of `content`.
+                snippet: None,
             })
             .collect())
     }

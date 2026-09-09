@@ -29,6 +29,44 @@ fn test_index_and_search() {
     let results = store.search("proj", "auth", 10).unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].content.contains("auth"));
+    // Short content (4 tokens) → snippet() returns the full row → None.
+    assert!(
+        results[0].snippet.is_none(),
+        "short content must yield snippet None (full-row snippet is not a bound)"
+    );
+}
+
+#[test]
+fn test_fts_snippet_is_bounded_for_long_content() {
+    // For long content the FTS5 branch must produce a bounded snippet that
+    // contains the matched token and is strictly shorter than the full blob.
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    // ~200 words of padding around a unique sentinel — well over the 32-token window.
+    let padding: Vec<String> = (0..200).map(|i| format!("pad_{i:04}_word")).collect();
+    let content = format!("start {} SENTINEL_XYZ_12345 end", padding.join(" "));
+    store.index("proj", &content, &meta).unwrap();
+
+    let results = store.search("proj", "SENTINEL_XYZ_12345", 10).unwrap();
+    assert_eq!(results.len(), 1);
+    let snippet = results[0]
+        .snippet
+        .as_ref()
+        .expect("long content must yield a bounded snippet");
+    assert!(
+        snippet.contains("SENTINEL_XYZ_12345"),
+        "snippet must contain the matched token, got: {snippet:?}"
+    );
+    assert!(
+        snippet.len() < results[0].content.len(),
+        "snippet must be strictly shorter than full content"
+    );
+    // Hard byte ceiling: 32 tokens * ~20 chars worst-case + markers ≈ 700 bytes.
+    assert!(
+        snippet.len() < 1024,
+        "snippet must stay under a hard byte ceiling, got {} bytes",
+        snippet.len()
+    );
 }
 
 #[test]
@@ -106,6 +144,11 @@ fn test_recall_short_query() {
     // The single-char LIKE search should find the entry containing "a"
     assert!(!results.is_empty(), "LIKE fallback should find results");
     assert!(results[0].content.contains("abstract"));
+    // LIKE fallback has no FTS5 match context — snippet must be None.
+    assert!(
+        results[0].snippet.is_none(),
+        "LIKE fallback must set snippet to None"
+    );
 }
 
 #[test]
@@ -120,6 +163,12 @@ fn test_store_and_recall_roundtrip() {
     let results = store.search("proj", "unique_token", 10).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].content, content);
+    // Short content (fewer tokens than the snippet window) → snippet() returns
+    // the full row → we map that to None so callers fall back to a bounded prefix.
+    assert!(
+        results[0].snippet.is_none(),
+        "short content must yield snippet None (full-row snippet is not a bound)"
+    );
 }
 
 #[test]
