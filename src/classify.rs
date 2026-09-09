@@ -20,10 +20,11 @@ pub const SMALL_THRESHOLD: usize = 4096;
 
 /// Total byte budget for the display slice of a bounded (Content/Unknown) output.
 ///
-/// Deliberately equal in value to `SMALL_THRESHOLD`: we never display more
-/// bytes than the passthrough budget. Split 60 % head / 40 % tail, mirroring
-/// [`smart_truncate`]'s ratio.
-pub const DISPLAY_CAP: usize = 4096;
+/// Defined as `SMALL_THRESHOLD` so the invariant "we never display more bytes
+/// than the passthrough budget" is compiler-enforced rather than maintained
+/// by convention. Split 60 % head / 40 % tail, mirroring [`smart_truncate`]'s
+/// ratio.
+pub const DISPLAY_CAP: usize = SMALL_THRESHOLD;
 
 /// Maximum lines to show in failure output before smart truncation kicks in.
 const TRUNCATION_THRESHOLD: usize = 80;
