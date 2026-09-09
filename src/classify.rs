@@ -384,30 +384,72 @@ pub fn bounded_truncate(output: &str) -> String {
     let tail_budget = DISPLAY_CAP - head_budget; // 1639
 
     let (head_end, tail_start) = cut_boundaries(output, head_budget, tail_budget);
+    // Enforce the cap on the assembled result, not just the budgets: line
+    // snapping must never let head + tail grow past the byte budget. Hard-clamp
+    // the head down to its budget (floor) and the tail up to its budget (ceil).
+    let clamped_head = floor_char_boundary(output, head_budget).min(head_end);
+    let clamped_tail =
+        ceil_char_boundary(output, output.len().saturating_sub(tail_budget)).max(tail_start);
+    debug_assert!(
+        clamped_head + (output.len() - clamped_tail) <= DISPLAY_CAP,
+        "head+tail slices ({clamped_head} + {} bytes) must not exceed DISPLAY_CAP",
+        output.len() - clamped_tail
+    );
 
-    let truncated_bytes = output.len() - head_end - (output.len() - tail_start);
+    let truncated_bytes = output.len() - clamped_head - (output.len() - clamped_tail);
     let marker =
         format!("... [{truncated_bytes} bytes truncated → use `oo recall` to query] ...\n");
 
     let mut result = String::with_capacity(DISPLAY_CAP + marker.len());
-    result.push_str(&output[..head_end]);
+    result.push_str(&output[..clamped_head]);
     result.push_str(&marker);
-    result.push_str(&output[tail_start..]);
+    result.push_str(&output[clamped_tail..]);
     result
 }
 
 /// Compute head/tail cut byte offsets for [`bounded_truncate`].
 ///
 /// Snaps the head cut forward to the next `\n` (≤ one line) and the tail cut
-/// backward to the previous `\n` (≤ one line). When fewer than 2 newlines
-/// exist in the entire output, falls back to char-boundary-only cuts.
+/// backward to the previous `\n` (≤ one line). A single forward O(1)-memory
+/// pass finds the only three facts that matter: whether ≥ 2 newlines exist,
+/// the first newline at/after `head_budget`, and the last newline strictly
+/// before `raw_tail`. When fewer than 2 newlines exist in the entire output,
+/// falls back to char-boundary-only cuts.
+///
+/// NOTE: the snapped positions may EXCEED the byte budgets (a line can be
+/// arbitrarily long). [`bounded_truncate`] enforces the cap on the assembled
+/// slices — line-snapping is a nicety that may only shrink, never grow.
 fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usize, usize) {
-    let nl_positions: Vec<usize> = output.match_indices('\n').map(|(i, _)| i).collect();
+    let raw_tail = output.len().saturating_sub(tail_budget);
+    let mut newline_count = 0usize;
+    let mut first_nl_at_or_after_head: Option<usize> = None;
+    let mut last_nl_before_raw_tail: Option<usize> = None;
+    for (i, b) in output.as_bytes().iter().enumerate() {
+        if *b != b'\n' {
+            continue;
+        }
+        newline_count += 1;
+        // Stop once neither fact can change: we already have a newline at/
+        // after head_budget, and this newline is no longer < raw_tail.
+        if i >= raw_tail && first_nl_at_or_after_head.is_some() {
+            break;
+        }
+        if i >= head_budget && first_nl_at_or_after_head.is_none() {
+            first_nl_at_or_after_head = Some(i);
+        }
+        if i < raw_tail {
+            last_nl_before_raw_tail = Some(i);
+        }
+    }
 
-    if nl_positions.len() < 2 {
-        // Fewer than 2 newlines: char-boundary-only cuts
+    // Fewer than 2 newlines: line-snapping has nothing to snap to (there is
+    // at most one newline in the entire output, so neither cut can land on
+    // the "right" side of a line and still keep its slice near budget), so
+    // use char-boundary-only cuts directly — exactly the bounds the clamp in
+    // `bounded_truncate` would apply, keeping the display within budget.
+    if newline_count < 2 {
         let head = floor_char_boundary(output, head_budget);
-        let tail = ceil_char_boundary(output, output.len().saturating_sub(tail_budget));
+        let tail = ceil_char_boundary(output, raw_tail);
         return (head, tail);
     }
 
@@ -415,11 +457,7 @@ fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usiz
     // newline falls at/after head_budget, the raw budget itself is used as the
     // fallback and must be snapped to a char boundary before `+1` — the `+1`
     // is only a safe "skip the newline" when the offset actually is a newline.
-    let head_end = match nl_positions
-        .iter()
-        .find(|&&pos| pos >= head_budget)
-        .copied()
-    {
+    let head_end = match first_nl_at_or_after_head {
         Some(pos) => pos + 1, // include the newline in the head slice
         None => floor_char_boundary(output, head_budget),
     };
@@ -429,18 +467,15 @@ fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usiz
     // the raw budget must be ceiled to a char boundary. (In practice this
     // fallback is also shielded by the overlap guard below, but snapping it
     // keeps the invariant local and symmetric with the head cut.)
-    let raw_tail = output.len().saturating_sub(tail_budget);
-    let tail_start = match nl_positions
-        .iter()
-        .rev()
-        .find(|&&pos| pos < raw_tail)
-        .copied()
-    {
+    let tail_start = match last_nl_before_raw_tail {
         Some(pos) => pos + 1, // start after the newline
         None => ceil_char_boundary(output, raw_tail),
     };
 
-    // Ensure head doesn't overlap tail
+    // Ensure head doesn't overlap tail: returning `tail_start = output.len()`
+    // encodes "no tail slice" — the head covers everything shown (in this
+    // branch head_end ≤ output.len(), so the head is non-empty and the tail
+    // is empty, which is always a valid display).
     if head_end >= tail_start {
         return (head_end, output.len());
     }
