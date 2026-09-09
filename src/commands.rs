@@ -89,10 +89,18 @@ pub fn parse_action(args: &[String]) -> Action {
     }
 }
 
-pub fn cmd_run(args: &[String]) -> i32 {
+/// Run a command via [`exec::run`], load the pattern set used by `cmd_run`, classify the output,
+/// and render it. Returns the exit code and the classification so tests can inspect the
+/// classification directly (rendering happens here so the normal `cmd_run` path is exercised).
+pub fn run_command_args(args: &[String]) -> (i32, Classification) {
     if args.is_empty() {
         eprintln!("oo: no command specified");
-        return 1;
+        return (
+            1,
+            Classification::Passthrough {
+                output: String::new(),
+            },
+        );
     }
 
     // Load patterns: project-local first, then user config, then builtins.
@@ -106,19 +114,31 @@ pub fn cmd_run(args: &[String]) -> i32 {
         Ok(o) => o,
         Err(e) => {
             eprintln!("oo: {e}");
-            return 1;
+            return (
+                1,
+                Classification::Passthrough {
+                    output: String::new(),
+                },
+            );
         }
     };
 
     let exit_code = output.exit_code;
     let command = args.join(" ");
 
-    // Print result
+    // Classify
     let merged = output.merged_lossy();
     let classification = classify::classify(&output, &command, &all_patterns);
+
+    // Print result
     render_classification(&classification, &command, merged.len());
 
-    exit_code
+    (exit_code, classification)
+}
+
+/// Run a command via [`exec::run`], classify the output, and render it. Returns the exit code.
+pub fn cmd_run(args: &[String]) -> i32 {
+    run_command_args(args).0
 }
 
 /// Build the `[saved {humansize}]` suffix for a compressed indicator line.

@@ -1131,6 +1131,57 @@ fn test_classify_sudo_cargo_nextest_run_quiet_success() {
 }
 
 #[test]
+fn test_detect_category_env_flags_are_not_assignments() {
+    // `env -u FOO cargo test` — `-u FOO` has no `=`, so the env skip loop
+    // stops at `-u`; binary becomes `-u` (not cargo) → Unknown. This is the
+    // agreed minimal-scope behaviour for #149: the KEY=VALUE detector is
+    // the only skip signal, so `env` flags before the binary are not
+    // handled. The binary being the flag token means the category falls
+    // back to Unknown rather than misclassifying as Status.
+    assert_eq!(
+        detect_category("env -u FOO cargo test"),
+        CommandCategory::Unknown,
+        "env -u FOO cargo test must be Unknown (flag not treated as assignment)"
+    );
+    // Same with a flag that DOES contain `=`: `--split-string=x` contains
+    // `=`, so `is_var_value` treats it as a KEY=VALUE assignment and skips it,
+    // landing on `cargo` → Status. This is a known limitation: `env` flags
+    // with `=` in their value are indistinguishable from KV assignments by
+    // the current detector. The `--split-string=x` form is rare in practice;
+    // the common `-u VAR` form (no `=`) is correctly handled as Unknown.
+    assert_eq!(
+        detect_category("env --split-string=x cargo test"),
+        CommandCategory::Status,
+        "env --split-string=x cargo test: flag contains `=`, treated as KV assignment → Status (known limitation)"
+    );
+}
+
+#[test]
+fn test_detect_category_nextest_uses_known_position() {
+    // The nextest arm must use the KNOWN subcommand position (token after the
+    // stripped binary), not scan the whole argv for "nextest". KV tokens
+    // (containing `=`) are skipped by the env loop, so they never match the
+    // literal "nextest" scan — but using the known position is O(1) and
+    // doesn't depend on the scan landing on the right token.
+    //
+    // `env nextest=foo cargo nextest run` → Status (KV skipped, parts[4]="run").
+    // `env nextest=foo cargo nextest` → Unknown (no token after "nextest").
+    // `env nextest=foo cargo nextest run --all` → Status (trailing args ok).
+    assert_eq!(
+        detect_category("env nextest=foo cargo nextest run"),
+        CommandCategory::Status,
+    );
+    assert_eq!(
+        detect_category("env nextest=foo cargo nextest"),
+        CommandCategory::Unknown,
+    );
+    assert_eq!(
+        detect_category("env nextest=foo cargo nextest run --all"),
+        CommandCategory::Status,
+    );
+}
+
+#[test]
 fn test_classify_sudo_git_log_large() {
     // `sudo git log` — git arm, subcommand "log" → Data category → Large
     // (indexed for recall). Proves the prefix strip changes category

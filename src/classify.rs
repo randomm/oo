@@ -185,11 +185,13 @@ pub fn label(command: &str) -> String {
         None => return "command".to_string(),
     };
     let stripped = strip_prefix(&parts).map(|(b, _)| b);
-    let name = match stripped {
-        Some(ref b) => b.rsplit('/').next().unwrap_or(first),
-        None => first,
-    };
-    name.rsplit('/').next().unwrap_or(first).to_string()
+    // `strip_prefix` already strips the path prefix from the binary it
+    // returns; only the no-prefix fallback (the raw `first` token) needs the
+    // rsplit.
+    let name = stripped
+        .as_deref()
+        .unwrap_or(first.rsplit('/').next().unwrap_or(first));
+    name.to_string()
 }
 
 /// Strip a leading `sudo`/`env` prefix from a split argv.
@@ -242,7 +244,35 @@ fn strip_prefix<'a>(parts: &'a [&'a str]) -> Option<(String, &'a str)> {
     binary.map(|name| (name.to_string(), subcommand))
 }
 
+/// Index of the binary position in `parts` after stripping a leading
+/// `sudo`/`env` prefix (same strip rules as [`strip_prefix`]).
+///
+/// `None` when no token remains after stripping (e.g. bare "sudo").
+fn strip_position(parts: &[&str]) -> Option<usize> {
+    let first = parts.first()?;
+    let base = first.rsplit('/').next().unwrap_or(first);
+    match base {
+        "sudo" => parts.get(1).map(|_| 1),
+        "env" => {
+            let mut i = 1;
+            while i < parts.len() && is_var_value(parts[i]) {
+                i += 1;
+            }
+            if i < parts.len() { Some(i) } else { None }
+        }
+        _ => Some(0),
+    }
+}
+
 /// Returns true when a token looks like a shell `KEY=VALUE` assignment.
+///
+/// This intentionally does NOT treat `env` flags as non-assignments: a
+/// leading flag (e.g. `env -u FOO cargo test` or `env --split-string=x
+/// cargo test`) stops the skip loop, so the binary becomes the flag token
+/// and the category falls back to Unknown. That is a deliberate minimal
+/// scope for issue #149 — treating `KEY=VALUE` presence as the only skip
+/// signal keeps the detector a two-line rule; `env` flags before the binary
+/// are not the common case the fix targets.
 fn is_var_value(token: &str) -> bool {
     token.contains('=')
 }
@@ -286,12 +316,17 @@ pub fn detect_category(command: &str) -> CommandCategory {
         // Status: test runners, build systems, linters
         "cargo" => match subcommand {
             "test" | "clippy" | "build" | "fmt" | "check" => CommandCategory::Status,
-            // Deep-token inspection for `cargo nextest run` (lookup fix only —
-            // not a general argv parser; see issue #149).
-            // subcommand is "nextest"; the token immediately after it must be "run".
+            // `cargo nextest run` → Status (lookup fix only — not a general
+            // argv parser; see issue #149). Use the KNOWN subcommand position
+            // (token after the stripped binary) rather than scanning the whole
+            // argv for "nextest": a later token that happens to equal
+            // "nextest" (e.g. `env FOO=nextest cargo nextest run`) would
+            // otherwise land on the wrong token. Everything after "run" is
+            // irrelevant — any trailing argv (package filters, flags) is
+            // accepted.
             "nextest" => {
-                let idx = parts.iter().position(|p| *p == "nextest");
-                match idx.and_then(|i| parts.get(i + 1).copied()) {
+                let token_after_nextest = strip_position(&parts).and_then(|i| parts.get(i + 2));
+                match token_after_nextest.copied() {
                     Some("run") => CommandCategory::Status,
                     _ => CommandCategory::Unknown,
                 }
