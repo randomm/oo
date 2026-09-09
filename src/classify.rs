@@ -160,11 +160,16 @@ pub enum Classification {
 
 /// Derive a short label from a command string.
 ///
-/// Extracts the first word of the command (typically the binary name),
+/// Extracts the binary name, skipping any leading `sudo`/`env` prefix and
 /// stripping any path prefix. For example:
 /// - "cargo test" → "cargo"
 /// - "/usr/bin/python script.py" → "python"
 /// - "gh issue list" → "gh"
+/// - "sudo cargo test" → "cargo"
+/// - "env FOO=bar cargo test" → "cargo"
+///
+/// If stripping the prefix leaves no token, the original first token is
+/// returned (e.g., "sudo" → "sudo", "env" → "env").
 ///
 /// # Arguments
 ///
@@ -174,14 +179,72 @@ pub enum Classification {
 ///
 /// A short label derived from the command.
 pub fn label(command: &str) -> String {
-    command
-        .split_whitespace()
-        .next()
-        .unwrap_or("command")
-        .rsplit('/')
-        .next()
-        .unwrap_or("command")
-        .to_string()
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    let first = match parts.first() {
+        Some(t) => *t,
+        None => return "command".to_string(),
+    };
+    let stripped = strip_prefix(&parts).map(|(b, _)| b);
+    let name = match stripped {
+        Some(ref b) => b.rsplit('/').next().unwrap_or(first),
+        None => first,
+    };
+    name.rsplit('/').next().unwrap_or(first).to_string()
+}
+
+/// Strip a leading `sudo`/`env` prefix from a split argv.
+///
+/// Applies only at position 0, and only for exactly `sudo` (after path
+/// stripping) or `env`. For `env`, consecutive leading `KEY=VALUE` assignment
+/// tokens are skipped until the real binary is reached. Strips once — does
+/// NOT loop, so `sudo sudo cargo test` does not strip the second `sudo`.
+///
+/// Returns `Some((binary, subcommand))` where `binary` is the first token
+/// after stripping (with path prefix removed) and `subcommand` is the token
+/// immediately after it ("" if none), or `None` when no token remains
+/// after stripping.
+fn strip_prefix<'a>(parts: &'a [&'a str]) -> Option<(String, &'a str)> {
+    if parts.is_empty() {
+        return None;
+    }
+
+    // Strip path prefix for comparison.
+    let first = parts[0].rsplit('/').next().unwrap_or(parts[0]);
+
+    let (binary, subcommand) = match first {
+        "sudo" => {
+            // Single strip: next token is the real binary.
+            match parts.get(1) {
+                Some(next) => {
+                    let name = next.rsplit('/').next().unwrap_or(*next);
+                    (Some(name), parts.get(2).copied().unwrap_or(""))
+                }
+                None => (None, ""),
+            }
+        }
+        "env" => {
+            // Skip consecutive leading KEY=VALUE assignment tokens.
+            let mut i = 1;
+            while i < parts.len() && is_var_value(parts[i]) {
+                i += 1;
+            }
+            match parts.get(i) {
+                Some(next) => {
+                    let name = next.rsplit('/').next().unwrap_or(*next);
+                    (Some(name), parts.get(i + 1).copied().unwrap_or(""))
+                }
+                None => (None, ""),
+            }
+        }
+        _ => return None,
+    };
+
+    binary.map(|name| (name.to_string(), subcommand))
+}
+
+/// Returns true when a token looks like a shell `KEY=VALUE` assignment.
+fn is_var_value(token: &str) -> bool {
+    token.contains('=')
 }
 
 /// Detect command category from command string.
@@ -209,14 +272,33 @@ pub fn detect_category(command: &str) -> CommandCategory {
         return CommandCategory::Unknown;
     }
 
-    // Extract binary name (strip path prefix)
-    let binary = parts[0].rsplit('/').next().unwrap_or(parts[0]);
-    let subcommand = parts.get(1).copied().unwrap_or("");
+    // Extract binary name (strip path prefix, then any sudo/env prefix)
+    let (binary, subcommand) = match strip_prefix(&parts) {
+        Some((b, s)) => (b, s),
+        None => {
+            // No prefix: read token 0 directly (existing behaviour).
+            let first = parts[0].rsplit('/').next().unwrap_or(parts[0]);
+            (first.to_string(), parts.get(1).copied().unwrap_or(""))
+        }
+    };
 
-    match binary {
+    match binary.as_str() {
         // Status: test runners, build systems, linters
         "cargo" => match subcommand {
             "test" | "clippy" | "build" | "fmt" | "check" => CommandCategory::Status,
+            // Deep-token inspection for `cargo nextest run` (lookup fix only —
+            // not a general argv parser; see issue #149).
+            // subcommand is "nextest"; the next token after it must be "run".
+            // We find the index of "nextest" in the ORIGINAL parts array and
+            // check the token immediately after it.
+            "nextest" => {
+                // Find the index of the nextest token in the original parts.
+                let nextest_idx = parts.iter().position(|p| *p == "nextest");
+                match nextest_idx.and_then(|i| parts.get(i + 1).copied()) {
+                    Some("run") => CommandCategory::Status,
+                    _ => CommandCategory::Unknown,
+                }
+            }
             _ => CommandCategory::Unknown,
         },
         "pytest" | "jest" | "vitest" | "go" | "npm" | "yarn" | "pnpm" | "bun" | "eslint"

@@ -102,6 +102,14 @@ fn test_label_derivation() {
     assert_eq!(label("cargo test"), "cargo");
     assert_eq!(label("gh issue list"), "gh");
     assert_eq!(label("/usr/bin/python test.py"), "python");
+    // Prefix stripping: sudo/env prefixes are stripped before binary extraction.
+    assert_eq!(label("sudo cargo test"), "cargo");
+    assert_eq!(label("env FOO=bar cargo test"), "cargo");
+    assert_eq!(label("sudo git status"), "git");
+    assert_eq!(label("env A=1 B=2 pytest"), "pytest");
+    // Degenerate inputs: stripping leaves no token → fall back to original first token.
+    assert_eq!(label("sudo"), "sudo");
+    assert_eq!(label("env"), "env");
 }
 
 #[test]
@@ -154,6 +162,47 @@ fn test_detect_category_status_commands() {
     assert_eq!(detect_category("jest"), CommandCategory::Status);
     assert_eq!(detect_category("eslint src/"), CommandCategory::Status);
     assert_eq!(detect_category("ruff check"), CommandCategory::Status);
+    // Prefix stripping: sudo/env prefixes are stripped before binary lookup.
+    assert_eq!(detect_category("sudo cargo test"), CommandCategory::Status);
+    assert_eq!(detect_category("sudo cargo build"), CommandCategory::Status);
+    assert_eq!(detect_category("env cargo test"), CommandCategory::Status);
+    assert_eq!(
+        detect_category("env FOO=bar cargo test"),
+        CommandCategory::Status
+    );
+    assert_eq!(
+        detect_category("env A=1 B=2 pytest"),
+        CommandCategory::Status
+    );
+    // cargo nextest run is a Status command (deep-token inspection in the cargo arm).
+    assert_eq!(
+        detect_category("cargo nextest run"),
+        CommandCategory::Status
+    );
+}
+
+#[test]
+fn test_detect_category_prefix_stripped_data_and_content() {
+    // Prefix stripping also applies to Data and Content categories.
+    assert_eq!(detect_category("sudo git status"), CommandCategory::Data);
+    assert_eq!(detect_category("sudo git log"), CommandCategory::Data);
+    assert_eq!(
+        detect_category("env FOO=bar git show"),
+        CommandCategory::Content
+    );
+    assert_eq!(
+        detect_category("env A=1 git diff"),
+        CommandCategory::Content
+    );
+    // Path-qualified sudo composes with prefix stripping.
+    assert_eq!(
+        detect_category("/usr/bin/sudo cargo test"),
+        CommandCategory::Status
+    );
+    assert_eq!(
+        detect_category("/usr/bin/env FOO=bar cargo test"),
+        CommandCategory::Status
+    );
 }
 
 #[test]
@@ -193,6 +242,29 @@ fn test_detect_category_unknown_defaults() {
         detect_category("random-binary arg"),
         CommandCategory::Unknown
     );
+    // Locked Unknowns: the nextest change must not accidentally promote these.
+    assert_eq!(detect_category("cargo run"), CommandCategory::Unknown);
+    assert_eq!(detect_category("cargo doc"), CommandCategory::Unknown);
+    // A stray "test" token in a later position must not match the cargo arm.
+    assert_eq!(
+        detect_category("cargo run test-runner"),
+        CommandCategory::Unknown
+    );
+    // Never strip a `sudo`/`env` token at any later position.
+    assert_eq!(
+        detect_category("someunknown foo sudo bar"),
+        CommandCategory::Unknown
+    );
+    // Stripping is single-shot: `sudo sudo cargo test` is not a supported case.
+    assert_eq!(
+        detect_category("sudo sudo cargo test"),
+        CommandCategory::Unknown
+    );
+    // `sudo env ...` is a stacked prefix — also not a supported case.
+    assert_eq!(
+        detect_category("sudo env FOO=bar cargo test"),
+        CommandCategory::Unknown
+    );
 }
 
 #[test]
@@ -206,6 +278,70 @@ fn test_status_no_pattern_quiet_success() {
             assert!(summary.is_empty()); // quiet success
         }
         _ => panic!("expected Success with empty summary for status command"),
+    }
+}
+
+#[test]
+fn test_nextest_run_quiet_success() {
+    // cargo nextest run is a Status command: a large nextest run with no pattern
+    // match must produce Classification::Success with an empty summary (quiet
+    // success), NOT Bounded/Passthrough of the full output.
+    let big = "x\n".repeat(3000); // > 4KB
+    let out = make_output(0, &big);
+    let result = classify(&out, "cargo nextest run", &[]);
+    match result {
+        Classification::Success { label, summary } => {
+            assert_eq!(label, "cargo");
+            assert!(summary.is_empty()); // quiet success
+        }
+        other => panic!("expected Success (quiet) for cargo nextest run, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_sudo_nextest_run_quiet_success() {
+    // The sudo prefix must be stripped before category detection, so
+    // `sudo cargo nextest run` reaches the same Status arm as the bare form.
+    let big = "x\n".repeat(3000); // > 4KB
+    let out = make_output(0, &big);
+    let result = classify(&out, "sudo cargo nextest run", &[]);
+    match result {
+        Classification::Success { label, summary } => {
+            assert_eq!(label, "cargo");
+            assert!(summary.is_empty()); // quiet success
+        }
+        other => panic!("expected Success (quiet) for sudo cargo nextest run, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_sudo_git_log_data_indexes() {
+    // A prefixed Data command must reach the Large (index) arm, not Bounded.
+    // Proves the prefix strip changes category behaviour end-to-end, not just
+    // the label string.
+    let big = "line\n".repeat(3000); // > 4KB
+    let out = make_output(0, &big);
+    let result = classify(&out, "sudo git log", &[]);
+    match result {
+        Classification::Large { label, size, .. } => {
+            assert_eq!(label, "git");
+            assert!(size > SMALL_THRESHOLD);
+        }
+        other => panic!("expected Large for sudo git log, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_env_git_show_content_bounded() {
+    // A prefixed Content command must reach the Bounded arm with the git label.
+    let big = "x\n".repeat(3000); // > 4KB
+    let out = make_output(0, &big);
+    let result = classify(&out, "env FOO=bar git show", &[]);
+    match result {
+        Classification::Bounded { label, .. } => {
+            assert_eq!(label, "git");
+        }
+        other => panic!("expected Bounded for env FOO=bar git show, got: {other:?}"),
     }
 }
 
@@ -320,6 +456,41 @@ fn test_category_detection_with_full_paths() {
         CommandCategory::Data
     );
     assert_eq!(detect_category("/bin/ls -la"), CommandCategory::Data);
+}
+
+#[test]
+fn test_category_detection_full_paths_with_prefix_stripping() {
+    // Path-qualified sudo composes with prefix stripping.
+    assert_eq!(
+        detect_category("/usr/bin/sudo cargo test"),
+        CommandCategory::Status
+    );
+    // Path-qualified env composes with prefix stripping.
+    assert_eq!(
+        detect_category("/usr/bin/env FOO=bar cargo test"),
+        CommandCategory::Status
+    );
+    // Path-qualified binary after stripping.
+    assert_eq!(
+        detect_category("sudo /usr/local/bin/cargo test"),
+        CommandCategory::Status
+    );
+}
+
+#[test]
+fn test_package_manager_regression_lock() {
+    // Regression locks: the package-manager arm matches on BINARY ONLY and
+    // ignores the subcommand entirely. These MUST remain Status — do NOT add
+    // subcommand inspection behind them.
+    assert_eq!(detect_category("npm test"), CommandCategory::Status);
+    assert_eq!(detect_category("npm run test"), CommandCategory::Status);
+    assert_eq!(detect_category("yarn run build"), CommandCategory::Status);
+    assert_eq!(detect_category("bun run test"), CommandCategory::Status);
+    assert_eq!(detect_category("pnpm run test"), CommandCategory::Status);
+    assert_eq!(detect_category("npm install"), CommandCategory::Status);
+    // The go arm is also binary-only unconditional Status in this ticket.
+    assert_eq!(detect_category("go run main.go"), CommandCategory::Status);
+    assert_eq!(detect_category("go build"), CommandCategory::Status);
 }
 
 // ---------------------------------------------------------------------------
