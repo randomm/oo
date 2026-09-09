@@ -141,6 +141,23 @@ pub fn render_classification(classification: &Classification, command: &str) {
                 println!("\u{2713} {label} ({summary})");
             }
         }
+        Classification::Bounded {
+            label,
+            output,
+            display,
+            size,
+            ..
+        } => {
+            let indexed = try_index(command, output);
+            let human_size = format_size(*size, BINARY);
+            if indexed {
+                println!(
+                    "\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)"
+                );
+            } else {
+                print!("{display}");
+            }
+        }
         Classification::Large {
             label,
             output,

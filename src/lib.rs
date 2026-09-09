@@ -48,6 +48,9 @@
 //!     Classification::Failure { label, output } => {
 //!         println!("✗ {}: {}", label, output);
 //!     }
+//!     Classification::Bounded { label, size, .. } => {
+//!         println!("Bounded: {} ({} bytes)", label, size);
+//!     }
 //!     Classification::Large { label, size, .. } => {
 //!         println!("Indexed: {} ({} bytes)", label, size);
 //!     }

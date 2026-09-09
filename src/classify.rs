@@ -1,12 +1,13 @@
 //! Command output classification and intelligent truncation.
 //!
 //! This module is the core of `oo`'s context-efficient output handling. It analyzes
-//! command results and produces one of four [`Classification`] outcomes:
+//! command results and produces one of five [`Classification`] outcomes:
 //!
 //! - **Failure**: Non-zero exit codes → filtered error output
 //! - **Passthrough**: Small successful outputs (<4KB) → verbatim
 //! - **Success**: Large successful outputs with pattern match → compressed summary
-//! - **Large**: Large successful outputs without pattern → indexed for recall
+//! - **Bounded**: Large Content/Unknown output → full output indexed, byte-bounded display
+//! - **Large**: Large Data output without pattern → indexed for recall
 //!
 //! The [`classify`] function combines pattern matching with automatic command category
 //! detection to make intelligent decisions about how to present output.
@@ -16,6 +17,13 @@ use crate::pattern::{self, Pattern};
 
 /// 4 KB — below this, output passes through verbatim.
 pub const SMALL_THRESHOLD: usize = 4096;
+
+/// Total byte budget for the display slice of a bounded (Content/Unknown) output.
+///
+/// Deliberately equal in value to `SMALL_THRESHOLD`: we never display more bytes
+/// than the passthrough budget. Split 60 % head / 40 % tail, mirroring
+/// [`smart_truncate`]'s ratio.
+pub const DISPLAY_CAP: usize = 4096;
 
 /// Maximum lines to show in failure output before smart truncation kicks in.
 const TRUNCATION_THRESHOLD: usize = 80;
@@ -30,18 +38,18 @@ const MAX_LINES: usize = 120;
 /// behavior:
 ///
 /// - **Status**: Test runners, builds, linters → quiet success (empty summary)
-/// - **Content**: File viewers and diffs → always passthrough (never index)
+/// - **Content**: File viewers and diffs → bounded display + indexed full output
 /// - **Data**: Listing and querying commands → index for recall
-/// - **Unknown**: Anything else → passthrough (safe default)
+/// - **Unknown**: Anything else → bounded display + indexed full output
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandCategory {
     /// test runners, linters, builds — agent wants pass/fail (quiet success)
     Status,
-    /// git show, git diff, cat — agent wants the actual output (passthrough)
+    /// git show, git diff, cat — agent wants the actual output (bounded + indexed)
     Content,
     /// git log, gh api, ls — structured/queryable data (index for recall)
     Data,
-    /// anything else — defaults to passthrough (safe)
+    /// anything else — bounded display + indexed (safe default)
     Unknown,
 }
 
@@ -55,9 +63,11 @@ pub enum CommandCategory {
 /// - **Failure**: Command exited non-zero. Contains filtered error output.
 /// - **Passthrough**: Command succeeded with small output. Contains verbatim output.
 /// - **Success**: Command succeeded with large output and pattern match. Contains compressed summary.
-/// - **Large**: Command succeeded with large output and no pattern. Output is indexed for recall.
+/// - **Bounded**: Content/Unknown command with large output. Full output is indexed; `display` is a byte-bounded head+tail slice.
+/// - **Large**: Data command with large output and no pattern. Output is indexed for recall.
 ///
 /// The classification is produced by the [`classify`] function.
+#[derive(Debug)]
 pub enum Classification {
     /// Exit ≠ 0. Filtered failure output.
     ///
@@ -95,7 +105,29 @@ pub enum Classification {
         summary: String,
     },
 
-    /// Exit 0, output > threshold, no pattern. Content needs indexing.
+    /// Exit 0, output > threshold, no pattern, Content or Unknown category.
+    ///
+    /// The full output is indexed for recall; `display` is a byte-bounded
+    /// head+tail slice (≤ [`DISPLAY_CAP`] bytes + truncation marker).
+    ///
+    /// # Fields
+    ///
+    /// * `label` - Short label derived from the command (e.g., "git", "gh").
+    /// * `output` - The full command output to be indexed for recall.
+    /// * `display` - Byte-bounded head+tail slice for display (≤ [`DISPLAY_CAP`] + marker).
+    /// * `size` - Size of the full output in bytes.
+    Bounded {
+        /// Short label derived from the command (e.g., "git", "gh").
+        label: String,
+        /// The full command output to be indexed for recall.
+        output: String,
+        /// Byte-bounded head+tail slice for display.
+        display: String,
+        /// Size of the full output in bytes.
+        size: usize,
+    },
+
+    /// Exit 0, output > threshold, no pattern. Data category — index for recall.
     ///
     /// # Fields
     ///
@@ -279,8 +311,15 @@ pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> 
             }
         }
         CommandCategory::Content | CommandCategory::Unknown => {
-            // Content and Unknown: always passthrough (never index)
-            Classification::Passthrough { output: merged }
+            // Content and Unknown: bounded display, full output indexed for recall
+            let size = merged.len();
+            let display = bounded_truncate(&merged);
+            Classification::Bounded {
+                label: lbl,
+                output: merged,
+                display,
+                size,
+            }
         }
         CommandCategory::Data => {
             // Data: index for recall
@@ -292,6 +331,107 @@ pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> 
             }
         }
     }
+}
+
+/// Floor a byte offset to the nearest preceding char boundary.
+///
+/// Equivalent to `str::floor_char_boundary` (stable since 1.91) but implemented
+/// for MSRV 1.85 compatibility.
+fn floor_char_boundary(s: &str, idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    let mut i = idx;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Ceil a byte offset to the nearest following char boundary.
+///
+/// Equivalent to `str::ceil_char_boundary` (stable since 1.91) but implemented
+/// for MSRV 1.85 compatibility.
+fn ceil_char_boundary(s: &str, idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    let mut i = idx;
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+/// Byte-based truncation with UTF-8 char-boundary safety.
+///
+/// Produces a head+tail slice bounded by [`DISPLAY_CAP`] bytes total, with a
+/// single truncation marker line between them. Cuts snap to `\n` boundaries
+/// (at most one line of drift); if the output has fewer than 2 newlines, cuts
+/// fall back to char-boundary-only slicing. Never splits a multi-byte UTF-8
+/// sequence.
+///
+/// Returns the input unchanged when it is ≤ [`DISPLAY_CAP`] bytes.
+pub fn bounded_truncate(output: &str) -> String {
+    if output.len() <= DISPLAY_CAP {
+        return output.to_string();
+    }
+
+    let head_budget = (DISPLAY_CAP as f64 * 0.6) as usize; // 2457
+    let tail_budget = DISPLAY_CAP - head_budget; // 1639
+
+    let (head_end, tail_start) = cut_boundaries(output, head_budget, tail_budget);
+
+    let truncated_bytes = output.len() - head_end - (output.len() - tail_start);
+    let marker =
+        format!("... [{truncated_bytes} bytes truncated → use `oo recall` to query] ...\n");
+
+    let mut result = String::with_capacity(DISPLAY_CAP + marker.len());
+    result.push_str(&output[..head_end]);
+    result.push_str(&marker);
+    result.push_str(&output[tail_start..]);
+    result
+}
+
+/// Compute head/tail cut byte offsets for [`bounded_truncate`].
+///
+/// Snaps the head cut forward to the next `\n` (≤ one line) and the tail cut
+/// backward to the previous `\n` (≤ one line). When fewer than 2 newlines
+/// exist in the entire output, falls back to char-boundary-only cuts.
+fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usize, usize) {
+    let nl_positions: Vec<usize> = output.match_indices('\n').map(|(i, _)| i).collect();
+
+    if nl_positions.len() < 2 {
+        // Fewer than 2 newlines: char-boundary-only cuts
+        let head = floor_char_boundary(output, head_budget);
+        let tail = ceil_char_boundary(output, output.len().saturating_sub(tail_budget));
+        return (head, tail);
+    }
+
+    // Snap head cut forward to next \n (at most one line of drift)
+    let head_end = nl_positions
+        .iter()
+        .find(|&&pos| pos >= head_budget)
+        .copied()
+        .unwrap_or(head_budget)
+        + 1; // include the newline in the head slice
+
+    // Snap tail cut backward to previous \n (at most one line of drift)
+    let raw_tail = output.len().saturating_sub(tail_budget);
+    let tail_start = nl_positions
+        .iter()
+        .rev()
+        .find(|&&pos| pos < raw_tail)
+        .copied()
+        .unwrap_or(raw_tail)
+        + 1; // start after the newline
+
+    // Ensure head doesn't overlap tail
+    if head_end >= tail_start {
+        return (head_end, output.len());
+    }
+
+    (head_end, tail_start)
 }
 
 /// Smart truncation: first 60% + marker + last 40%, capped at MAX_LINES.
