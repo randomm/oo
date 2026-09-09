@@ -142,13 +142,37 @@ pub fn render_classification(classification: &Classification, command: &str) {
             }
         }
         Classification::Bounded {
-            output, display, ..
+            label,
+            output,
+            display,
+            size,
+            ..
         } => {
             // Best-effort index the full output for recall; the display is
             // always printed — the byte-bounded head+tail slice IS the point
             // of this arm (issue #148). The truncation marker in `display`
-            // makes it detectable as bounded output.
-            let _ = try_index(command, output);
+            // makes it detectable as bounded output, but it lives inside
+            // attacker-controlled output, so the host also prints its own
+            // framing line carrying the authoritative size (mirrors the Large
+            // arm) — an agent must never be told to recall data that was not
+            // indexed.
+            let indexed = try_index(command, output);
+            let human_size = format_size(*size, BINARY);
+            if indexed {
+                println!(
+                    "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
+                );
+            } else {
+                // Indexing failed: do NOT advertise `oo recall` — the display
+                // is all the agent gets, and the stderr note keeps the
+                // failure visible instead of swallowed.
+                eprintln!(
+                    "oo: warning: could not index output for recall — display below is the full content you will have"
+                );
+                println!(
+                    "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
+                );
+            }
             print!("{display}");
         }
         Classification::Large {
