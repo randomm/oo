@@ -117,7 +117,7 @@ Commands are auto-categorized to determine default behavior:
 
 | Category | Examples | Default Behavior |
 |----------|----------|------------------|
-| Status | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success (large output) |
+| Status | `cargo test`, `cargo build`, `cargo nextest run`, `pytest`, `eslint` | Quiet success (large output) |
 | Content | `git show`, `git diff`, `cat`, `bat` | Bounded display — full output indexed, head+tail slice shown (large output) |
 | Data | `git log`, `git status`, `gh api`, `ls` | Index for recall (large output) |
 | Unknown | Anything else (curl, docker, `sh -c`, etc.) | Bounded display — full output indexed, head+tail slice shown (large output) |
