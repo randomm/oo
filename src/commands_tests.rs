@@ -261,46 +261,44 @@ fn make_output(exit_code: i32, stdout: &str) -> exec::CommandOutput {
 }
 
 #[test]
-fn test_classify_with_refs_passthrough_small() {
+fn test_classify_passthrough_small() {
     let out = make_output(0, "hello\n");
-    let result = classify_with_refs(&out, "echo hello", &[]);
+    let result = classify::classify(&out, "echo hello", &[]);
     assert!(matches!(result, Classification::Passthrough { output } if output == "hello\n"));
 }
 
 #[test]
-fn test_classify_with_refs_failure_no_pattern() {
+fn test_classify_failure_no_pattern() {
     let out = make_output(1, "something went wrong\n");
-    let result = classify_with_refs(&out, "bad_cmd", &[]);
+    let result = classify::classify(&out, "bad_cmd", &[]);
     assert!(matches!(result, Classification::Failure { label, .. } if label == "bad_cmd"));
 }
 
 #[test]
-fn test_classify_with_refs_large_no_pattern() {
+fn test_classify_large_no_pattern() {
     let out = make_output(0, &"x\n".repeat(3000));
-    let result = classify_with_refs(&out, "some_tool", &[]);
+    let result = classify::classify(&out, "some_tool", &[]);
     // Unknown category defaults to passthrough (safe)
     assert!(matches!(result, Classification::Passthrough { .. }));
 }
 
 #[test]
-fn test_classify_with_refs_success_with_pattern() {
+fn test_classify_success_with_pattern() {
     let patterns = pattern::builtins();
-    let refs: Vec<&pattern::Pattern> = patterns.iter().collect();
     let big = format!("{}47 passed in 3.2s\n", ".\n".repeat(3000));
     let out = make_output(0, &big);
-    let result = classify_with_refs(&out, "pytest tests/", &refs);
+    let result = classify::classify(&out, "pytest tests/", patterns);
     assert!(
         matches!(result, Classification::Success { summary, .. } if summary.contains("47 passed"))
     );
 }
 
 #[test]
-fn test_classify_with_refs_failure_with_pattern() {
+fn test_classify_failure_with_pattern() {
     let patterns = pattern::builtins();
-    let refs: Vec<&pattern::Pattern> = patterns.iter().collect();
     let fail_output: String = (0..50).map(|i| format!("error line {i}\n")).collect();
     let out = make_output(1, &fail_output);
-    match classify_with_refs(&out, "pytest -x", &refs) {
+    match classify::classify(&out, "pytest -x", patterns) {
         Classification::Failure { label, output } => {
             assert_eq!(label, "pytest");
             assert!(output.contains("error line 49"));
@@ -350,10 +348,9 @@ fn test_classify_large_with_pattern_no_summary_match() {
     // Pattern exists but success regex doesn't match
     // pytest is Status category → returns Success with empty summary instead of Large
     let patterns = pattern::builtins();
-    let refs: Vec<&pattern::Pattern> = patterns.iter().collect();
     let out = make_output(0, &"x\n".repeat(3000));
     assert!(matches!(
-        classify_with_refs(&out, "pytest tests/", &refs),
+        classify::classify(&out, "pytest tests/", patterns),
         Classification::Success { summary, .. } if summary.is_empty()
     ));
 }
@@ -361,11 +358,10 @@ fn test_classify_large_with_pattern_no_summary_match() {
 #[test]
 fn test_classify_failure_pattern_extract_failure() {
     let patterns = pattern::builtins();
-    let refs: Vec<&pattern::Pattern> = patterns.iter().collect();
     let fail: String = (0..30).map(|i| format!("FAILED test{i}\n")).collect();
     let out = make_output(1, &fail);
     assert!(matches!(
-        classify_with_refs(&out, "pytest -v", &refs),
+        classify::classify(&out, "pytest -v", patterns),
         Classification::Failure { .. }
     ));
 }

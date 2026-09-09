@@ -97,19 +97,9 @@ pub fn cmd_run(args: &[String]) -> i32 {
 
     // Load patterns: project-local first, then user config, then builtins.
     // First match wins, so project patterns override user patterns override builtins.
-    let project_patterns = load_project_patterns();
-    let user_patterns = pattern::load_user_patterns(&learn::patterns_dir());
-    let builtin_patterns = pattern::builtins();
-    let mut all_patterns: Vec<&pattern::Pattern> = Vec::new();
-    for p in &project_patterns {
-        all_patterns.push(p);
-    }
-    for p in &user_patterns {
-        all_patterns.push(p);
-    }
-    for p in builtin_patterns {
-        all_patterns.push(p);
-    }
+    let mut all_patterns = load_project_patterns();
+    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
+    all_patterns.extend_from_slice(pattern::builtins());
 
     // Run command
     let output = match exec::run(args) {
@@ -123,11 +113,20 @@ pub fn cmd_run(args: &[String]) -> i32 {
     let exit_code = output.exit_code;
     let command = args.join(" ");
 
-    let combined: Vec<&pattern::Pattern> = all_patterns;
-    let classification = classify_with_refs(&output, &command, &combined);
-
     // Print result
-    match &classification {
+    let classification = classify::classify(&output, &command, &all_patterns);
+    render_classification(&classification, &command);
+
+    exit_code
+}
+
+/// Print a [`Classification`] to stdout using the shared display path.
+///
+/// The Large tier indexes the output via [`try_index`] and falls back to
+/// [`classify::smart_truncate`] on indexing failure. Both `cmd_run` and
+/// `cmd_learn` use this so the arms cannot drift apart.
+pub fn render_classification(classification: &Classification, command: &str) {
+    match classification {
         Classification::Failure { label, output } => {
             println!("\u{2717} {label}\n");
             println!("{output}");
@@ -149,7 +148,7 @@ pub fn cmd_run(args: &[String]) -> i32 {
             ..
         } => {
             // Index into store
-            let indexed = try_index(&command, output);
+            let indexed = try_index(command, output);
             let human_size = format_size(*size, BINARY);
             if indexed {
                 println!(
@@ -159,75 +158,6 @@ pub fn cmd_run(args: &[String]) -> i32 {
                 // Couldn't index, show truncated output instead
                 let truncated = classify::smart_truncate(output);
                 print!("{truncated}");
-            }
-        }
-    }
-
-    exit_code
-}
-
-/// Classify using a slice of pattern references.
-pub fn classify_with_refs(
-    output: &exec::CommandOutput,
-    command: &str,
-    patterns: &[&pattern::Pattern],
-) -> Classification {
-    let merged = output.merged_lossy();
-    let lbl = classify::label(command);
-
-    if output.exit_code != 0 {
-        let filtered = match pattern::find_matching_ref(command, patterns) {
-            Some(pat) => {
-                if let Some(failure) = &pat.failure {
-                    pattern::extract_failure(failure, &merged)
-                } else {
-                    classify::smart_truncate(&merged)
-                }
-            }
-            _ => classify::smart_truncate(&merged),
-        };
-        return Classification::Failure {
-            label: lbl,
-            output: filtered,
-        };
-    }
-
-    if merged.len() <= classify::SMALL_THRESHOLD {
-        return Classification::Passthrough { output: merged };
-    }
-
-    if let Some(pat) = pattern::find_matching_ref(command, patterns) {
-        if let Some(sp) = &pat.success {
-            if let Some(summary) = pattern::extract_summary(sp, &merged) {
-                return Classification::Success {
-                    label: lbl,
-                    summary,
-                };
-            }
-        }
-    }
-
-    // Large, no pattern match — use category to determine behavior
-    let category = classify::detect_category(command);
-    match category {
-        classify::CommandCategory::Status => {
-            // Status commands: quiet success (empty summary)
-            Classification::Success {
-                label: lbl,
-                summary: String::new(),
-            }
-        }
-        classify::CommandCategory::Content | classify::CommandCategory::Unknown => {
-            // Content and Unknown: always passthrough (never index)
-            Classification::Passthrough { output: merged }
-        }
-        classify::CommandCategory::Data => {
-            // Data: index for recall
-            let size = merged.len();
-            Classification::Large {
-                label: lbl,
-                output: merged,
-                size,
             }
         }
     }
@@ -340,29 +270,10 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     let command = args.join(" ");
     let merged = output.merged_lossy();
 
-    // Show normal oo output first
-    let patterns = pattern::builtins();
-    let classification = classify::classify(&output, &command, patterns);
-    match &classification {
-        Classification::Failure { label, output } => {
-            println!("\u{2717} {label}\n");
-            println!("{output}");
-        }
-        Classification::Passthrough { output } => {
-            print!("{output}");
-        }
-        Classification::Success { label, summary } => {
-            if summary.is_empty() {
-                println!("\u{2713} {label}");
-            } else {
-                println!("\u{2713} {label} ({summary})");
-            }
-        }
-        Classification::Large { label, size, .. } => {
-            let human_size = format_size(*size, BINARY);
-            println!("\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)");
-        }
-    }
+    // Show normal oo output first (builtins only — project/user patterns are
+    // intentionally not consulted here; see issue #151)
+    let classification = classify::classify(&output, &command, pattern::builtins());
+    render_classification(&classification, &command);
 
     // Print provider before spawning so the user sees it in the foreground
     let config = learn::load_learn_config().unwrap_or_else(|e| {

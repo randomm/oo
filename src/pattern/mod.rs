@@ -23,6 +23,7 @@ pub fn builtins() -> &'static [Pattern] {
 /// Patterns define how to compress command output using regex matching.
 /// When a command matches the `command_match` regex, the pattern's
 /// success or failure logic is applied to extract compressed output.
+#[derive(Clone)]
 pub struct Pattern {
     /// Regex that matches the command line (e.g., `r"cargo test"`).
     pub command_match: Regex,
@@ -40,6 +41,7 @@ pub struct Pattern {
 /// - Regex with template formatting (legacy)
 /// - Tail/head line extraction
 /// - Grep filtering
+#[derive(Clone)]
 pub struct SuccessPattern {
     /// Strategy for extracting success output.
     pub strategy: SuccessStrategy,
@@ -50,6 +52,7 @@ pub struct SuccessPattern {
 /// When a command exits with a non-zero status, the failure strategy
 /// extracts relevant error information (e.g., tail N lines, head N lines,
 /// grep for error keywords, or extract text between delimiters).
+#[derive(Clone)]
 pub struct FailurePattern {
     /// The strategy to apply for extracting error information.
     pub strategy: FailureStrategy,
@@ -59,6 +62,7 @@ pub struct FailurePattern {
 ///
 /// Each variant defines a different approach to identifying and extracting
 /// the most relevant error information from command output.
+#[derive(Clone)]
 pub enum FailureStrategy {
     /// Keep the last N lines of output (tail).
     Tail {
@@ -92,6 +96,7 @@ pub enum FailureStrategy {
 ///
 /// Mirrors failure strategies but for successful command output.
 /// Used when a command succeeds with large output and a pattern matches.
+#[derive(Clone)]
 pub enum SuccessStrategy {
     /// Legacy format: regex with named capture groups + summary template.
     Regex {
@@ -167,16 +172,6 @@ fn extract_head(output: &str, lines: usize) -> Option<String> {
 /// Find the first pattern whose `command_match` matches `command`.
 pub fn find_matching<'a>(command: &str, patterns: &'a [Pattern]) -> Option<&'a Pattern> {
     patterns.iter().find(|p| p.command_match.is_match(command))
-}
-
-/// Like `find_matching` but works with a slice of references.
-///
-/// Useful when you have a slice of pattern references rather than values.
-pub fn find_matching_ref<'a>(command: &str, patterns: &[&'a Pattern]) -> Option<&'a Pattern> {
-    patterns
-        .iter()
-        .find(|p| p.command_match.is_match(command))
-        .copied()
 }
 
 /// Apply a success pattern to output, returning the formatted summary if it matches.
