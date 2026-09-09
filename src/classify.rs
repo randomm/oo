@@ -20,6 +20,10 @@ pub const SMALL_THRESHOLD: usize = 4096;
 
 /// Minimum savings (bytes) for the `[saved …]` indicator-line suffix.
 ///
+/// Deliberately independent of [`SMALL_THRESHOLD`]/[`DISPLAY_CAP`] — the same
+/// 4096 value is a coincidence: this is a noise floor on a savings *delta*,
+/// whereas `SMALL_THRESHOLD` is the passthrough byte budget.
+///
 /// Below this floor the suffix is suppressed entirely: a `[saved 12 B]` tag
 /// on every command is noise and would itself waste context. The floor also
 /// subsumes non-positive deltas (summary nearly as long as the input)

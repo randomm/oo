@@ -58,7 +58,7 @@ indicator line itself:
 The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
 the existing line content, using `humansize::format_size(saved, BINARY)` (the same
 binary-unit idiom the Large tier's `indexed N` figure uses; no new formatter, no new
-dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the exact `println!` payload including the suffix itself. For the Failure arm, the filtered output lines printed after the indicator line
+dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the indicator line EXCLUDING the savings suffix — call sites measure the line before the suffix is appended, so the figure overstates displayed bytes by the suffix's own length (~15 B, immaterial at the sizes where a suffix can appear). For the Failure arm, the filtered output lines printed after the indicator line
 do NOT count as displayed — only the indicator line does.
 
 The figure appears on:

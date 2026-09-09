@@ -114,8 +114,9 @@ pub fn cmd_run(args: &[String]) -> i32 {
     let command = args.join(" ");
 
     // Print result
+    let merged = output.merged_lossy();
     let classification = classify::classify(&output, &command, &all_patterns);
-    render_classification(&classification, &command, output.merged_lossy().len());
+    render_classification(&classification, &command, merged.len());
 
     exit_code
 }
@@ -123,13 +124,17 @@ pub fn cmd_run(args: &[String]) -> i32 {
 /// Build the `[saved {humansize}]` suffix for a compressed indicator line.
 ///
 /// `original_bytes` is the merged output size in bytes (`merged_lossy().len()`);
-/// `displayed_bytes` is the byte length of the rendered indicator line, suffix
-/// and all. Returns `None` when the saving is ≤ [`classify::MIN_SAVINGS`]
-/// (saturating arithmetic makes underflow impossible), so the caller prints
-/// the line unchanged. Only the indicator line counts as displayed — the
-/// filtered output lines printed after it (Failure arm) are not included.
-pub fn savings_suffix(original_bytes: usize, displayed_bytes: usize) -> Option<String> {
-    let saved = original_bytes.saturating_sub(displayed_bytes);
+/// `indicator_bytes` is the byte length of the indicator line EXCLUDING the
+/// savings suffix (call sites pass `line.len()` before the suffix is
+/// appended), so the reported figure overstates displayed bytes by the
+/// suffix's own length (~15 B — immaterial at the sizes where a suffix can
+/// appear). Returns `None` when the saving is ≤ [`classify::MIN_SAVINGS`]
+/// (i.e. the suffix appears only when `saved > MIN_SAVINGS`; saturating
+/// arithmetic makes underflow impossible), so the caller prints the line
+/// unchanged. Only the indicator line counts as displayed — the filtered
+/// output lines printed after it (Failure arm) are not included.
+pub fn savings_suffix(original_bytes: usize, indicator_bytes: usize) -> Option<String> {
+    let saved = original_bytes.saturating_sub(indicator_bytes);
     (saved > classify::MIN_SAVINGS).then(|| format!(" [saved {}]", format_size(saved, BINARY)))
 }
 

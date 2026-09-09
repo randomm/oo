@@ -68,7 +68,12 @@ The classification engine decides how to present output to the agent:
 **Savings indicator**: When compression occurs (Success and Failure arms), the
 savings are made visible on the indicator line itself: `{base_line} [saved {size}]`
 where the size is `humansize::format_size(merged_lossy().len() - rendered_line_bytes,
-BINARY)` — the same binary-unit idiom the Large tier already uses. The metric is
+BINARY)` — the same binary-unit idiom the Large tier already uses. `rendered_line_bytes`
+is the indicator line length EXCLUDING the savings suffix (call sites pass
+`line.len()` before the suffix is appended, so the figure overstates displayed
+bytes by the suffix's own ~15 B). For quiet success the figure is therefore
+approximately the full merged output size minus a short indicator line — the
+intended meaning, not an error. The metric is
 bytes, not tokens: bytes are exact, free, and already available (no tokenizer,
 no new dependency). The figure is suppressed when the saving is ≤ `MIN_SAVINGS`
 (4096 bytes, a named constant beside `SMALL_THRESHOLD` in `src/classify.rs`) so
