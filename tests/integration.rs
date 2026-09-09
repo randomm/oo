@@ -539,6 +539,121 @@ fn test_help_with_valid_command() {
 }
 
 // ---------------------------------------------------------------------------
+// Large Content/Unknown passthrough repros (issue #148)
+//
+// These are the exact live repros from the ticket: pre-fix, `oo cat` on a
+// 110KB file emitted exactly 110,000 bytes and a 30,000-echo `sh -c` emitted
+// exactly 150,000 bytes verbatim into the agent's context. Each test
+// self-isolates its store via OO_DATA_DIR (fresh temp dir per test) so the
+// recall assertions only see the row this test indexed.
+//
+// The recall assertions deliberately check RETRIEVABILITY ONLY — a distinctive
+// marker token embedded in the tail of the original output must return a
+// NON-EMPTY recall result whose stored content contains the token. They must
+// NOT assert on the shape/boundedness of `oo recall`'s printed output; that is
+// issue #147's job.
+// ---------------------------------------------------------------------------
+
+/// A single, unambiguous FTS5 token — guaranteed to be a one-token query that
+/// the store's per-row phrase matching can resolve (no punctuation, no spaces).
+const RECALL_MARKER: &str = "oo148tailmarker7f3a9c";
+
+/// Build a 110,000-byte file whose contents are all distinct 22-character
+/// lines (positions 0..5000), each containing the RECALL_MARKER token. The
+/// file is large enough to trigger the >4KB threshold, and the marker is
+/// guaranteed to be a single FTS5 token in the indexed row. The file's tail
+/// (last 5000 lines) also contains the marker, so it survives the
+/// byte-based head+tail truncation (tail budget = 40% of 4096 ≈ 1638 bytes ≈
+/// ~74 lines of 22-char lines, well within the last 5000 lines).
+fn write_repro_file(dir: &std::path::Path) -> std::path::PathBuf {
+    let mut content = String::new();
+    for i in 0..5000 {
+        content.push_str(&format!("line{i:06} {RECALL_MARKER}\n"));
+    }
+    let path = dir.join("big.txt");
+    std::fs::write(&path, content).unwrap();
+    path
+}
+
+/// Isolate the store under a fresh temp data dir. Returns the TempDir (kept
+/// alive for the duration of the test) and the data-dir path to pass to
+/// OO_DATA_DIR on every oo invocation in the test.
+fn isolated_store() -> (TempDir, std::path::PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().join("oo-data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    (dir, data_dir)
+}
+
+/// Run `oo recall <marker>` against the isolated store and assert the result is
+/// non-empty AND contains the marker token. Returns the recall stdout for the
+/// caller to inspect if needed.
+fn assert_recall_contains(data_dir: &std::path::Path, marker: &str) {
+    let out = oo()
+        .args(["recall", marker])
+        .env("OO_DATA_DIR", data_dir)
+        .assert()
+        .success()
+        .to_string();
+    assert!(
+        !out.contains("No results found"),
+        "recall on the tail marker must return a non-empty result; got: {out:?}"
+    );
+    assert!(
+        out.contains(marker),
+        "recall result must contain the tail marker token; got: {out:?}"
+    );
+}
+
+#[test]
+fn test_content_arm_large_output_bounded_and_recallable() {
+    // Repro A (Content arm): `oo cat` on a 110,000-byte file. Pre-fix this
+    // emitted exactly 110,000 bytes verbatim. Post-fix: stdout must be bounded
+    // far under the full size, the full content must be indexed, and a recall
+    // seeded with the tail marker must return a non-empty result containing it.
+    let file = TempDir::new().unwrap();
+    let big = write_repro_file(file.path());
+
+    let (_guard, data_dir) = isolated_store();
+    oo().args(["cat", big.to_str().unwrap()])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        // The pre-fix byte-exact 110,000-byte dump is the bug: bound well under it.
+        // The fix caps display at 4096 bytes + one marker line; 20KB leaves a wide
+        // margin over that while still being provably not the verbatim 110KB dump.
+        .stdout(predicate::function(|out: &str| out.len() < 20_000))
+        .stdout(predicate::str::contains(RECALL_MARKER));
+
+    // The full content must have been indexed — recall on the tail marker
+    // returns a NON-EMPTY result whose stored content contains the token.
+    assert_recall_contains(&data_dir, RECALL_MARKER);
+}
+
+#[test]
+fn test_unknown_arm_large_output_bounded_and_recallable() {
+    // Repro B (Unknown arm): `oo sh -c '<30000 lines> + <marker line>'`.
+    // Pre-fix this emitted ~150,000 bytes verbatim (30,000 x "line\n").
+    // The shell loop runs first, then the marker line is appended, so the
+    // marker sits in the TAIL of the output — the slice that must survive the
+    // byte-based head+tail truncation to be displayed, and the whole output
+    // (including the marker) is what gets indexed for recall.
+    let (_guard, data_dir) = isolated_store();
+    oo().args([
+        "sh",
+        "-c",
+        &format!("for i in $(seq 1 30000); do echo line; done; echo {RECALL_MARKER}"),
+    ])
+    .env("OO_DATA_DIR", &data_dir)
+    .assert()
+    .success()
+    .stdout(predicate::function(|out: &str| out.len() < 20_000))
+    .stdout(predicate::str::contains(RECALL_MARKER));
+
+    assert_recall_contains(&data_dir, RECALL_MARKER);
+}
+
+// ---------------------------------------------------------------------------
 // cargo-dist configuration verification
 // ---------------------------------------------------------------------------
 
