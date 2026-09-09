@@ -17,7 +17,7 @@ pub enum InitFormat {
 /// Kept as a constant so unit tests can assert against the exact string.
 pub const AGENTS_SNIPPET: &str = "\
 ## Shell commands
-Prefix all shell commands with `oo`. Use `oo recall \"<query>\"` to search large outputs.\
+Prefix all shell commands with `oo`. Use `oo recall \"<query>\"` to search large outputs (use `--full` for the complete output).\
 ";
 
 /// The generic setup section printed on `oo init --format generic`.

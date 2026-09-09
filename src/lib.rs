@@ -81,6 +81,8 @@ pub mod session;
 /// Storage backends for indexed output.
 pub mod store;
 
+pub mod recall_display;
+
 pub mod commands_patterns;
 pub mod learn_prompt;
 pub mod learn_utils;

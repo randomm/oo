@@ -31,7 +31,12 @@ pub struct SessionMeta {
 /// Result from a store search operation.
 ///
 /// Contains the stored content along with its identifier and optional metadata.
+///
+/// Marked `#[non_exhaustive]` so future fields (e.g. `snippet`) can be added
+/// in a non-breaking way — downstream code must use struct update syntax or
+/// constructors rather than exhaustive field literals.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct SearchResult {
     /// Unique identifier for this entry.
     pub id: String,
@@ -45,6 +50,18 @@ pub struct SearchResult {
     /// Optional similarity score (for semantic search backends).
     #[allow(dead_code)] // Used by VipuneStore (behind feature flag)
     pub similarity: Option<f64>,
+
+    /// Optional bounded excerpt centered on the best match.
+    ///
+    /// Populated by the FTS5 branch of `SqliteStore::search` via the
+    /// `snippet()` FTS5 function. `None` for the short-query LIKE fallback
+    /// and for backends without FTS5 (e.g. `VipuneStore`). Callers should
+    /// fall back to a client-side bounded prefix of `content` when this is
+    /// `None`. Note the `snippet()` window is bounded in *tokens*, so for
+    /// content containing arbitrarily long multi-byte tokens a `Some` snippet
+    /// can still exceed the display budget — display callers must apply their
+    /// own char cap (see `recall_display::display_hit`).
+    pub snippet: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +211,13 @@ impl Store for SqliteStore {
             let mut stmt = self
                 .conn
                 .prepare(
-                    "SELECT e.id, e.content, e.metadata, rank
+                    // snippet(entries_fts, 0, '…', '…', '…', 32) — one bounded
+                    // fragment centered on the best-scoring match. Column 0 is
+                    // `content`. 32 tokens ≈ ~200 chars for typical ASCII output.
+                    // Markers are fixed literals (not derived from user query) so
+                    // there is no injection surface.
+                    "SELECT e.id, e.content, e.metadata, rank,
+                     snippet(entries_fts, 0, '…', '…', '…', 32)
                      FROM entries_fts f
                      JOIN entries e ON e.rowid = f.rowid
                      WHERE entries_fts MATCH ?1 AND e.project = ?2
@@ -220,11 +243,30 @@ impl Store for SqliteStore {
                 let content: String = row.get(1)?;
                 let meta_json: Option<String> = row.get(2)?;
                 let rank: f64 = row.get(3)?;
+                let snippet: String = row.get(4)?;
+                let snippet =
+                    if snippet.is_empty() || snippet.chars().count() >= content.chars().count() {
+                        None
+                    } else {
+                        Some(snippet)
+                    };
                 Ok(SearchResult {
                     id,
                     content,
                     meta: meta_json.as_deref().and_then(parse_meta),
                     similarity: Some(-rank), // FTS5 rank is negative
+                    // snippet() returns the full row when the match covers the
+                    // entire content (no room to trim) — map that to None so
+                    // callers fall back to a client-side bounded prefix.
+                    // The comparison is on `chars()` (not bytes) to stay
+                    // consistent with the char-based `SNIPPET_CAP` in
+                    // `recall_display`: for ASCII both are equal, and for
+                    // multi-byte content the snippet is a verbatim substring of
+                    // `content`, so `chars()` cannot misclassify either direction.
+                    // It does NOT guarantee the snippet fits the display budget
+                    // (the token-bounded window can hold one arbitrarily long
+                    // multi-byte token) — that is bounded display-side.
+                    snippet,
                 })
             })
             .map_err(map_err)?
@@ -252,10 +294,21 @@ impl Store for SqliteStore {
                     content,
                     meta: meta_json.as_deref().and_then(parse_meta),
                     similarity: None,
+                    // No FTS5 match context in the LIKE branch — callers must
+                    // fall back to a client-side bounded prefix of `content`.
+                    snippet: None,
                 })
             })
             .map_err(map_err)?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(r) => Some(r),
+                // Never silently drop a matched row — surface the deserialisation
+                // failure so callers can tell "fewer hits" from "no match".
+                Err(e) => {
+                    eprintln!("oo: warning: dropped a search result row (row error): {e}");
+                    None
+                }
+            })
             .collect()
         };
 
@@ -393,6 +446,9 @@ impl Store for VipuneStore {
                 meta: m.metadata.as_deref().and_then(parse_meta),
                 content: m.content,
                 similarity: m.similarity,
+                // VipuneStore has no FTS5 — callers fall back to a bounded
+                // client-side prefix of `content`.
+                snippet: None,
             })
             .collect())
     }

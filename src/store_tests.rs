@@ -29,6 +29,87 @@ fn test_index_and_search() {
     let results = store.search("proj", "auth", 10).unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].content.contains("auth"));
+    // Short content (4 tokens) → snippet() returns the full row → None.
+    assert!(
+        results[0].snippet.is_none(),
+        "short content must yield snippet None (full-row snippet is not a bound)"
+    );
+}
+
+#[test]
+fn test_fts_snippet_is_bounded_for_long_content() {
+    // For long content the FTS5 branch must produce a bounded snippet that
+    // contains the matched token and is strictly shorter than the full blob.
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    // ~200 words of padding around a unique sentinel — well over the 32-token window.
+    let padding: Vec<String> = (0..200).map(|i| format!("pad_{i:04}_word")).collect();
+    let content = format!("start {} SENTINEL_XYZ_12345 end", padding.join(" "));
+    store.index("proj", &content, &meta).unwrap();
+
+    let results = store.search("proj", "SENTINEL_XYZ_12345", 10).unwrap();
+    assert_eq!(results.len(), 1);
+    let snippet = results[0]
+        .snippet
+        .as_ref()
+        .expect("long content must yield a bounded snippet");
+    assert!(
+        snippet.contains("SENTINEL_XYZ_12345"),
+        "snippet must contain the matched token, got: {snippet:?}"
+    );
+    assert!(
+        snippet.len() < results[0].content.len(),
+        "snippet must be strictly shorter than full content"
+    );
+    // Hard byte ceiling: 32 tokens * ~20 chars worst-case + markers ≈ 700 bytes.
+    assert!(
+        snippet.len() < 1024,
+        "snippet must stay under a hard byte ceiling, got {} bytes",
+        snippet.len()
+    );
+}
+
+#[test]
+fn test_snippet_window_can_exceed_display_budget_with_long_tokens() {
+    // FTS5's snippet() window is bounded in *tokens*, and one token can be
+    // arbitrarily many multi-byte chars. A single 10 000-char € token matches
+    // as one token, so snippet() returns a ~10 KB excerpt — far wider than the
+    // 32-token window suggests and far wider than the display budget. This
+    // pins that behaviour: the store does NOT claim to enforce the display
+    // budget (see `recall_display::display_hit`, whose char cap is the bound).
+    //
+    // Empirically verified (python3 + system sqlite3, 3.51.0): for a 2 000-€
+    // char token between `prefix` and `suffix`, `snippet()` returns 2 016 chars
+    // (the 2 002-char source span plus 4 chars of `…` omission markers), which
+    // exceeds the 2 014-char content. The store's `chars().count() >= content`
+    // guard maps that to `None`, and the display falls back to a bounded
+    // prefix of content — so the total displayed is bounded AND detectable.
+    //
+    // This test pins that guard: with a 2 000-€ token, `snippet()`'s returned
+    // string (2 016 chars) is *longer* than the content (2 014 chars), so the
+    // store must map it to `None`. The display-side cap in
+    // `recall_display::display_hit` is the true bound (see the
+    // `display_hit_snippet_oversized_still_bounded_and_marked` unit test).
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    let long_token: String = std::iter::repeat('€').take(2_000).collect();
+    let content = format!("prefix {long_token} suffix");
+    store.index("proj", &content, &meta).unwrap();
+
+    let results = store.search("proj", "prefix", 10).unwrap();
+    assert_eq!(results.len(), 1);
+    // The FTS5 '…' omission markers make the returned snippet string slightly
+    // *longer* than the source content (2016 vs 2014 chars here), so the
+    // store's `chars().count() >= content.chars().count()` guard maps this to
+    // `None` — the caller then falls back to a bounded prefix of `content`,
+    // which is still bounded and still shows the matched token. This test pins
+    // that guard: a single multi-byte token can make snippet() return a
+    // string longer than the whole content, and the store must treat that as
+    // "no room to trim" rather than pass a wider-than-content blob through.
+    assert!(
+        results[0].snippet.is_none(),
+        "a multi-byte token can make snippet() return a string longer than the content\n(the omission markers widen it) — the store must map that to None"
+    );
 }
 
 #[test]
@@ -106,6 +187,11 @@ fn test_recall_short_query() {
     // The single-char LIKE search should find the entry containing "a"
     assert!(!results.is_empty(), "LIKE fallback should find results");
     assert!(results[0].content.contains("abstract"));
+    // LIKE fallback has no FTS5 match context — snippet must be None.
+    assert!(
+        results[0].snippet.is_none(),
+        "LIKE fallback must set snippet to None"
+    );
 }
 
 #[test]
@@ -120,6 +206,12 @@ fn test_store_and_recall_roundtrip() {
     let results = store.search("proj", "unique_token", 10).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].content, content);
+    // Short content (fewer tokens than the snippet window) → snippet() returns
+    // the full row → we map that to None so callers fall back to a bounded prefix.
+    assert!(
+        results[0].snippet.is_none(),
+        "short content must yield snippet None (full-row snippet is not a bound)"
+    );
 }
 
 #[test]

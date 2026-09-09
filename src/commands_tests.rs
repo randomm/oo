@@ -118,19 +118,57 @@ fn test_parse_action_no_args_is_help() {
 #[test]
 fn test_parse_action_recall_single_word() {
     let args = vec![s("recall"), s("cargo")];
-    assert!(matches!(parse_action(&args), Action::Recall(q) if q == "cargo"));
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query == "cargo" && !full)
+    );
 }
 
 #[test]
 fn test_parse_action_recall_multi_word_joins() {
     let args = vec![s("recall"), s("hello"), s("world")];
-    assert!(matches!(parse_action(&args), Action::Recall(q) if q == "hello world"));
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query == "hello world" && !full)
+    );
 }
 
 #[test]
 fn test_parse_action_recall_empty_query() {
     let args = vec![s("recall")];
-    assert!(matches!(parse_action(&args), Action::Recall(q) if q.is_empty()));
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query.is_empty() && !full)
+    );
+}
+
+#[test]
+fn test_parse_action_recall_full_flag_before_query() {
+    let args = vec![s("recall"), s("--full"), s("hello")];
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query == "hello" && full)
+    );
+}
+
+#[test]
+fn test_parse_action_recall_full_flag_after_query() {
+    let args = vec![s("recall"), s("hello"), s("--full")];
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query == "hello" && full)
+    );
+}
+
+#[test]
+fn test_parse_action_recall_full_flag_mid_query() {
+    let args = vec![s("recall"), s("hello"), s("--full"), s("world")];
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query == "hello world" && full)
+    );
+}
+
+#[test]
+fn test_parse_action_recall_full_alone_is_empty_query() {
+    let args = vec![s("recall"), s("--full")];
+    assert!(
+        matches!(parse_action(&args), Action::Recall { query, full } if query.is_empty() && full)
+    );
 }
 
 #[test]
@@ -322,7 +360,8 @@ fn test_classify_failure_with_pattern() {
 
 #[test]
 fn test_cmd_recall_empty_query_returns_1() {
-    assert_eq!(cmd_recall(""), 1);
+    assert_eq!(cmd_recall("", false), 1);
+    assert_eq!(cmd_recall("", true), 1);
 }
 
 #[test]
@@ -389,7 +428,7 @@ fn test_cmd_recall_does_not_panic() {
     // Verifies cmd_recall does not panic and returns a valid exit code.
     // We cannot guarantee the store opens in all test environments, so both
     // 0 (store ok, query ran) and 1 (store error) are acceptable outcomes.
-    let code = cmd_recall("unique_recall_test_content_xyz_42");
+    let code = cmd_recall("unique_recall_test_content_xyz_42", false);
     assert!(
         code == 0 || code == 1,
         "cmd_recall must return 0 or 1, got: {code}"
