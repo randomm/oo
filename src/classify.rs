@@ -288,13 +288,10 @@ pub fn detect_category(command: &str) -> CommandCategory {
             "test" | "clippy" | "build" | "fmt" | "check" => CommandCategory::Status,
             // Deep-token inspection for `cargo nextest run` (lookup fix only —
             // not a general argv parser; see issue #149).
-            // subcommand is "nextest"; the next token after it must be "run".
-            // We find the index of "nextest" in the ORIGINAL parts array and
-            // check the token immediately after it.
+            // subcommand is "nextest"; the token immediately after it must be "run".
             "nextest" => {
-                // Find the index of the nextest token in the original parts.
-                let nextest_idx = parts.iter().position(|p| *p == "nextest");
-                match nextest_idx.and_then(|i| parts.get(i + 1).copied()) {
+                let idx = parts.iter().position(|p| *p == "nextest");
+                match idx.and_then(|i| parts.get(i + 1).copied()) {
                     Some("run") => CommandCategory::Status,
                     _ => CommandCategory::Unknown,
                 }
