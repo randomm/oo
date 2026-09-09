@@ -323,6 +323,138 @@ fn test_recall_no_results() {
 }
 
 // ---------------------------------------------------------------------------
+// recall — snippet (bounded default) and --full integration tests
+// ---------------------------------------------------------------------------
+//
+// These tests use OO_DATA_DIR to isolate the store so they don't touch the
+// developer's real ~/.local/share/.oo/oo.db (or vice versa).
+// ---------------------------------------------------------------------------
+
+/// Seed a large indexed blob and return (temp_dir, blob_content).
+///
+/// The blob is > 4 KB so it hits the Large tier (● indexed indicator).
+fn index_large_blob() -> (TempDir, String) {
+    let dir = TempDir::new().unwrap();
+    let blob: String = (0..200)
+        .map(|i| {
+            format!(
+                "sentinel_line_{i:04} data_padding_abcdef_{}\n",
+                "x".repeat(50)
+            )
+        })
+        .collect();
+    // ~ 200 * 85 = 17 KB — well above 4 KB threshold
+
+    // OO_DATA_DIR isolates the store for this test run
+    // `oo <cmd>` where cmd produces > 4KB output → Large tier → indexed
+    let blob_file = dir.path().join("blob.txt");
+    std::fs::write(&blob_file, &blob).unwrap();
+
+    // Use `cat` to produce large output (cat is Data category → Large tier)
+    let mut cmd = oo();
+    cmd.args(["cat", blob_file.to_str().unwrap()]);
+    cmd.env("OO_DATA_DIR", dir.path());
+    cmd.assert().success();
+
+    (dir, blob)
+}
+
+#[test]
+fn test_recall_default_is_bounded() {
+    // Index a large blob, recall it — default output must be bounded
+    let (dir, blob) = index_large_blob();
+
+    // Recall with a token that appears in the blob
+    let mut cmd = oo();
+    cmd.args(["recall", "sentinel_line_0100"]);
+    cmd.env("OO_DATA_DIR", dir.path());
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "recall must exit 0");
+
+    // The stdout must be bounded: well under the full blob size
+    let stdout_len = stdout.len();
+    let blob_len = blob.len();
+    assert!(
+        stdout_len < blob_len,
+        "default recall stdout ({stdout_len} B) must be < full blob ({blob_len} B)"
+    );
+
+    // The output must not be empty (results were found)
+    assert!(
+        !stdout.trim().is_empty(),
+        "default recall must produce output"
+    );
+
+    // The output should NOT contain the tail of the blob (last 100 chars)
+    let blob_tail = &blob[blob.len().saturating_sub(100)..];
+    assert!(
+        !stdout.contains(blob_tail),
+        "default recall must NOT contain the tail of the blob (bounded display)"
+    );
+}
+
+#[test]
+fn test_recall_full_shows_complete_blob() {
+    // --full must show the complete stored content
+    let (dir, _blob) = index_large_blob();
+
+    let mut cmd = oo();
+    cmd.args(["recall", "--full", "sentinel_line_0100"]);
+    cmd.env("OO_DATA_DIR", dir.path());
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "recall --full must exit 0");
+
+    // The full blob content must appear (at least the last sentinel line)
+    assert!(
+        stdout.contains("sentinel_line_0199"),
+        "--full recall must contain the last sentinel line of the blob"
+    );
+}
+
+#[test]
+fn test_recall_full_flag_position_independent() {
+    // Both `oo recall --full <q>` and `oo recall <q> --full` must work
+    let (dir, _blob) = index_large_blob();
+
+    // Flag before query
+    let mut cmd1 = oo();
+    cmd1.args(["recall", "--full", "sentinel_line_0100"]);
+    cmd1.env("OO_DATA_DIR", dir.path());
+    let out1 = cmd1.output().unwrap();
+    assert!(out1.status.success(), "recall --full <q> must exit 0");
+
+    // Flag after query
+    let mut cmd2 = oo();
+    cmd2.args(["recall", "sentinel_line_0100", "--full"]);
+    cmd2.env("OO_DATA_DIR", dir.path());
+    let out2 = cmd2.output().unwrap();
+    assert!(out2.status.success(), "recall <q> --full must exit 0");
+
+    // Both must contain the last sentinel (proves --full mode)
+    let stdout1 = String::from_utf8_lossy(&out1.stdout);
+    let stdout2 = String::from_utf8_lossy(&out2.stdout);
+    assert!(
+        stdout1.contains("sentinel_line_0199"),
+        "flag-before must be --full mode"
+    );
+    assert!(
+        stdout2.contains("sentinel_line_0199"),
+        "flag-after must be --full mode"
+    );
+}
+
+#[test]
+fn test_recall_full_alone_gives_empty_query_error() {
+    // `oo recall --full` alone → empty query → error exit 1
+    oo().args(["recall", "--full"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("recall requires a query"));
+}
+
+// ---------------------------------------------------------------------------
 // learn command
 // ---------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@
 | Command | Description |
 |---------|-------------|
 | `oo <cmd> [args...]` | Run a command with context-efficient output |
-| `oo recall <query>` | Search indexed output from this session |
+| `oo recall [--full] <query>` | Search indexed output from this session |
 | `oo forget` | Clear all indexed output for this session |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
@@ -99,7 +99,7 @@ Returns the exit code of the wrapped command.
 
 ---
 
-## `oo recall <query>`
+## `oo recall [--full] <query>`
 
 Search indexed output from the current session.
 
@@ -109,7 +109,14 @@ Search indexed output from the current session.
 oo recall "error message"
 oo recall "test passed"
 oo recall "127.0.0"
+oo recall --full "error message"
 ```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--full` | Print the complete stored content instead of the bounded excerpt |
 
 ### Query behavior
 
@@ -120,15 +127,22 @@ oo recall "127.0.0"
 
 ### Output format
 
-Each result includes metadata and indented content:
+**Default (bounded excerpt)** — each hit shows at most one ~512-char excerpt:
 
 ```
-[session] gh issue list (2m ago):
-  #1: Feature request
-  #2: Bug report
+[session] cargo test (2m ago):
+  test result: ok. 47 passed; 0 failed; 0 ignored; 0 meas…
+```
 
-[session] cargo test (5m ago):
-  test result: ok. 47 passed; 0 failed
+**`--full`** — each hit shows the complete stored content, indented line-by-line:
+
+```
+[session] cargo test (2m ago):
+  test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+  
+  running 47 tests
+  test tests::it_works ... ok
+  ...
 ```
 
 "project memory" indicates entries from Vipune (when `vipune-store` feature is enabled) without session metadata.

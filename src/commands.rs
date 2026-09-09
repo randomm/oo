@@ -6,12 +6,12 @@ use std::io::Write;
 use crate::classify::Classification;
 pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
-use crate::util::{format_age, now_epoch};
+use crate::util::now_epoch;
 use crate::{classify, commands_patterns, exec, help, init, learn, pattern, session, store};
 
 pub enum Action {
     Run(Vec<String>),
-    Recall(String),
+    Recall { query: String, full: bool },
     Forget,
     Learn(Vec<String>, Option<String>),
     Version,
@@ -42,6 +42,22 @@ fn parse_init_format(args: &[String]) -> InitFormat {
         }
     }
     InitFormat::Claude
+}
+
+/// Parse `oo recall` arguments, extracting optional `--full` flag.
+///
+/// `--full` is stripped from ANY position in the trailing args (consistent
+/// with `parse_learn_action`'s `--hint` handling). Searching for the literal
+/// string `--full` in a query is unsupported; document that in help.
+fn parse_recall_action(args: &[String]) -> Action {
+    let query: String = args
+        .iter()
+        .filter(|a| a.as_str() != "--full")
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let full = args.iter().any(|a| a.as_str() == "--full");
+    Action::Recall { query, full }
 }
 
 /// Parse `oo learn` arguments, extracting optional `--hint <text>` flag.
@@ -77,7 +93,7 @@ fn parse_learn_action(args: &[String]) -> Action {
 pub fn parse_action(args: &[String]) -> Action {
     match args.first().map(|s| s.as_str()) {
         None => Action::Help(None),
-        Some("recall") => Action::Recall(args[1..].join(" ")),
+        Some("recall") => parse_recall_action(&args[1..]),
         Some("forget") => Action::Forget,
         Some("learn") => parse_learn_action(&args[1..]),
         Some("version") => Action::Version,
@@ -274,48 +290,8 @@ pub fn try_index(command: &str, content: &str) -> bool {
     store.index(&project_id, content, &meta).is_ok()
 }
 
-pub fn cmd_recall(query: &str) -> i32 {
-    if query.is_empty() {
-        eprintln!("oo: recall requires a query");
-        return 1;
-    }
-
-    let mut store = match store::open() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("oo: {e}");
-            return 1;
-        }
-    };
-
-    let project_id = session::project_id();
-
-    match store.search(&project_id, query, 5) {
-        Ok(results) if results.is_empty() => {
-            println!("No results found.");
-            0
-        }
-        Ok(results) => {
-            for r in &results {
-                if let Some(meta) = &r.meta {
-                    let age = format_age(meta.timestamp);
-                    println!("[session] {} ({age}):", meta.command);
-                } else {
-                    println!("[memory] project memory:");
-                }
-                // Indent content
-                for line in r.content.lines() {
-                    println!("  {line}");
-                }
-                println!();
-            }
-            0
-        }
-        Err(e) => {
-            eprintln!("oo: {e}");
-            1
-        }
-    }
+pub fn cmd_recall(query: &str, full: bool) -> i32 {
+    crate::recall_display::cmd_recall(query, full)
 }
 
 pub fn cmd_forget() -> i32 {

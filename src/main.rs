@@ -62,7 +62,7 @@ fn main() {
             0
         }
         Action::Run(args) => cmd_run(&args),
-        Action::Recall(query) => cmd_recall(&query),
+        Action::Recall { query, full } => cmd_recall(&query, full),
         Action::Forget => cmd_forget(),
         Action::Learn(args, hint) => cmd_learn(&args, hint.as_deref()),
         Action::Init(format) => cmd_init(format),
