@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+### Bug Fixes
+
+- *(#149)* Strip sudo/env prefixes and recognise cargo nextest run as Status (#157)
+
+### Features
+
+- *(#148)* Bound the Content/Unknown passthrough path (#155)
+- *(#150)* Report compression savings in indicator lines (#156)
+- *(#147)* Return FTS5 snippets from oo recall instead of full blobs (#158)
+
+### Refactoring
+
+- *(#151)* Unify classification and display into a single path (#153)
+
+
 ## [0.5.0] - 2026-05-20
 
 ### Features
