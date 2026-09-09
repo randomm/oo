@@ -617,6 +617,63 @@ fn test_bounded_truncate_tail_fallback_overlap_guard_no_panic() {
 }
 
 #[test]
+fn test_bounded_truncate_long_lines_cap_still_enforced() {
+    // HIGH-1 defect: head/tail cuts "snap to newline boundaries, at most one
+    // line of drift", but a line can be enormous (minified JS/JSON, base64).
+    // 300KB output whose only newlines are at 100000 and 200000: pre-fix the
+    // head snapped to 100001 and the tail to 200001, yielding a ~200KB display
+    // — ~50x DISPLAY_CAP — while the marker still claimed the output was
+    // bounded. Line-snapping may only ever SHRINK a slice relative to the
+    // byte budget, never grow it past it.
+    let mut output = String::new();
+    output.push_str(&"a".repeat(100_000));
+    output.push('\n');
+    output.push_str(&"b".repeat(100_000));
+    output.push('\n');
+    output.push_str(&"c".repeat(99_999));
+    assert_eq!(
+        output.len(),
+        300_001,
+        "sanity: two 100KB lines + 99999 tail"
+    );
+
+    let result = bounded_truncate(&output);
+    assert!(
+        result.len() <= DISPLAY_CAP + 200,
+        "display ({} bytes) must be bounded by DISPLAY_CAP + marker allowance for \
+         output with only {} newlines",
+        result.len(),
+        output.bytes().filter(|b| *b == b'\n').count()
+    );
+    assert!(
+        std::str::from_utf8(result.as_bytes()).is_ok(),
+        "display must remain valid UTF-8"
+    );
+    assert!(
+        result.contains("bytes truncated"),
+        "display must still carry the truncation marker"
+    );
+}
+
+#[test]
+fn test_bounded_truncate_single_mid_output_newline() {
+    // Only one newline exists (mid-output): the <2-newline path keeps both
+    // halves within budget, not the whole line on either side.
+    let mut output = String::new();
+    output.push_str(&"x".repeat(150_000));
+    output.push('\n');
+    output.push_str(&"y".repeat(150_000));
+
+    let result = bounded_truncate(&output);
+    assert!(
+        result.len() <= DISPLAY_CAP + 200,
+        "display ({} bytes) must be bounded",
+        result.len()
+    );
+    assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+}
+
+#[test]
 fn test_bounded_truncate_display_cap_boundary() {
     // Output just above DISPLAY_CAP: head+tail + marker must fit
     let big = "x".repeat(DISPLAY_CAP + 100);

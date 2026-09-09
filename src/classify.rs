@@ -20,8 +20,8 @@ pub const SMALL_THRESHOLD: usize = 4096;
 
 /// Total byte budget for the display slice of a bounded (Content/Unknown) output.
 ///
-/// Deliberately equal in value to `SMALL_THRESHOLD`: we never display more bytes
-/// than the passthrough budget. Split 60 % head / 40 % tail, mirroring
+/// Deliberately equal in value to `SMALL_THRESHOLD`: we never display more
+/// bytes than the passthrough budget. Split 60 % head / 40 % tail, mirroring
 /// [`smart_truncate`]'s ratio.
 pub const DISPLAY_CAP: usize = 4096;
 
@@ -178,9 +178,9 @@ pub fn label(command: &str) -> String {
 /// # Categories
 ///
 /// - **Status**: Test runners, builds, linters → quiet success
-/// - **Content**: File viewers and diffs → always passthrough
+/// - **Content**: File viewers and diffs → bounded display + indexed full output
 /// - **Data**: Listing and querying commands → index for recall
-/// - **Unknown**: Anything else → passthrough (safe default)
+/// - **Unknown**: Anything else → bounded display + indexed full output
 ///
 /// # Arguments
 ///
@@ -367,9 +367,12 @@ fn ceil_char_boundary(s: &str, idx: usize) -> usize {
 ///
 /// Produces a head+tail slice bounded by [`DISPLAY_CAP`] bytes total, with a
 /// single truncation marker line between them. Cuts snap to `\n` boundaries
-/// (at most one line of drift); if the output has fewer than 2 newlines, cuts
-/// fall back to char-boundary-only slicing. Never splits a multi-byte UTF-8
-/// sequence.
+/// (at most one line of drift) as a nicety, but the cap is enforced on the
+/// ASSEMBLED slices: line-snapping may only ever shrink a slice relative to
+/// its byte budget, never grow it past it (a single line can be arbitrarily
+/// long — minified JS/JSON, base64). If the output has fewer than 2 newlines,
+/// cuts fall back to char-boundary-only slicing. Never splits a multi-byte
+/// UTF-8 sequence.
 ///
 /// Returns the input unchanged when it is ≤ [`DISPLAY_CAP`] bytes.
 pub fn bounded_truncate(output: &str) -> String {
