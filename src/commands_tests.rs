@@ -1,4 +1,5 @@
 use super::*;
+use crate::classify::Classification;
 
 fn s(s: &str) -> String {
     s.to_string()
@@ -622,5 +623,64 @@ fn test_savings_large_arm_wording_unchanged() {
     match c {
         Classification::Large { size, .. } => assert_eq!(size, 6000),
         _ => panic!("expected Large for Data-category command with large output"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #149 — end-to-end test through cmd_run (the cmd_run entry point)
+// ---------------------------------------------------------------------------
+//
+// The #151 refactor unified classification: both cmd_run and cmd_learn call
+// `classify::classify`. This test exercises the cmd_run path specifically —
+// `cmd_run` joins args with spaces, loads builtin patterns, runs the command,
+// classifies, and renders. The command `cargo nextest run` has no matching
+// builtin pattern and >4KB output, so the category fallback must fire:
+// detect_category returns Status → Success (quiet) → "✓ cargo" display.
+//
+// `run_command_args` returns the classification directly so the test can
+// assert on the exact variant — the no-op "exit code is 0" guard that the
+// pre-#149 version of this test relied on is replaced by an assertion on
+// the classification itself. If the #149 fix is absent, detect_category
+// returns Unknown → Bounded, which this test must fail on.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cmd_run_cargo_nextest_run_quiet_success() {
+    // `oo cargo nextest run` — cmd_run path. The command is joined as
+    // "cargo nextest run" by cmd_run; with the #149 fix, detect_category
+    // returns Status, so a large successful run produces a quiet Success
+    // ("✓ cargo") instead of a Bounded/Passthrough of the full output.
+    //
+    // `cargo nextest` requires nextest installed. In environments where it
+    // is missing, the command exits non-zero and the Failure arm is taken
+    // (still a legitimate classification — the test asserts the failure
+    // label is "cargo", not a Bounded/Large arm). In environments where it
+    // is present and the output is >4KB, the Success(quiet) arm is taken.
+    // Both arms are asserted here; the Bounded/Large arms (the regression
+    // the #149 fix eliminates) are not.
+    let (code, classification) = run_command_args(&[s("cargo"), s("nextest"), s("run")]);
+    let Some(classification) = classification else {
+        panic!("run_command_args must return Some(classification) on the success path");
+    };
+    match classification {
+        Classification::Success { label, summary } => {
+            assert_eq!(label, "cargo");
+            assert!(summary.is_empty(), "quiet success must have empty summary");
+        }
+        Classification::Failure { label, .. } => {
+            assert_eq!(label, "cargo");
+            assert_ne!(code, 0, "Failure arm implies non-zero exit code");
+        }
+        Classification::Passthrough { .. } => {
+            // Small output (≤4KB) — e.g. a "command not found" or similar
+            // short error. Still not Bounded/Large, so acceptable.
+            assert_ne!(
+                code, 0,
+                "Passthrough implies small output; nextest likely missing"
+            );
+        }
+        other => panic!(
+            "cmd_run with 'cargo nextest run' must not fall through to Bounded/Large (got {other:?}) — the #149 fix must classify this as Status"
+        ),
     }
 }

@@ -160,11 +160,16 @@ pub enum Classification {
 
 /// Derive a short label from a command string.
 ///
-/// Extracts the first word of the command (typically the binary name),
+/// Extracts the binary name, skipping any leading `sudo`/`env` prefix and
 /// stripping any path prefix. For example:
 /// - "cargo test" → "cargo"
 /// - "/usr/bin/python script.py" → "python"
 /// - "gh issue list" → "gh"
+/// - "sudo cargo test" → "cargo"
+/// - "env FOO=bar cargo test" → "cargo"
+///
+/// If stripping the prefix leaves no token, the original first token is
+/// returned (e.g., "sudo" → "sudo", "env" → "env").
 ///
 /// # Arguments
 ///
@@ -174,14 +179,57 @@ pub enum Classification {
 ///
 /// A short label derived from the command.
 pub fn label(command: &str) -> String {
-    command
-        .split_whitespace()
-        .next()
-        .unwrap_or("command")
-        .rsplit('/')
-        .next()
-        .unwrap_or("command")
-        .to_string()
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    let Some(first) = parts.first() else {
+        return "command".to_string();
+    };
+    // `binary_index` is the single source of truth for the sudo/env skip
+    // rule. When stripping leaves no token (bare "sudo"/"env"), it returns
+    // `None` and we degrade to the original first token (path-stripped).
+    let name = match binary_index(&parts) {
+        Some(i) => parts[i].rsplit('/').next().unwrap_or(parts[i]),
+        None => first.rsplit('/').next().unwrap_or(first),
+    };
+    name.to_string()
+}
+
+/// Position of the binary in a split argv after stripping a leading
+/// `sudo`/`env` prefix — the single source of truth for that skip rule.
+///
+/// Applies only at position 0, and only for exactly `sudo` (after path
+/// stripping) or `env`. For `env`, consecutive leading `KEY=VALUE` assignment
+/// tokens are skipped until the real binary is reached. Strips once — does
+/// NOT loop, so `sudo sudo cargo test` does not strip the second `sudo`.
+///
+/// Returns `Some(0)` when there is no prefix (the binary is the first token
+/// as-is), the index of the stripped binary otherwise, and `None` when
+/// stripping leaves no token (e.g. bare "sudo" or "env").
+fn binary_index(parts: &[&str]) -> Option<usize> {
+    let first = parts.first()?;
+    let base = first.rsplit('/').next().unwrap_or(first);
+    match base {
+        "sudo" => parts.get(1).map(|_| 1),
+        "env" => {
+            let mut i = 1;
+            while i < parts.len() && is_var_value(parts[i]) {
+                i += 1;
+            }
+            (i < parts.len()).then_some(i)
+        }
+        _ => Some(0),
+    }
+}
+
+/// Returns true when a token looks like a shell `KEY=VALUE` assignment.
+///
+/// The leading-dash guard keeps `env` flags out of the skip loop: a flag
+/// like `--split-string=x` contains `=`, and treating it as a `KEY=VALUE`
+/// assignment would silently skip it — misclassifying the command as Status
+/// and suppressing its output to a quiet `✓` line with no recall hint. A
+/// flag stops the loop instead, so the binary becomes the flag token and the
+/// category falls back to Unknown (output preserved).
+fn is_var_value(token: &str) -> bool {
+    !token.starts_with('-') && token.contains('=')
 }
 
 /// Detect command category from command string.
@@ -209,14 +257,47 @@ pub fn detect_category(command: &str) -> CommandCategory {
         return CommandCategory::Unknown;
     }
 
-    // Extract binary name (strip path prefix)
-    let binary = parts[0].rsplit('/').next().unwrap_or(parts[0]);
-    let subcommand = parts.get(1).copied().unwrap_or("");
+    // The binary index is the single source of truth for the sudo/env skip
+    // rule; the binary name and the subcommand (the next token, "" if none)
+    // are both derived from it. Stripping that leaves no token (bare
+    // "sudo"/"env") degrades to the original token 0 — path-stripped, which
+    // is a no-op for bare "sudo"/"env" — and the subcommand to the raw
+    // token 1 ("" if none). `binary_index` is computed once per call; the
+    // `nextest` arm below reuses the same index for its `i + 2` lookup.
+    let binary_idx = binary_index(&parts);
+    let (binary, subcommand) = match binary_idx {
+        Some(i) => (
+            parts[i].rsplit('/').next().unwrap_or(parts[i]),
+            parts.get(i + 1).copied().unwrap_or(""),
+        ),
+        None => (
+            parts[0].rsplit('/').next().unwrap_or(parts[0]),
+            parts.get(1).copied().unwrap_or(""),
+        ),
+    };
 
     match binary {
         // Status: test runners, build systems, linters
         "cargo" => match subcommand {
             "test" | "clippy" | "build" | "fmt" | "check" => CommandCategory::Status,
+            // `cargo nextest run` → Status (lookup fix only — not a general
+            // argv parser; see issue #149). Use the KNOWN subcommand position
+            // (token after the stripped binary) rather than scanning the whole
+            // argv for "nextest": a later token that happens to equal
+            // "nextest" (e.g. `env FOO=nextest cargo nextest run`) would
+            // otherwise land on the wrong token. Everything after "run" is
+            // irrelevant — any trailing argv (package filters, flags) is
+            // accepted.
+            "nextest" => {
+                // `run` sits at a fixed offset after the stripped binary:
+                // binary index + 2 (binary, "nextest", "run"). Reusing the
+                // index computed above keeps the position single-sourced.
+                let token_after_nextest = binary_idx.and_then(|i| parts.get(i + 2));
+                match token_after_nextest.copied() {
+                    Some("run") => CommandCategory::Status,
+                    _ => CommandCategory::Unknown,
+                }
+            }
             _ => CommandCategory::Unknown,
         },
         "pytest" | "jest" | "vitest" | "go" | "npm" | "yarn" | "pnpm" | "bun" | "eslint"

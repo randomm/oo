@@ -86,7 +86,7 @@ When no pattern matches, oo uses command category to determine behavior:
 
 | Category | Examples | Behavior |
 |----------|----------|----------|
-| **Status** | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success if output > 4 KB (empty summary) |
+| **Status** | `cargo test`, `cargo build`, `cargo nextest run`, `pytest`, `eslint` | Quiet success if output > 4 KB (empty summary) |
 | **Content** | `git show`, `git diff`, `cat`, `bat` | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 | **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KB |
 | **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
