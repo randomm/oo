@@ -31,7 +31,12 @@ pub struct SessionMeta {
 /// Result from a store search operation.
 ///
 /// Contains the stored content along with its identifier and optional metadata.
+///
+/// Marked `#[non_exhaustive]` so future fields (e.g. `snippet`) can be added
+/// in a non-breaking way — downstream code must use struct update syntax or
+/// constructors rather than exhaustive field literals.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct SearchResult {
     /// Unique identifier for this entry.
     pub id: String,
@@ -295,7 +300,15 @@ impl Store for SqliteStore {
                 })
             })
             .map_err(map_err)?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| match r {
+                Ok(r) => Some(r),
+                // Never silently drop a matched row — surface the deserialisation
+                // failure so callers can tell "fewer hits" from "no match".
+                Err(e) => {
+                    eprintln!("oo: warning: dropped a search result row (row error): {e}");
+                    None
+                }
+            })
             .collect()
         };
 

@@ -116,7 +116,7 @@ oo recall --full "error message"
 
 | Flag | Description |
 |------|-------------|
-| `--full` | Print the complete stored content instead of the bounded excerpt |
+| `--full` | Print the complete stored content instead of the bounded excerpt (deliberately **unbounded** escape hatch — can flood an agent's context; prefer the bounded default) |
 
 `--full` is recognised in any argument position (`oo recall --full q` and
 `oo recall q --full` are equivalent). A query that *literally contains* the
@@ -131,14 +131,24 @@ word `--full` cannot be searched — the flag is stripped wherever it appears.
 
 ### Output format
 
-**Default (bounded excerpt)** — each hit shows at most one ~512-char excerpt:
+**Default (bounded excerpt)** — each hit shows at most a 512-char excerpt
+(indented per line; the same indent applies to `--full` output):
 
 ```
 [session] cargo test (2m ago):
-  test result: ok. 47 passed; 0 failed; 0 ignored; 0 meas…
+  test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+  running 47 tests [oo: truncated]
 ```
 
-**`--full`** — each hit shows the complete stored content, indented line-by-line:
+When the excerpt (FTS5 snippet or client-side prefix) exceeds 512 chars, the
+output is truncated to 512 characters plus the unambiguous truncation marker
+` [oo: truncated]`. The sentinel — not a bare `…` — means an agent can tell
+detectably that content was withheld, and it cannot collide with ellipses in
+the stored content or with FTS5's own `…` omission markers.
+
+**`--full`** — each hit shows the complete stored content, indented line-by-line
+(**unbounded by design**: a deliberate escape hatch for when the bounded excerpt
+isn't enough — it can flood an agent's context, so prefer the bounded default):
 
 ```
 [session] cargo test (2m ago):

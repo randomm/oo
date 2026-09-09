@@ -7,16 +7,25 @@ use crate::session;
 use crate::store;
 use crate::util::format_age;
 
-/// Hard byte ceiling for a single hit's default (non-`--full`) display.
+/// Character ceiling for a single hit's default (non-`--full`) display.
 ///
+/// The cap is on **character count**, not bytes (byte slicing would panic on
+/// multi-byte UTF-8 boundaries), so the displayed output is at most 512
+/// characters — for multi-byte content the byte length can approach ~4× that.
 /// 512 chars is well under the ~4 KB context budget per hit that the feature
 /// targets and matches the empirical ~200-char FTS5 snippet target (tokens are
 /// clamped to 1-64, which is ~200-400 chars for ASCII; 512 chars gives headroom
-/// for the ellipsis marker and multi-byte characters without exceeding the budget).
+/// for the truncation marker and multi-byte characters without exceeding the budget).
 pub const SNIPPET_CAP: usize = 512;
 
-/// The marker appended to truncated output.
-pub const ELLIPSIS_MARKER: &str = " \u{2026}";
+/// The marker appended when a hit's display is truncated to `SNIPPET_CAP`.
+///
+/// Deliberately a distinctive sentinel rather than a lone `…`: a bare ellipsis
+/// occurs naturally in stored shell output AND is the omission marker FTS5's
+/// own `snippet()` uses, so "output ends in …" would not reliably mean "we
+/// truncated it". The unambiguous sentinel means an agent can always tell
+/// truncation from content (see `bounded_display`).
+pub const ELLIPSIS_MARKER: &str = " [oo: truncated]";
 
 /// Bounded display for a recall hit's default (non-`--full`) output.
 ///
@@ -88,15 +97,21 @@ pub fn cmd_recall(query: &str, full: bool) -> i32 {
                     println!("[memory] project memory:");
                 }
                 if full {
+                    // `--full` is a deliberate escape hatch: complete stored
+                    // content, no cap. Can flood an agent's context — callers
+                    // should prefer the bounded default.
                     for line in r.content.lines() {
                         println!("  {line}");
                     }
                 } else {
                     // Bounded display: prefer the store-provided FTS5 snippet when
                     // available, else fall back to a bounded prefix of `content`
-                    // (LIKE short-query branch / non-FTS5 backends).
+                    // (LIKE short-query branch / non-FTS5 backends). Indent every
+                    // line so a multi-line excerpt groups identically to --full.
                     let display = display_hit(&r.content, &r.snippet, SNIPPET_CAP);
-                    println!("  {display}");
+                    for line in display.lines() {
+                        println!("  {line}");
+                    }
                 }
                 println!();
             }
@@ -126,20 +141,23 @@ mod tests {
     }
 
     #[test]
-    fn content_over_cap_truncated_with_ellipsis() {
+    fn content_over_cap_truncated_with_marker() {
         let input: String = "x".repeat(600);
         let result = bounded_display(&input, 512);
-        // 512 chars + " \u{2026}" (2 chars) = 514 chars total
-        assert_eq!(result.chars().count(), 514);
+        // 512 chars + marker (" [oo: truncated]" = 16 chars) = 528 chars total
+        assert_eq!(result.chars().count(), 512 + 16);
         assert!(result.ends_with(ELLIPSIS_MARKER));
         // Must not contain the tail of the original content
         assert!(!result.ends_with(&"x".repeat(100)));
     }
 
     #[test]
-    fn ellipsis_marker_is_unicode_ellipsis() {
-        assert_eq!(ELLIPSIS_MARKER, " \u{2026}");
-        assert_eq!(ELLIPSIS_MARKER.chars().count(), 2);
+    fn truncation_marker_is_unambiguous_sentinel() {
+        // The marker must be a sentinel that cannot plausibly occur in captured
+        // shell output (and does not collide with FTS5's own `…` omission
+        // markers), so "ends with the marker" reliably means "we truncated it".
+        assert_eq!(ELLIPSIS_MARKER, " [oo: truncated]");
+        assert!(ELLIPSIS_MARKER.contains('['));
     }
 
     // Guard tests for display_hit — the wiring that connects the store's FTS5
