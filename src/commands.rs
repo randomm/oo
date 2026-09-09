@@ -142,21 +142,14 @@ pub fn render_classification(classification: &Classification, command: &str) {
             }
         }
         Classification::Bounded {
-            label,
-            output,
-            display,
-            size,
-            ..
+            output, display, ..
         } => {
-            let indexed = try_index(command, output);
-            let human_size = format_size(*size, BINARY);
-            if indexed {
-                println!(
-                    "\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)"
-                );
-            } else {
-                print!("{display}");
-            }
+            // Best-effort index the full output for recall; the display is
+            // always printed — the byte-bounded head+tail slice IS the point
+            // of this arm (issue #148). The truncation marker in `display`
+            // makes it detectable as bounded output.
+            let _ = try_index(command, output);
+            print!("{display}");
         }
         Classification::Large {
             label,
