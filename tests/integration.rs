@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 fn oo() -> Command {
@@ -739,4 +740,198 @@ fn test_project_patterns_override_builtins() {
         .assert()
         .success()
         .stdout(predicate::str::contains("proj-match"));
+}
+
+// ---------------------------------------------------------------------------
+// Savings suffix (issue #150)
+// ---------------------------------------------------------------------------
+
+/// Create a temp bin dir containing an executable script named `name` whose
+/// body is `script_body`, and return the PATH with that dir prepended.
+fn make_fake_bin(name: &str, script_body: &str) -> (TempDir, String) {
+    let dir = TempDir::new().unwrap();
+    let bin_dir = dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let bin = bin_dir.join(name);
+    std::fs::write(&bin, script_body).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    (dir, path)
+}
+
+/// Quiet Success: a Status-category command with >4 KB output and no matching
+/// builtin success pattern produces `✓ {label}` (empty summary). The
+/// `[saved …]` suffix must appear on the indicator line.
+#[test]
+fn test_quiet_success_shows_savings() {
+    let (keep, path) = make_fake_bin(
+        "go",
+        "#!/bin/sh\nfor i in $(seq 1 500); do echo 'building component $i ...'; done\nexit 0\n",
+    );
+    let _ = keep;
+    oo().args(["go", "build"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("\u{2713}"))
+        .stdout(predicate::str::contains("[saved "))
+        // The suffix must be on the indicator line, not on subsequent lines.
+        .stdout(predicate::function(|out: &str| {
+            let first_line = out.lines().next().unwrap_or("");
+            first_line.starts_with('\u{2713}') && first_line.contains("[saved ")
+        }));
+}
+
+/// Pattern-summarised Success: >4 KB output matching a builtin pattern with a
+/// non-empty summary → `✓ {label} ({summary}) [saved …]`.
+#[test]
+fn test_summary_success_shows_savings() {
+    let (keep, path) = make_fake_bin(
+        "cargo",
+        "#!/bin/sh\nfor i in $(seq 1 500); do echo \"running test $i ...\"; done\necho \"test result: ok. 42 passed; 0 failed; finished in 1.23s\"\nexit 0\n",
+    );
+    let _ = keep;
+    oo().args(["cargo", "test"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("\u{2713}"))
+        .stdout(predicate::str::contains("42 passed"))
+        .stdout(predicate::str::contains("[saved "))
+        .stdout(predicate::function(|out: &str| {
+            let first_line = out.lines().next().unwrap_or("");
+            first_line.starts_with('\u{2713}') && first_line.contains("[saved ")
+        }));
+}
+
+/// Filtered Failure: >4 KB output, non-zero exit. The `[saved …]` suffix must
+/// appear on the `✗` indicator line; the filtered output lines that follow
+/// must NOT contain the suffix.
+#[test]
+fn test_failure_shows_savings() {
+    let (keep, path) = make_fake_bin(
+        "pytest",
+        "#!/bin/sh\nfor i in $(seq 1 500); do echo \"ERROR: test_failing_$i failed with assertion error\"; done\nexit 1\n",
+    );
+    let _ = keep;
+    oo().args(["pytest", "-x"])
+        .env("PATH", path)
+        .assert()
+        .failure()
+        .stdout(predicate::str::starts_with("\u{2717}"))
+        .stdout(predicate::str::contains("[saved "))
+        .stdout(predicate::function(|out: &str| {
+            let first_line = out.lines().next().unwrap_or("");
+            first_line.starts_with('\u{2717}') && first_line.contains("[saved ")
+        }));
+}
+
+/// REGRESSION LOCK — pre-existing failure formatting: the `✗ {label}`
+/// indicator line is followed by a deliberate BLANK LINE before the error
+/// body (the `\n` in the payload plus `println!`'s own newline). This must
+/// survive both with and without a savings suffix present.
+#[test]
+fn test_failure_indicator_blank_line_with_suffix() {
+    let (keep, path) = make_fake_bin(
+        "pytest",
+        "#!/bin/sh\nfor i in $(seq 1 500); do echo \"ERROR: test_failing_$i failed with assertion error\"; done\nexit 1\n",
+    );
+    let _ = keep;
+    oo().args(["pytest", "-x"])
+        .env("PATH", path)
+        .assert()
+        .failure()
+        .stdout(predicate::function(|out: &str| {
+            let mut lines = out.lines();
+            let indicator = lines.next().unwrap_or("");
+            let blank = lines.next().unwrap_or("");
+            indicator.starts_with('\u{2717}') && indicator.contains("[saved ") && blank.is_empty()
+        }));
+}
+
+/// Same regression as above for the small-failure case where the savings are
+/// below `MIN_SAVINGS` and no suffix is printed: the blank line still holds.
+#[test]
+fn test_failure_indicator_blank_line_without_suffix() {
+    oo().args(["false"])
+        .assert()
+        .failure()
+        .stdout(predicate::function(|out: &str| {
+            let mut lines = out.lines();
+            let indicator = lines.next().unwrap_or("");
+            let blank = lines.next().unwrap_or("");
+            indicator.starts_with('\u{2717}') && !indicator.contains("[saved ") && blank.is_empty()
+        }));
+}
+
+/// Large arm regression lock: the `● {label} (indexed … → use `oo recall` to
+/// query)` string is unchanged — no `[saved …]` suffix (it already reports
+/// its size; no double-reporting).
+#[test]
+fn test_large_arm_wording_unchanged_no_savings() {
+    let dir = TempDir::new().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    for i in 0..100 {
+        std::fs::write(dir.path().join("file.txt"), format!("content {}\n", i)).unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", &format!("commit {}", i)])
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+    }
+
+    oo().args(["git", "log"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("\u{25CF}"))
+        .stdout(predicate::str::contains("indexed"))
+        .stdout(predicate::str::contains("use `oo recall` to query"))
+        .stdout(predicate::str::contains("[saved ").not());
+}
+
+/// Bounded arm regression lock: the `● {label} (output truncated: …)` line is
+/// unchanged — no `[saved …]` suffix (its framing line already carries the
+/// total size; no double-reporting).
+#[test]
+fn test_bounded_arm_wording_unchanged_no_savings() {
+    let dir = TempDir::new().unwrap();
+    let big_file = dir.path().join("big.txt");
+    let content = std::iter::repeat("x\n").take(5000).collect::<String>();
+    std::fs::write(&big_file, &content).unwrap();
+
+    oo().args(["cat", big_file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("\u{25CF}"))
+        .stdout(predicate::str::contains("output truncated:"))
+        .stdout(predicate::str::contains("use `oo recall` to query"))
+        .stdout(predicate::str::contains("[saved ").not());
+}
+
+/// Passthrough arm: small output (< 4 KB) passes through verbatim with no
+/// indicator line and no savings figure.
+#[test]
+fn test_passthrough_no_savings() {
+    oo().args(["echo", "hello"])
+        .assert()
+        .success()
+        .stdout("hello\n");
 }

@@ -34,7 +34,12 @@ grep = "Error:|error\\["
 | `pattern` | regex | Named captures become template variables |
 | `summary` | string | Template; `{capture_name}` replaced at runtime |
 
-An empty `summary = ""` suppresses output on success (quiet pass).
+An empty `summary = ""` suppresses output on success (quiet pass) — the indicator
+line is `✓ label` with no summary. The savings figure (`[saved N KiB]`) is still
+appended when the saving exceeds `MIN_SAVINGS` (4 KiB), so the compression win is
+visible even on the quiet form. This makes the quiet path the largest compression
+win in the product: a 100 KiB build log becomes a single line with a savings figure,
+and the agent can see exactly how much was saved.
 
 ## `[failure]` section
 

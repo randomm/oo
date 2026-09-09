@@ -114,32 +114,64 @@ pub fn cmd_run(args: &[String]) -> i32 {
     let command = args.join(" ");
 
     // Print result
+    let merged = output.merged_lossy();
     let classification = classify::classify(&output, &command, &all_patterns);
-    render_classification(&classification, &command);
+    render_classification(&classification, &command, merged.len());
 
     exit_code
 }
 
+/// Build the `[saved {humansize}]` suffix for a compressed indicator line.
+///
+/// `original_bytes` is the merged output size in bytes (`merged_lossy().len()`);
+/// `indicator_bytes` is the byte length of the indicator line EXCLUDING the
+/// savings suffix (call sites pass `line.len()` before the suffix is
+/// appended), so the reported figure overstates displayed bytes by the
+/// suffix's own length (~15 B — immaterial at the sizes where a suffix can
+/// appear). Returns `None` when the saving is ≤ [`classify::MIN_SAVINGS`]
+/// (i.e. the suffix appears only when `saved > MIN_SAVINGS`; saturating
+/// arithmetic makes underflow impossible), so the caller prints the line
+/// unchanged. Only the indicator line counts as displayed — the filtered
+/// output lines printed after it (Failure arm) are not included.
+pub fn savings_suffix(original_bytes: usize, indicator_bytes: usize) -> Option<String> {
+    let saved = original_bytes.saturating_sub(indicator_bytes);
+    (saved > classify::MIN_SAVINGS).then(|| format!(" [saved {}]", format_size(saved, BINARY)))
+}
+
 /// Print a [`Classification`] to stdout using the shared display path.
 ///
-/// The Large tier indexes the output via [`try_index`] and falls back to
-/// [`classify::smart_truncate`] on indexing failure. Both `cmd_run` and
-/// `cmd_learn` use this so the arms cannot drift apart.
-pub fn render_classification(classification: &Classification, command: &str) {
+/// `original_size` is the merged output size in bytes, used to append the
+/// savings suffix to the Success and Failure indicator lines via
+/// [`savings_suffix`]. The Large tier indexes the output via [`try_index`]
+/// and falls back to [`classify::smart_truncate`] on indexing failure.
+/// Both `cmd_run` and `cmd_learn` use this so the arms cannot drift apart.
+pub fn render_classification(classification: &Classification, command: &str, original_size: usize) {
     match classification {
         Classification::Failure { label, output } => {
-            println!("\u{2717} {label}\n");
+            let line = format!("\u{2717} {label}");
+            // The `\n` in the payload plus `println!`'s own newline is a
+            // deliberate BLANK LINE between the indicator and the error
+            // body — the suffix (if any) lands on the indicator line only,
+            // and the blank line survives with or without it.
+            println!(
+                "{line}{}\n",
+                savings_suffix(original_size, line.len()).unwrap_or_default()
+            );
             println!("{output}");
         }
         Classification::Passthrough { output } => {
             print!("{output}");
         }
         Classification::Success { label, summary } => {
-            if summary.is_empty() {
-                println!("\u{2713} {label}");
+            let line = if summary.is_empty() {
+                format!("\u{2713} {label}")
             } else {
-                println!("\u{2713} {label} ({summary})");
-            }
+                format!("\u{2713} {label} ({summary})")
+            };
+            println!(
+                "{line}{}",
+                savings_suffix(original_size, line.len()).unwrap_or_default()
+            );
         }
         Classification::Bounded {
             label,
@@ -314,11 +346,12 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     let exit_code = output.exit_code;
     let command = args.join(" ");
     let merged = output.merged_lossy();
+    let original_size = merged.len();
 
     // Show normal oo output first (builtins only — project/user patterns are
     // intentionally not consulted here; see issue #151)
     let classification = classify::classify(&output, &command, pattern::builtins());
-    render_classification(&classification, &command);
+    render_classification(&classification, &command, original_size);
 
     // Print provider before spawning so the user sees it in the foreground
     let config = learn::load_learn_config().unwrap_or_else(|e| {

@@ -95,6 +95,28 @@ truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or `sh -c` 
 cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
 for details.
 
+### Measuring the savings
+
+When oo compresses output, the savings are made visible on the indicator line itself:
+
+```
+$ oo cargo test
+✓ cargo test (47 passed, 2.1s) [saved 46.1 KiB]
+```
+
+The figure is the raw merged output size minus the bytes actually printed on the
+indicator line, formatted with `humansize` binary units (the same idiom already used
+by the Large tier's `indexed N` figure). The savings figure appears on the Success
+arm (both the `✓ label (summary)` and the quiet `✓ label` form) and on the Failure
+arm — these are the arms where compression happens. The figure is suppressed when
+the saving is below `MIN_SAVINGS` (4 KiB), so a `[saved 12 B]` suffix on every command
+never appears. The Large and Bounded tiers do not get a savings figure: the Large
+tier already reports its size (`indexed N`), and the Bounded tier's display is the
+bounded head+tail slice itself — the `● (output truncated: N total → use `oo recall`
+to query)` framing line already communicates the size relationship, so a savings
+figure there would be double-reporting. The Passthrough tier shows output verbatim,
+so nothing is saved.
+
 ---
 
 ## Installation

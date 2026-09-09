@@ -18,6 +18,19 @@ use crate::pattern::{self, Pattern};
 /// 4 KB — below this, output passes through verbatim.
 pub const SMALL_THRESHOLD: usize = 4096;
 
+/// Minimum savings (bytes) for the `[saved …]` indicator-line suffix.
+///
+/// Deliberately independent of [`SMALL_THRESHOLD`]/[`DISPLAY_CAP`] — the same
+/// 4096 value is a coincidence: this is a noise floor on a savings *delta*,
+/// whereas `SMALL_THRESHOLD` is the passthrough byte budget.
+///
+/// Below this floor the suffix is suppressed entirely: a `[saved 12 B]` tag
+/// on every command is noise and would itself waste context. The floor also
+/// subsumes non-positive deltas (summary nearly as long as the input)
+/// and sub-KiB values that `humansize` would render as `0 B` / `996 B`,
+/// so no separate rule is needed for those cases.
+pub const MIN_SAVINGS: usize = 4096;
+
 /// Total byte budget for the display slice of a bounded (Content/Unknown) output.
 ///
 /// Defined as `SMALL_THRESHOLD` so the invariant "we never display more bytes
