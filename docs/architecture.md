@@ -54,9 +54,10 @@ The classification engine decides how to present output to the agent:
 
 **Possible outcomes**:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
-- **Passthrough** (success, <4KB): Verbatim output
-- **Success** (success, <4KB, pattern match): Compressed summary
-- **Large** (success, >4KB, no pattern): Indexed for recall
+- **Passthrough** (success, ≤4KB): Verbatim output
+- **Success** (success, >4KB, pattern match): Compressed summary
+- **Large** (success, >4KB, no pattern, Data category): Full output indexed, head+tail slice displayed
+- **Large** (success, >4KB, no pattern, Content/Unknown category): Same bounded tier — full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
@@ -95,9 +96,9 @@ Commands are auto-categorized to determine default behavior:
 | Category | Examples | Default Behavior |
 |----------|----------|------------------|
 | Status | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success (large output) |
-| Content | `git show`, `git diff`, `cat`, `bat` | Always passthrough (never index) |
+| Content | `git show`, `git diff`, `cat`, `bat` | Bounded display — full output indexed, head+tail slice shown (large output) |
 | Data | `git log`, `git status`, `gh api`, `ls` | Index for recall (large output) |
-| Unknown | Anything else (curl, docker, etc.) | Passthrough (safe default) |
+| Unknown | Anything else (curl, docker, `sh -c`, etc.) | Bounded display — full output indexed, head+tail slice shown (large output) |
 
 Categories are detected by regex patterns in the command string.
 
@@ -156,9 +157,9 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 
 ## Key Design Decisions
 
-### 1. Passthrough by default
+### 1. Bounded passthrough by default
 
-Unknown commands pass through unchanged (<4KB) or get indexed (>4KB). This is safe — users see what they expect unless a pattern explicitly overrides behavior.
+Small outputs (≤4KB) pass through unchanged for every category. Large Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
@@ -166,7 +167,7 @@ User patterns in `~/.config/oo/patterns/` always take priority over built-ins. T
 
 ### 3. Category-based fallbacks
 
-When no pattern matches, category detection provides sensible defaults. This prevents indexing of content commands (git show, diff) where agents need the actual output.
+When no pattern matches, category detection provides sensible defaults. Content commands (git show, diff, cat) and Unknown commands (curl, sh -c, custom scripts) all route large unpatterned output through the bounded Large tier — the agent keeps a bounded head+tail view of the actual output while the full content stays recoverable via `oo recall`.
 
 ### 4. SQLite by default
 

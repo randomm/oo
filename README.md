@@ -87,8 +87,13 @@ Failure output is filtered to the actionable tail.
 $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Small outputs pass through unchanged.
-Output handling depends on command category: content commands like `git show` and `git diff` always pass through regardless of size, while data commands like `git log` and `ls` are indexed when large. See the [patterns guide](docs/patterns.md#command-categories) for details.
+Query indexed output with `oo recall "<terms>"`. Small outputs (≤4 KB) pass through
+unchanged. Larger unpatterned output — whether from data commands like `git log` and
+`ls` or content commands like `git show` and `git diff` — is indexed in full, and only a
+byte-bounded head+tail slice is displayed with a truncation marker (`... [N bytes
+truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or `sh -c` output
+cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
+for details.
 
 ---
 
@@ -208,12 +213,14 @@ LLM) or write one manually in `~/.config/oo/patterns/`.
 ## FAQ
 
 **What if oo doesn't recognize my command?**
-Unknown commands pass through unchanged (under 4KB) or get indexed for later retrieval
-via `oo recall`. Use `oo learn <command>` to teach oo a compression pattern.
+Unknown commands pass through unchanged under 4 KB. Larger output is indexed in full for
+later retrieval via `oo recall`, with only a byte-bounded head+tail slice displayed (marked
+with a truncation line). Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
-Unknown commands already pass through by default. For commands with built-in patterns,
-you can override with a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
+Unknown commands already show a bounded head+tail slice with the full output stored for
+`oo recall` (nothing is lost). For commands with built-in patterns, you can override with
+a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 
 **Does oo work in CI?**
 It can, but oo is designed for interactive AI agent sessions where context tokens matter.
