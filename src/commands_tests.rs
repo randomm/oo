@@ -659,6 +659,9 @@ fn test_cmd_run_cargo_nextest_run_quiet_success() {
     // Both arms are asserted here; the Bounded/Large arms (the regression
     // the #149 fix eliminates) are not.
     let (code, classification) = run_command_args(&[s("cargo"), s("nextest"), s("run")]);
+    let Some(classification) = classification else {
+        panic!("run_command_args must return Some(classification) on the success path");
+    };
     match classification {
         Classification::Success { label, summary } => {
             assert_eq!(label, "cargo");

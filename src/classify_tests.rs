@@ -1143,16 +1143,16 @@ fn test_detect_category_env_flags_are_not_assignments() {
         CommandCategory::Unknown,
         "env -u FOO cargo test must be Unknown (flag not treated as assignment)"
     );
-    // Same with a flag that DOES contain `=`: `--split-string=x` contains
-    // `=`, so `is_var_value` treats it as a KEY=VALUE assignment and skips it,
-    // landing on `cargo` → Status. This is a known limitation: `env` flags
-    // with `=` in their value are indistinguishable from KV assignments by
-    // the current detector. The `--split-string=x` form is rare in practice;
-    // the common `-u VAR` form (no `=`) is correctly handled as Unknown.
+    // Same with a flag that DOES contain `=`: `--split-string=x` is a FLAG,
+    // not a `KEY=VALUE` assignment — the leading-dash guard in `is_var_value`
+    // keeps it out of the skip loop, so the binary becomes the flag token
+    // and the category falls back to Unknown. This matters because Status
+    // would silently suppress the command's output to a quiet `✓` line;
+    // Unknown preserves it (Bounded + indexed).
     assert_eq!(
         detect_category("env --split-string=x cargo test"),
-        CommandCategory::Status,
-        "env --split-string=x cargo test: flag contains `=`, treated as KV assignment → Status (known limitation)"
+        CommandCategory::Unknown,
+        "env --split-string=x cargo test: flag starts with `-`, so it is NOT treated as a KV assignment → Unknown (output preserved, not silently suppressed)"
     );
 }
 
