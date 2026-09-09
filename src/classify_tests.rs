@@ -550,6 +550,73 @@ fn test_bounded_truncate_exact_threshold_no_truncation() {
 }
 
 #[test]
+fn test_bounded_truncate_head_fallback_multibyte_no_panic() {
+    // Issue #148 panic regression: >= 2 newlines but none at/after head_budget.
+    // Prefix "ab\ncd\n" (6 bytes, newlines at 2 and 5) followed by a long run of
+    // 3-byte UTF-8 chars. raw head_budget (2457); no newline >= 2457 exists, so
+    // the pre-fix `unwrap_or(head_budget) + 1` = 2458 landed inside the 中-run
+    // (2458 % 3 == 1, i.e. inside the sequence 2457..2460) and `&output[..head_end]`
+    // panicked: "end byte index 2458 is not a char boundary".
+    let output = format!("ab\ncd\n{}", "中".repeat(4000));
+    assert_eq!(
+        output.len(),
+        12_006,
+        "sanity: 6-byte prefix + 12000 bytes of 中"
+    );
+
+    // Should not panic; result must be valid UTF-8 and bounded.
+    let result = bounded_truncate(&output);
+    assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    assert!(result.contains("bytes truncated"));
+    assert!(
+        result.len() <= DISPLAY_CAP + 200,
+        "display ({} bytes) must be bounded",
+        result.len()
+    );
+    // Head slice must keep the short lines and end on a char boundary
+    assert!(result.starts_with("ab\ncd\n"));
+}
+
+#[test]
+fn test_bounded_truncate_tail_fallback_overlap_guard_no_panic() {
+    // Documents that the tail `unwrap_or(raw_tail)` fallback is shielded by the
+    // overlap guard. Shape: two short ASCII lines, then one very long line of
+    // 3-byte chars (no newline), then a short final line. So newlines are at
+    // [2, 5, 6+3N]; the last is near the end. For N large enough that
+    // 6+3N >= head_budget, the head's `find` SUCCEEDS at the last newline
+    // (>= head_budget), giving head_end = 6+3N+1. The tail's `find(rev)` for a
+    // newline < raw_tail: the last newline (6+3N) is >= raw_tail = len-1639
+    // only when the final short line ("ef") is < 1639 bytes — always true. So
+    // the tail takes the raw fallback, `raw_tail+1`, which is mid-char.
+    // But head_end (6+3N+1) >= raw_tail (6+3N+1-... ) — we need head_end >=
+    // tail_start to trigger the overlap guard. This holds because the head
+    // snapped to a newline that is >= raw_tail, so head_end >= raw_tail+1 =
+    // tail_start. The guard returns (head_end, len) and never uses the bad
+    // tail_start. No panic, valid UTF-8.
+    let output = format!("ab\ncd\n{}ef", "中".repeat(1000));
+    let len = output.len();
+    let head_budget = (DISPLAY_CAP as f64 * 0.6) as usize; // 2457
+    let tail_budget = DISPLAY_CAP - head_budget; // 1639
+    let raw_tail = len.saturating_sub(tail_budget);
+    // Precondition: the last newline (6+3N) is >= head_budget so the head
+    // `find` succeeds, and the tail `find` fails (all nl >= raw_tail) so the
+    // tail takes the raw fallback which lands mid-char.
+    let last_nl = 6 + 3 * 1000;
+    assert!(last_nl >= head_budget, "head find must succeed");
+    assert!(last_nl >= raw_tail, "tail find must fall back");
+    assert!(
+        !output.is_char_boundary(raw_tail),
+        "precondition: raw_tail is mid-char"
+    );
+
+    let result = bounded_truncate(&output);
+    assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    // Overlap guard returned (head_end, len): the final "ef" is kept at the end.
+    assert!(result.starts_with("ab\ncd\n"));
+    assert!(result.ends_with("ef"));
+}
+
+#[test]
 fn test_bounded_truncate_display_cap_boundary() {
     // Output just above DISPLAY_CAP: head+tail + marker must fit
     let big = "x".repeat(DISPLAY_CAP + 100);

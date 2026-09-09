@@ -408,23 +408,34 @@ fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usiz
         return (head, tail);
     }
 
-    // Snap head cut forward to next \n (at most one line of drift)
-    let head_end = nl_positions
+    // Snap head cut forward to next \n (at most one line of drift). When no
+    // newline falls at/after head_budget, the raw budget itself is used as the
+    // fallback and must be snapped to a char boundary before `+1` — the `+1`
+    // is only a safe "skip the newline" when the offset actually is a newline.
+    let head_end = match nl_positions
         .iter()
         .find(|&&pos| pos >= head_budget)
         .copied()
-        .unwrap_or(head_budget)
-        + 1; // include the newline in the head slice
+    {
+        Some(pos) => pos + 1, // include the newline in the head slice
+        None => floor_char_boundary(output, head_budget),
+    };
 
-    // Snap tail cut backward to previous \n (at most one line of drift)
+    // Snap tail cut backward to previous \n (at most one line of drift). Same
+    // fallback hazard on the tail side: when no newline falls before raw_tail,
+    // the raw budget must be ceiled to a char boundary. (In practice this
+    // fallback is also shielded by the overlap guard below, but snapping it
+    // keeps the invariant local and symmetric with the head cut.)
     let raw_tail = output.len().saturating_sub(tail_budget);
-    let tail_start = nl_positions
+    let tail_start = match nl_positions
         .iter()
         .rev()
         .find(|&&pos| pos < raw_tail)
         .copied()
-        .unwrap_or(raw_tail)
-        + 1; // start after the newline
+    {
+        Some(pos) => pos + 1, // start after the newline
+        None => ceil_char_boundary(output, raw_tail),
+    };
 
     // Ensure head doesn't overlap tail
     if head_end >= tail_start {
