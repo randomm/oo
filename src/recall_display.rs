@@ -18,6 +18,28 @@ pub const SNIPPET_CAP: usize = 512;
 /// The marker appended to truncated output.
 pub const ELLIPSIS_MARKER: &str = " \u{2026}";
 
+/// Bounded display for a recall hit's default (non-`--full`) output.
+///
+/// Prefers the store-provided FTS5 `snippet` when present (the whole point of
+/// the FTS5 path — an excerpt centered on the best match) and falls back to a
+/// client-side bounded prefix of `content` when the snippet is `None` (the
+/// LIKE short-query branch, or backends without FTS5 such as `VipuneStore`).
+///
+/// The FTS5 `snippet()` window is bounded in *tokens*, so a single token made
+/// of multi-byte characters (e.g. a 10 000-char unbroken UTF-8 token) can be
+/// much wider than the token count suggests. The store's char-count guard
+/// (`snippet.chars().count() >= content.chars().count() → None`) only maps the
+/// full-row case to `None`; it does not guarantee the snippet fits the display
+/// budget. So the preferred path still runs the chosen snippet through
+/// `bounded_display`, guaranteeing `SNIPPET_CAP` chars plus a detectable
+/// truncation marker whenever the snippet itself exceeds the budget.
+pub fn display_hit(content: &str, snippet: &Option<String>, cap: usize) -> String {
+    match snippet {
+        Some(snip) => bounded_display(snip, cap),
+        None => bounded_display(content, cap),
+    }
+}
+
 /// Truncate `content` to at most `cap` chars, appending `ELLIPSIS_MARKER` if truncated.
 ///
 /// The cap is on character count, not bytes, to avoid panics on multi-byte UTF-8
@@ -70,12 +92,10 @@ pub fn cmd_recall(query: &str, full: bool) -> i32 {
                         println!("  {line}");
                     }
                 } else {
-                    // Bounded display: use the store-provided snippet when available
-                    // (task-a), otherwise fall back to client-side truncation.
-                    // The snippet field will be `Some` once task-a adds FTS5 snippet()
-                    // to SqliteStore::search; until then, client-side truncation keeps
-                    // output bounded for all backends.
-                    let display = bounded_display(&r.content, SNIPPET_CAP);
+                    // Bounded display: prefer the store-provided FTS5 snippet when
+                    // available, else fall back to a bounded prefix of `content`
+                    // (LIKE short-query branch / non-FTS5 backends).
+                    let display = display_hit(&r.content, &r.snippet, SNIPPET_CAP);
                     println!("  {display}");
                 }
                 println!();
@@ -120,6 +140,60 @@ mod tests {
     fn ellipsis_marker_is_unicode_ellipsis() {
         assert_eq!(ELLIPSIS_MARKER, " \u{2026}");
         assert_eq!(ELLIPSIS_MARKER.chars().count(), 2);
+    }
+
+    // Guard tests for display_hit — the wiring that connects the store's FTS5
+    // snippet to what actually gets printed.
+
+    #[test]
+    fn display_hit_prefers_snippet_when_present() {
+        // When the store provides an FTS5 snippet, the display must come from
+        // the snippet, not from `content`. If the wiring is removed (display
+        // falls back to content), the matched-token excerpt is lost and the
+        // full blob prefix is shown instead — this test fails either way
+        // (excerpt != first 512 chars of content for the blob below).
+        let content: String = (0..200)
+            .map(|i| format!("line{i:04}_padding_{} ", "x".repeat(40)))
+            .collect();
+        let snippet = "…line0100_padding_".to_string() + &"y".repeat(50) + "…";
+        let display = display_hit(&content, &Some(snippet.clone()), SNIPPET_CAP);
+        assert_eq!(
+            display, snippet,
+            "display must be the store-provided snippet when one is present"
+        );
+        assert!(
+            !content.starts_with(&snippet) && !content.starts_with(&display),
+            "display must not be a prefix of the full content — that would prove \nthe FTS5 snippet was thrown away in favour of content"
+        );
+    }
+
+    #[test]
+    fn display_hit_snippet_oversized_still_bounded_and_marked() {
+        // An FTS5 snippet() window is bounded in tokens, and one token can be
+        // arbitrarily many multi-byte chars — a single 10 000-char UTF-8 token
+        // returns a ~10 KB snippet from FTS5. The display must still respect
+        // SNIPPET_CAP and carry the truncation marker (detectable truncation).
+        let content: String = std::iter::repeat('€').take(10_000).collect();
+        let snippet: String = std::iter::repeat('€').take(10_000).collect();
+        let display = display_hit(&content, &Some(snippet), SNIPPET_CAP);
+        assert_eq!(
+            display.chars().count(),
+            SNIPPET_CAP + ELLIPSIS_MARKER.chars().count()
+        );
+        assert!(display.ends_with(ELLIPSIS_MARKER));
+    }
+
+    #[test]
+    fn display_hit_falls_back_to_content_when_snippet_none() {
+        // LIKE short-query branch and VipuneStore yield snippet: None — the
+        // display must be the bounded prefix of the full content.
+        let content: String = (0..200).map(|i| format!("word{i} ")).collect();
+        let display = display_hit(&content, &None, SNIPPET_CAP);
+        assert_eq!(display, bounded_display(&content, SNIPPET_CAP));
+        assert!(
+            display.starts_with("word0"),
+            "fallback must be a prefix of content"
+        );
     }
 
     #[test]

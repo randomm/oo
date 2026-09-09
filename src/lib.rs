@@ -81,8 +81,6 @@ pub mod session;
 /// Storage backends for indexed output.
 pub mod store;
 
-#[doc(hidden)]
-#[allow(missing_docs)]
 pub mod recall_display;
 
 pub mod commands_patterns;

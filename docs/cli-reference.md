@@ -118,6 +118,10 @@ oo recall --full "error message"
 |------|-------------|
 | `--full` | Print the complete stored content instead of the bounded excerpt |
 
+`--full` is recognised in any argument position (`oo recall --full q` and
+`oo recall q --full` are equivalent). A query that *literally contains* the
+word `--full` cannot be searched — the flag is stripped wherever it appears.
+
 ### Query behavior
 
 - **Search**: Full-text search across all indexed outputs

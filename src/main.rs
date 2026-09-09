@@ -49,7 +49,7 @@ fn main() {
             println!("oo");
             println!();
             println!("Usage: oo <command> [args...]");
-            println!("       oo recall <query>");
+            println!("       oo recall [--full] <query>");
             println!("       oo forget");
             println!("       oo learn [--hint <text>] <command> [args...]");
             println!("       oo help <cmd>");

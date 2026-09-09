@@ -52,7 +52,10 @@ pub struct SearchResult {
     /// `snippet()` FTS5 function. `None` for the short-query LIKE fallback
     /// and for backends without FTS5 (e.g. `VipuneStore`). Callers should
     /// fall back to a client-side bounded prefix of `content` when this is
-    /// `None`.
+    /// `None`. Note the `snippet()` window is bounded in *tokens*, so for
+    /// content containing arbitrarily long multi-byte tokens a `Some` snippet
+    /// can still exceed the display budget — display callers must apply their
+    /// own char cap (see `recall_display::display_hit`).
     pub snippet: Option<String>,
 }
 
@@ -236,11 +239,12 @@ impl Store for SqliteStore {
                 let meta_json: Option<String> = row.get(2)?;
                 let rank: f64 = row.get(3)?;
                 let snippet: String = row.get(4)?;
-                let snippet = if snippet.is_empty() || snippet.len() >= content.len() {
-                    None
-                } else {
-                    Some(snippet)
-                };
+                let snippet =
+                    if snippet.is_empty() || snippet.chars().count() >= content.chars().count() {
+                        None
+                    } else {
+                        Some(snippet)
+                    };
                 Ok(SearchResult {
                     id,
                     content,
@@ -249,6 +253,14 @@ impl Store for SqliteStore {
                     // snippet() returns the full row when the match covers the
                     // entire content (no room to trim) — map that to None so
                     // callers fall back to a client-side bounded prefix.
+                    // The comparison is on `chars()` (not bytes) to stay
+                    // consistent with the char-based `SNIPPET_CAP` in
+                    // `recall_display`: for ASCII both are equal, and for
+                    // multi-byte content the snippet is a verbatim substring of
+                    // `content`, so `chars()` cannot misclassify either direction.
+                    // It does NOT guarantee the snippet fits the display budget
+                    // (the token-bounded window can hold one arbitrarily long
+                    // multi-byte token) — that is bounded display-side.
                     snippet,
                 })
             })

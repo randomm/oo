@@ -454,6 +454,55 @@ fn test_recall_full_alone_gives_empty_query_error() {
         .stderr(predicate::str::contains("recall requires a query"));
 }
 
+#[test]
+fn test_recall_default_displays_fts_snippet_not_content_prefix() {
+    // Guard for the whole FTS5 snippet feature: the default (non-`--full`)
+    // recall output must contain the matched sentinel token — proving the
+    // store-provided FTS5 snippet (centered on the best match) is what gets
+    // displayed. If the wiring is removed and `cmd_recall` falls back to
+    // `bounded_display(&r.content)` (the first ~512 chars of the full blob),
+    // the sentinel token — placed well beyond the first 512 chars — will be
+    // absent and this test will fail.
+    let dir = TempDir::new().unwrap();
+    // Build a blob whose first 512 chars contain NO occurrence of the matched
+    // token: 150 filler tokens (1350 chars) before the sentinel.
+    let filler: String = (0..500).map(|i| format!("filler{i:04}_ ")).collect(); // 500*11 = 5500 chars of filler
+    let blob: String = format!("{filler}sentinel_beta_9999 {filler}"); // ~11000 chars total (well above 4 KB → Bounded/Large tier)
+    let blob_file = dir.path().join("blob.txt");
+    std::fs::write(&blob_file, &blob).unwrap();
+
+    let mut cmd = oo();
+    cmd.args(["cat", blob_file.to_str().unwrap()]);
+    cmd.env("OO_DATA_DIR", dir.path());
+    cmd.assert().success();
+
+    // Default (bounded) recall for a token that appears only in the middle of
+    // the blob — never in the first 512 chars.
+    let mut cmd = oo();
+    cmd.args(["recall", "sentinel_beta_9999"]);
+    cmd.env("OO_DATA_DIR", dir.path());
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "recall must exit 0");
+
+    // The matched sentinel must be shown: an FTS5 snippet centered on the
+    // match contains it; `bounded_display(&content)` (first ~512 chars, all
+    // filler) does not. The blob is ~11 000 chars (well above 4 KB) so `oo cat`
+    // indexes the full content and the FTS5 branch is exercised.
+    assert!(
+        stdout.contains("sentinel_beta_9999"),
+        "default recall must display the FTS5 snippet centered on the matched token\ngot: {stdout}"
+    );
+
+    // Sanity: the output is bounded (not the full blob).
+    let stdout_len = stdout.len();
+    let blob_len = blob.len();
+    assert!(
+        stdout_len < blob_len,
+        "default recall stdout ({stdout_len} B) must be < full blob ({blob_len} B)"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // learn command
 // ---------------------------------------------------------------------------

@@ -70,6 +70,49 @@ fn test_fts_snippet_is_bounded_for_long_content() {
 }
 
 #[test]
+fn test_snippet_window_can_exceed_display_budget_with_long_tokens() {
+    // FTS5's snippet() window is bounded in *tokens*, and one token can be
+    // arbitrarily many multi-byte chars. A single 10 000-char € token matches
+    // as one token, so snippet() returns a ~10 KB excerpt — far wider than the
+    // 32-token window suggests and far wider than the display budget. This
+    // pins that behaviour: the store does NOT claim to enforce the display
+    // budget (see `recall_display::display_hit`, whose char cap is the bound).
+    //
+    // Empirically verified (python3 + system sqlite3, 3.51.0): for a 2 000-€
+    // char token between `prefix` and `suffix`, `snippet()` returns 2 016 chars
+    // (the 2 002-char source span plus 4 chars of `…` omission markers), which
+    // exceeds the 2 014-char content. The store's `chars().count() >= content`
+    // guard maps that to `None`, and the display falls back to a bounded
+    // prefix of content — so the total displayed is bounded AND detectable.
+    //
+    // This test pins that guard: with a 2 000-€ token, `snippet()`'s returned
+    // string (2 016 chars) is *longer* than the content (2 014 chars), so the
+    // store must map it to `None`. The display-side cap in
+    // `recall_display::display_hit` is the true bound (see the
+    // `display_hit_snippet_oversized_still_bounded_and_marked` unit test).
+    let mut store = temp_store();
+    let meta = test_meta("s1");
+    let long_token: String = std::iter::repeat('€').take(2_000).collect();
+    let content = format!("prefix {long_token} suffix");
+    store.index("proj", &content, &meta).unwrap();
+
+    let results = store.search("proj", "prefix", 10).unwrap();
+    assert_eq!(results.len(), 1);
+    // The FTS5 '…' omission markers make the returned snippet string slightly
+    // *longer* than the source content (2016 vs 2014 chars here), so the
+    // store's `chars().count() >= content.chars().count()` guard maps this to
+    // `None` — the caller then falls back to a bounded prefix of `content`,
+    // which is still bounded and still shows the matched token. This test pins
+    // that guard: a single multi-byte token can make snippet() return a
+    // string longer than the whole content, and the store must treat that as
+    // "no room to trim" rather than pass a wider-than-content blob through.
+    assert!(
+        results[0].snippet.is_none(),
+        "a multi-byte token can make snippet() return a string longer than the content\n(the omission markers widen it) — the store must map that to None"
+    );
+}
+
+#[test]
 fn test_search_no_results() {
     let mut store = temp_store();
     let results = store.search("proj", "nonexistent", 10).unwrap();
