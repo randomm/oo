@@ -509,3 +509,118 @@ fn test_write_learn_status_failure_multiline_error() {
         "subsequent error lines must not appear in status file; got: {content:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// savings_suffix / render_classification: compression savings reporting
+// ---------------------------------------------------------------------------
+
+/// Golden: the exact `format_size(saved, BINARY)` string is pinned for a
+/// fixed synthetic size (success-with-summary form).
+#[test]
+fn test_savings_suffix_golden_success_line() {
+    // original 5000 B, base line "✓ pytest (47 passed)" (22 B: ✓ is 3 bytes)
+    // -> 4978 saved -> "4.86 KiB".
+    let line = "\u{2713} pytest (47 passed)";
+    assert_eq!(line.len(), 22);
+    assert_eq!(
+        savings_suffix(5000, line.len()).as_deref(),
+        Some(" [saved 4.86 KiB]")
+    );
+}
+
+/// Golden: quiet success (empty summary) — the quiet `✓ {label}` form is
+/// the largest compression win in the product and must carry the figure.
+#[test]
+fn test_savings_suffix_quiet_success_golden() {
+    let line = "\u{2713} cargo build";
+    assert_eq!(
+        savings_suffix(100_000, line.len()).as_deref(),
+        Some(" [saved 97.64 KiB]")
+    );
+}
+
+/// Golden: the Failure indicator line is `✗ {label}` — the filtered output
+/// lines that follow are NOT part of the displayed byte count.
+#[test]
+fn test_savings_suffix_failure_arm_golden() {
+    let line = "\u{2717} pytest";
+    assert_eq!(
+        savings_suffix(50_000, line.len()).as_deref(),
+        Some(" [saved 48.82 KiB]")
+    );
+}
+
+/// Boundary: `saved == MIN_SAVINGS` exactly → no suffix (suppression is
+/// `saved <= MIN_SAVINGS`, not `<`).
+#[test]
+fn test_savings_suffix_suppressed_at_or_below_threshold() {
+    assert_eq!(savings_suffix(4096, 0), None);
+    // just below
+    assert_eq!(savings_suffix(5120, 1032), None);
+}
+
+/// Boundary: `saved == MIN_SAVINGS + 1` → suffix appears.
+#[test]
+fn test_savings_suffix_positive_just_above_threshold() {
+    assert_eq!(
+        savings_suffix(4097, 0).as_deref(),
+        Some(" [saved 4.00 KiB]")
+    );
+}
+
+/// Non-positive delta: summary nearly as long as the input (or longer) →
+/// no suffix, no panic (saturating arithmetic).
+#[test]
+fn test_savings_suffix_non_positive_saving_is_suppressed() {
+    assert_eq!(savings_suffix(5000, 5000), None);
+    assert_eq!(savings_suffix(100, 200), None);
+}
+
+/// Non-UTF-8 input: `merged_lossy()` replaces invalid bytes with the
+/// U+FFFD replacement char (3 bytes each), so the lossy byte length is what
+/// feeds the suffix — the helper must not panic and must measure from the
+/// lossy length, not the raw vec length.
+#[test]
+fn test_savings_suffix_non_utf8_no_panic() {
+    // 1000 bytes of 0xff (invalid UTF-8) followed by 5000 valid bytes:
+    // lossy length is 1000 * 3 + 5000 = 8000, NOT 6000.
+    let mut raw = vec![0xffu8; 1000];
+    raw.extend(std::iter::repeat(b'x').take(5000));
+    let out = exec::CommandOutput {
+        stdout: raw,
+        stderr: Vec::new(),
+        exit_code: 0,
+    };
+    let merged = out.merged_lossy();
+    let merged_len = merged.len();
+    assert_eq!(
+        merged_len, 8000,
+        "lossy length must account for replacement chars"
+    );
+
+    // line (10) + " [saved " (8) + "7.80 KiB" (8) + "]" (1) = 27 bytes
+    // displayed, so the suffix must render exactly "7.80 KiB".
+    let line = "\u{2713} cargo";
+    let suffix = savings_suffix(merged_len, line.len()).expect("8 KiB must exceed MIN_SAVINGS");
+    assert_eq!(suffix, " [saved 7.80 KiB]");
+    assert_eq!(merged_len - (line.len() + suffix.len()), 7974,);
+}
+
+/// Passthrough: small output classifies as Passthrough — no indicator line,
+/// so no suffix applies regardless of `original_size`.
+#[test]
+fn test_savings_passthrough_unchanged() {
+    let c = classify::classify(&make_output(0, "hello\n"), "echo hi", &[]);
+    assert!(matches!(c, Classification::Passthrough { .. }));
+}
+
+/// Regression lock: the Large arm's `size` field is carried through
+/// unchanged — its `indexed N` wording must not gain a `[saved …]` figure.
+#[test]
+fn test_savings_large_arm_wording_unchanged() {
+    let c = classify::classify(&make_output(0, &"x\n".repeat(3000)), "gh api x", &[]);
+    match c {
+        Classification::Large { size, .. } => assert_eq!(size, 6000),
+        _ => panic!("expected Large for Data-category command with large output"),
+    }
+}
