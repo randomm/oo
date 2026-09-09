@@ -36,7 +36,15 @@ oo classifies command output into four tiers:
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
 | **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
 | **Failure** | `✗ label` followed by error output | Non-zero exit code |
-| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern (Data commands only) |
+| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern |
+
+Large unpatterned output (Data, Content, or Unknown category) is indexed in full and
+retrievable via `oo recall`. The display is a byte-bounded head+tail slice separated by a
+truncation marker of the form `... [N bytes truncated → use `oo recall` to query] ...` —
+the marker is a single machine-detectable line, present exactly once, so agents can tell
+with certainty when content was withheld. The head and tail shown are an exact prefix and
+suffix of the indexed content. If indexing fails, the same byte-bounded slice is displayed
+without a false indexing promise.
 
 ### Command categories
 
@@ -45,9 +53,9 @@ When no pattern matches, oo uses command category to determine behavior:
 | Category | Examples | Behavior |
 |----------|----------|----------|
 | **Status** | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success if output > 4 KB (empty summary) |
-| **Content** | `git show`, `git diff`, `cat`, `bat` | Always pass through, never index |
+| **Content** | `git show`, `git diff`, `cat`, `bat` | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 | **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KB |
-| **Unknown** | `curl`, `docker`, custom scripts | Pass through (safe default) |
+| **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 
 Patterns always take priority over category defaults.
 

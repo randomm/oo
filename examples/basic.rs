@@ -37,6 +37,11 @@ fn main() {
             println!("  Type: Passthrough");
             println!("  Output: {}", output);
         }
+        double_o::Classification::Bounded { label, size, .. } => {
+            println!("  Type: Bounded (indexed)");
+            println!("  Label: {}", label);
+            println!("  Size: {} bytes", size);
+        }
         double_o::Classification::Large { label, size, .. } => {
             println!("  Type: Large (indexed)");
             println!("  Label: {}", label);

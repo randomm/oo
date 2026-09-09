@@ -141,6 +141,51 @@ pub fn render_classification(classification: &Classification, command: &str) {
                 println!("\u{2713} {label} ({summary})");
             }
         }
+        Classification::Bounded {
+            label,
+            output,
+            display,
+            size,
+            ..
+        } => {
+            // SECURITY (residual risk, pre-existing): the framing line printed
+            // below (`● {label} (output truncated: ...)`) is byte-predictable
+            // and is followed by attacker-controlled `display`, which could
+            // embed a byte-identical copy of it — so "the framing line comes
+            // first" is a convention, not an enforceable guarantee, and an
+            // agent that greps for the framing pattern can't distinguish the
+            // host-authored line from a forged one. The Large arm's
+            // `● ... (indexed ...)` line has the same property. NOT fixed
+            // here (would require changing the output format); document the
+            // residual risk at the point of use instead.
+            //
+            // Best-effort index the full output for recall; the display is
+            // always printed — the byte-bounded head+tail slice IS the point
+            // of this arm (issue #148). The truncation marker in `display`
+            // makes it detectable as bounded output, but it lives inside
+            // attacker-controlled output, so the host also prints its own
+            // framing line carrying the authoritative size (mirrors the Large
+            // arm) — an agent must never be told to recall data that was not
+            // indexed.
+            let indexed = try_index(command, output);
+            let human_size = format_size(*size, BINARY);
+            if indexed {
+                println!(
+                    "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
+                );
+            } else {
+                // Indexing failed: do NOT advertise `oo recall` — the display
+                // is all the agent gets, and the stderr note keeps the
+                // failure visible instead of swallowed.
+                eprintln!(
+                    "oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only"
+                );
+                println!(
+                    "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
+                );
+            }
+            print!("{display}");
+        }
         Classification::Large {
             label,
             output,

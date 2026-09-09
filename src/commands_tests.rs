@@ -278,8 +278,20 @@ fn test_classify_failure_no_pattern() {
 fn test_classify_large_no_pattern() {
     let out = make_output(0, &"x\n".repeat(3000));
     let result = classify::classify(&out, "some_tool", &[]);
-    // Unknown category defaults to passthrough (safe)
-    assert!(matches!(result, Classification::Passthrough { .. }));
+    // Unknown category with large output → Bounded (indexed, byte-bounded display)
+    match result {
+        Classification::Bounded {
+            output,
+            display,
+            size,
+            ..
+        } => {
+            assert_eq!(size, 6000);
+            assert!(display.len() <= classify::DISPLAY_CAP + 200);
+            assert!(output.len() > classify::DISPLAY_CAP);
+        }
+        _ => panic!("expected Bounded for unknown command with large output"),
+    }
 }
 
 #[test]
