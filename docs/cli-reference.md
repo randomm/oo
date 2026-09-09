@@ -46,6 +46,40 @@ with certainty when content was withheld. The head and tail shown are an exact p
 suffix of the indexed content. If indexing fails, the same byte-bounded slice is displayed
 without a false indexing promise.
 
+### Savings indicator
+
+When oo compresses output (Success and Failure arms), the savings are reported on the
+indicator line itself:
+
+```
+✓ cargo test (47 passed, 2.1s) [saved 46.1 KiB]
+```
+
+The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
+the existing line content, using `humansize::format_size(saved, BINARY)` (the same
+binary-unit idiom the Large tier's `indexed N` figure uses; no new formatter, no new
+dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the exact `println!` payload including the suffix itself. For the Failure arm, the filtered output lines printed after the indicator line
+do NOT count as displayed — only the indicator line does.
+
+The figure appears on:
+- **Success** — both the `✓ label (summary)` form and the quiet `✓ label` empty-summary
+  form (the quiet form is the largest compression win in the product)
+- **Failure** — the `✗ label` indicator line
+
+The figure does NOT appear on:
+- **Passthrough** — output is verbatim, nothing is saved
+- **Large** — already reports its size as `indexed N`; no double-reporting
+- **Bounded** — the display IS the bounded head+tail slice; the `● (output truncated:
+  N total → use `oo recall` to query)` framing line already communicates the size
+  relationship. The Bounded arm's design purpose is transparency (bounded view +
+  recall), not compression, so a savings figure would misframe the arm and
+  double-report the size relationship.
+
+When `saved ≤ MIN_SAVINGS` (4096 bytes, a named constant in `src/classify.rs` beside
+`SMALL_THRESHOLD`), no suffix is printed — a `[saved 12 B]` suffix on every command
+would itself waste context. The threshold is on the same binary scale as
+`SMALL_THRESHOLD` to keep the policy coherent.
+
 ### Command categories
 
 When no pattern matches, oo uses command category to determine behavior:

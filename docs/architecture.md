@@ -65,6 +65,23 @@ The classification engine decides how to present output to the agent:
 3. Pattern matches? Yes → Success (extract summary)
 4. Detect category → apply category defaults
 
+**Savings indicator**: When compression occurs (Success and Failure arms), the
+savings are made visible on the indicator line itself: `{base_line} [saved {size}]`
+where the size is `humansize::format_size(merged_lossy().len() - rendered_line_bytes,
+BINARY)` — the same binary-unit idiom the Large tier already uses. The metric is
+bytes, not tokens: bytes are exact, free, and already available (no tokenizer,
+no new dependency). The figure is suppressed when the saving is ≤ `MIN_SAVINGS`
+(4096 bytes, a named constant beside `SMALL_THRESHOLD` in `src/classify.rs`) so
+sub-KiB `[saved 996 B]` figures never appear — a threshold on the same binary scale
+as `SMALL_THRESHOLD` keeps the policy coherent. The Bounded and Large arms do not
+get a savings figure: the Large arm already reports its size (`indexed N`), and the
+Bounded arm's design purpose is *transparency* (bounded view + recall) rather than
+*compression* — its display is the head+tail slice itself, and the `● (output
+truncated: N total → use `oo recall` to query)` framing line already communicates
+the size relationship. A savings figure on the Bounded arm would double-report the
+same size relationship and misframe the arm's purpose. The Passthrough arm shows
+output verbatim, so nothing is saved.
+
 ### 3. Pattern Matching
 
 **Module**: [`src/pattern/`](../src/pattern/)
