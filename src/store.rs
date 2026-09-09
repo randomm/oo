@@ -100,6 +100,10 @@ pub struct SqliteStore {
 }
 
 fn db_path() -> PathBuf {
+    // OO_DATA_DIR overrides the base directory so tests can isolate the store.
+    if let Some(data_dir) = std::env::var_os("OO_DATA_DIR") {
+        return PathBuf::from(data_dir).join("oo.db");
+    }
     dirs::data_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("/tmp"))

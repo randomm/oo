@@ -318,11 +318,8 @@ pub fn smart_truncate(output: &str) -> String {
     result
 }
 
-// ---------------------------------------------------------------------------
-// Tests live in `classify_tests.rs` (sibling module, see `#[path]` below) —
-// this file holds only production code to stay under the 500-line cap.
-// ---------------------------------------------------------------------------
-
+/// Tests live in `classify_tests.rs` (sibling module, see `#[path]` below) —
+/// this file holds only production code to stay under the 500-line cap.
 #[cfg(test)]
 #[path = "classify_tests.rs"]
 mod tests;
