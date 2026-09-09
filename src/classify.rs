@@ -389,6 +389,14 @@ pub fn bounded_truncate(output: &str) -> String {
     // snapping must never let head + tail grow past the byte budget. Hard-clamp
     // the head down to its budget (floor) and the tail up to its budget (ceil).
     let clamped_head = floor_char_boundary(output, head_budget).min(head_end);
+    // `.max(tail_start)` is NOT redundant: cut_boundaries' overlap guard can
+    // return tail_start = output.len(), in which case ceil(raw_tail) would
+    // otherwise restore a tail slice whose head and tail regions OVERLAP
+    // (head_end >= raw_tail means a non-empty output[raw_tail..head_end] would
+    // appear twice — head, then again as tail). The guard's `len` encodes
+    // "no tail slice" and must win over the budget-based fallback. (The head
+    // side's `.min(head_end)` IS load-bearing for the long-line case: a line
+    // can exceed its budget, so the floor must win there.)
     let clamped_tail =
         ceil_char_boundary(output, output.len().saturating_sub(tail_budget)).max(tail_start);
     debug_assert!(
@@ -430,8 +438,13 @@ fn cut_boundaries(output: &str, head_budget: usize, tail_budget: usize) -> (usiz
             continue;
         }
         newline_count += 1;
-        // Stop once neither fact can change: we already have a newline at/
-        // after head_budget, and this newline is no longer < raw_tail.
+        // Early-exit when both facts are settled: we have a newline at/after
+        // head_budget AND this newline is >= raw_tail (so it can no longer be
+        // the last newline before raw_tail). Honest win: it skips only the
+        // trailing tail-budget window; with dense newlines the loop still
+        // scans essentially the whole buffer (it exits at max(raw_tail, first
+        // nl at/after head_budget)). The real win is O(1) memory — no Vec of
+        // newline positions is ever allocated.
         if i >= raw_tail && first_nl_at_or_after_head.is_some() {
             break;
         }

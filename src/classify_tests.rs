@@ -617,6 +617,73 @@ fn test_bounded_truncate_tail_fallback_overlap_guard_no_panic() {
 }
 
 #[test]
+fn test_bounded_truncate_overlap_guard_tail_max_is_load_bearing() {
+    // Proves `ceil_char_boundary(output, raw_tail).max(tail_start)` in
+    // bounded_truncate is LOAD-BEARING in the overlap-guard case
+    // (cut_boundaries returns tail_start = output.len()).
+    //
+    // Setup: one very long line (bytes 0..5000), newline at 5000, then two
+    // short lines "ab\ncd\n" (bytes 5001..5007, newlines at 5003 and 5006,
+    // trailing newline at 5006, len = 5007 > DISPLAY_CAP = 4096). raw_tail =
+    // 5007 - 1639 = 3368. head_budget = 2457. Newline at/after head_budget:
+    // YES — newline at 5000 >= 2457, so head_end = 5001. Last newline before
+    // raw_tail (3368): none (newlines at 5000, 5003, 5006 are all >= 3368).
+    // So tail_start falls back to ceil_char_boundary(3368) = 3368. head_end
+    // (5001) >= tail_start (3368) → overlap guard fires, returns
+    // (5001, len=5007): tail = "" (empty).
+    //
+    // If the `.max(tail_start)` were removed, clamped_tail would collapse to
+    // ceil_char_boundary(output, 3368) = 3368, and the display would be
+    // output[..2457] + marker + output[3368..] — i.e. the region
+    // output[3368..5000] (1632 bytes of x) appearing TWICE (once in the
+    // head via the floor clamp, once in the tail). That is the bug the
+    // `.max` prevents.
+    //
+    // With the `.max` in place, the guard wins: tail stays `output[len..]`
+    // = "". clamped_head = floor(2457).min(5001) = 2457. Display =
+    // output[..2457] + marker + "" — no duplication.
+    let mut output = String::new();
+    output.push_str(&"x".repeat(5000));
+    output.push('\n'); // byte 5000
+    output.push_str("ab\n"); // bytes 5001..5004
+    output.push_str("cd\n"); // bytes 5004..5007 (last byte 5006 is '\n')
+    assert_eq!(output.len(), 5007, "sanity: 5000 x's + \n + ab\n + cd\n");
+    let head_budget = (DISPLAY_CAP as f64 * 0.6) as usize; // 2457
+    let tail_budget = DISPLAY_CAP - head_budget; // 1639
+    let raw_tail = output.len().saturating_sub(tail_budget); // 5007 - 1639 = 3368
+    assert_eq!(raw_tail, 3368, "raw_tail for this shape");
+
+    let (head_end, tail_start) = cut_boundaries(&output, head_budget, tail_budget);
+    assert_eq!(
+        tail_start,
+        output.len(),
+        "overlap guard must return len as tail_start"
+    );
+    assert_eq!(head_end, 5001, "head must snap to newline at 5000 (+1)");
+
+    let result = bounded_truncate(&output);
+    assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    assert!(result.contains("bytes truncated"));
+    assert!(
+        result.len() <= DISPLAY_CAP + 200,
+        "display ({} bytes) must be bounded",
+        result.len()
+    );
+    // Tail slice must be empty (guard returned len): the display ends right
+    // after the marker, NOT with the x-run re-appended. If .max(tail_start)
+    // were removed, output[3368..] would be re-appended after the marker,
+    // and the "x" run (bytes 3368..5000) would appear twice.
+    // The marker is `... [N bytes truncated → use `oo recall` to query] ...\n`
+    // — it ends with `] ...\n` (three dots, not `]]`). Split on `to query] ...
+    // to get the tail after the marker.
+    let after_marker = result.split("to query] ...\n").nth(1).map(|s| s);
+    assert!(
+        after_marker.is_some_and(|tail| tail.is_empty()),
+        "tail after marker must be empty when overlap guard wins, got: {after_marker:?}"
+    );
+}
+
+#[test]
 fn test_bounded_truncate_long_lines_cap_still_enforced() {
     // HIGH-1 defect: head/tail cuts "snap to newline boundaries, at most one
     // line of drift", but a line can be enormous (minified JS/JSON, base64).

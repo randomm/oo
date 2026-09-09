@@ -148,6 +148,17 @@ pub fn render_classification(classification: &Classification, command: &str) {
             size,
             ..
         } => {
+            // SECURITY (residual risk, pre-existing): the framing line printed
+            // below (`● {label} (output truncated: ...)`) is byte-predictable
+            // and is followed by attacker-controlled `display`, which could
+            // embed a byte-identical copy of it — so "the framing line comes
+            // first" is a convention, not an enforceable guarantee, and an
+            // agent that greps for the framing pattern can't distinguish the
+            // host-authored line from a forged one. The Large arm's
+            // `● ... (indexed ...)` line has the same property. NOT fixed
+            // here (would require changing the output format); document the
+            // residual risk at the point of use instead.
+            //
             // Best-effort index the full output for recall; the display is
             // always printed — the byte-bounded head+tail slice IS the point
             // of this arm (issue #148). The truncation marker in `display`
@@ -167,7 +178,7 @@ pub fn render_classification(classification: &Classification, command: &str) {
                 // is all the agent gets, and the stderr note keeps the
                 // failure visible instead of swallowed.
                 eprintln!(
-                    "oo: warning: could not index output for recall — display below is the full content you will have"
+                    "oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only"
                 );
                 println!(
                     "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
