@@ -16,7 +16,11 @@ use double_o::{
     long_about = "oo\n\nContext-efficient command runner for AI coding agents."
 )]
 struct Cli {
-    /// Arguments: a subcommand (recall/forget/learn/version) or a command to run
+    /// A subcommand, or a command to run. Subcommands:
+    /// recall (recall indexed output), forget (clear session index),
+    /// learn (auto-generate a compression pattern), help (cheat.sh sheet),
+    /// init (set up project hooks), patterns (list compression patterns),
+    /// version (print oo version). Any other command runs as a shell command.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
@@ -46,14 +50,22 @@ fn main() {
 
     let exit_code = match parse_action(&cli.args) {
         Action::Help(None) => {
-            println!("oo");
+            println!("oo — Context-efficient command runner for AI coding agents");
             println!();
             println!("Usage: oo <command> [args...]");
-            println!("       oo recall [--full] <query>");
-            println!("       oo forget");
-            println!("       oo learn [--hint <text>] <command> [args...]");
-            println!("       oo help <cmd>");
-            println!("       oo version");
+            println!();
+            println!("Commands:");
+            println!("  recall [--full] <query>   Search session output");
+            println!("  forget                     Clear session data");
+            println!("  learn [--hint <text>] <cmd> [args...]   Learn output compression patterns");
+            println!(
+                "  help [cmd]                 Show help (or cheat-sheet for cmd via cheat.sh)"
+            );
+            println!("  init [format]              Set up hooks for agent frameworks");
+            println!("  patterns                   List output compression patterns");
+            println!("  version                    Show version");
+            println!();
+            println!("Any other command is run in the shell, e.g. oo git log");
             0
         }
         Action::Help(Some(cmd)) => cmd_help(&cmd),

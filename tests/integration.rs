@@ -118,7 +118,42 @@ fn test_help_includes_help_cmd_in_usage() {
     // Verify the help command itself appears in the no-args usage output
     oo().assert()
         .success()
-        .stdout(predicate::str::contains("oo help <cmd>"));
+        .stdout(predicate::str::contains("help [cmd]"));
+}
+
+/// The no-args / `oo help` output must list all 7 reserved subcommands,
+/// each with a one-line description, plus the tool description line.
+fn assert_full_subcommand_list(
+    assertion: assert_cmd::assert::Assert,
+) -> assert_cmd::assert::Assert {
+    let mut assertion = assertion.success();
+    for (name, description) in [
+        ("recall", "Search session output"),
+        ("forget", "Clear session data"),
+        ("learn", "Learn output compression patterns"),
+        ("help [cmd]", "cheat-sheet for cmd via cheat.sh"),
+        ("init", "Set up hooks for agent frameworks"),
+        ("patterns", "List output compression patterns"),
+        ("version", "Show version"),
+    ] {
+        assertion = assertion.stdout(predicate::str::contains(name));
+        assertion = assertion.stdout(predicate::str::contains(description));
+    }
+    assertion = assertion.stdout(predicate::str::contains(
+        "Context-efficient command runner for AI coding agents",
+    ));
+    // The internal _learn_bg command must never leak into help output.
+    assertion.stdout(predicate::str::contains("_learn_bg").not())
+}
+
+#[test]
+fn test_no_args_lists_all_subcommands() {
+    assert_full_subcommand_list(oo().assert());
+}
+
+#[test]
+fn test_help_no_args_lists_all_subcommands() {
+    assert_full_subcommand_list(oo().arg("help").assert());
 }
 
 #[test]
@@ -277,10 +312,7 @@ fn test_init_format_generic_does_not_create_hooks_json() {
 #[test]
 fn test_init_format_claude_creates_hooks_json() {
     let dir = TempDir::new().unwrap();
-    oo().args(["init", "--format", "claude"])
-        .current_dir(dir.path())
-        .assert()
-        .success();
+    oo().arg("init").current_dir(dir.path()).assert().success();
     let hooks_path = dir.path().join(".claude").join("hooks.json");
     assert!(
         hooks_path.exists(),
@@ -291,7 +323,7 @@ fn test_init_format_claude_creates_hooks_json() {
 #[test]
 fn test_init_format_claude_prints_agents_snippet() {
     let dir = TempDir::new().unwrap();
-    oo().args(["init", "--format", "claude"])
+    oo().arg("init")
         .current_dir(dir.path())
         .assert()
         .success()
@@ -346,7 +378,7 @@ fn index_large_blob() -> (TempDir, String) {
     // ~ 200 * 85 = 17 KB — well above 4 KB threshold
 
     // OO_DATA_DIR isolates the store for this test run
-    // `oo <cmd>` where cmd produces > 4KB output → Large tier → indexed
+    // `oo <cmd>` where cmd produces >4KB output → Large tier → indexed
     let blob_file = dir.path().join("blob.txt");
     std::fs::write(&blob_file, &blob).unwrap();
 
@@ -404,7 +436,7 @@ fn test_recall_full_shows_complete_blob() {
     cmd.env("OO_DATA_DIR", dir.path());
     let output = cmd.output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "recall --full must exit 0");
+    assert!(output.status.success(), "recall must exit 0");
 
     // The full blob content must appear (at least the last sentinel line)
     assert!(
@@ -423,14 +455,14 @@ fn test_recall_full_flag_position_independent() {
     cmd1.args(["recall", "--full", "sentinel_line_0100"]);
     cmd1.env("OO_DATA_DIR", dir.path());
     let out1 = cmd1.output().unwrap();
-    assert!(out1.status.success(), "recall --full <q> must exit 0");
+    assert!(out1.status.success(), "flag-before must be --full mode");
 
     // Flag after query
     let mut cmd2 = oo();
     cmd2.args(["recall", "sentinel_line_0100", "--full"]);
     cmd2.env("OO_DATA_DIR", dir.path());
     let out2 = cmd2.output().unwrap();
-    assert!(out2.status.success(), "recall <q> --full must exit 0");
+    assert!(out2.status.success(), "flag-after must be --full mode");
 
     // Both must contain the last sentinel (proves --full mode)
     let stdout1 = String::from_utf8_lossy(&out1.stdout);
@@ -753,7 +785,7 @@ fn write_repro_file(dir: &std::path::Path) -> std::path::PathBuf {
         content.push_str(&format!("line{i:06} {RECALL_MARKER}\n"));
     }
     let path = dir.join("big.txt");
-    std::fs::write(&path, content).unwrap();
+    std::fs::write(&path, &content).unwrap();
     path
 }
 
@@ -1115,4 +1147,54 @@ fn test_passthrough_no_savings() {
         .assert()
         .success()
         .stdout("hello\n");
+}
+
+// ---------------------------------------------------------------------------
+// clap --help / -h surface (issue #163, ws-clap-help)
+//
+// The doc-comment on the `args` field of the Cli derive in src/main.rs
+// controls both surfaces — clap auto-wires -h from the same doc-comment.
+// We assert on the two subcommands that were actually missing from the
+// old doc-comment (init, patterns), plus one description phrase per
+// subcommand, plus the tool description. `help`/`version` bare-word
+// assertions are avoided — they match the Options section lines
+// (`-h, --help` / `-V, --version`) and would be vacuous on this surface.
+// ---------------------------------------------------------------------------
+
+/// All 7 reserved subcommand names appear in `oo --help` output with a
+/// one-line description alongside each. `init` and `patterns` are the two
+/// names missing from the old doc-comment — those assertions are the ones
+/// that would fail on the pre-fix binary.
+#[test]
+fn test_clap_help_lists_all_subcommands() {
+    oo().arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Context-efficient command runner for AI coding agents",
+        ))
+        .stdout(predicate::str::contains("recall ("))
+        .stdout(predicate::str::contains("forget ("))
+        .stdout(predicate::str::contains("learn ("))
+        .stdout(predicate::str::contains("help ("))
+        .stdout(predicate::str::contains("init ("))
+        .stdout(predicate::str::contains("patterns ("))
+        .stdout(predicate::str::contains("version ("));
+}
+
+/// Same assertions on the short-flag form — clap emits both from the same
+/// doc-comment, so -h must not silently drift from --help.
+#[test]
+fn test_clap_short_help_lists_all_subcommands() {
+    oo().arg("-h")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Context-efficient command runner"))
+        .stdout(predicate::str::contains("recall ("))
+        .stdout(predicate::str::contains("forget ("))
+        .stdout(predicate::str::contains("learn ("))
+        .stdout(predicate::str::contains("help ("))
+        .stdout(predicate::str::contains("init ("))
+        .stdout(predicate::str::contains("patterns ("))
+        .stdout(predicate::str::contains("version ("));
 }
