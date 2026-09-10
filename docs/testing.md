@@ -40,13 +40,13 @@ Useful when debugging test failures.
 
 ## Coverage
 
-Test coverage is enforced via `cargo tarpaulin`:
+Coverage is measured via `cargo tarpaulin`:
 
 ```bash
 cargo tarpaulin --fail-under 70
 ```
 
-**Target**: 80%+ coverage for new code (currently 70% interim while migrating to VCR cassettes for network tests).
+**CI gate: 70% (interim); target: 80% for new code** — the 70% gate is enforced while the suite migrates to VCR cassettes for network tests; 80% is the standing target for new code.
 
 Coverage is primarily driven by integration tests, which exercise real CLI invocations through `assert_cmd`.
 
@@ -121,7 +121,7 @@ fn test_echo_passthrough() {
 ### Mandatory Requirements
 
 1. **TDD preferred**: Write tests before implementation
-2. **80%+ coverage** for new code (enforced by `cargo tarpaulin`)
+2. **CI gate: 70% (interim); target: 80% for new code** (measured by `cargo tarpaulin`)
 3. **Meaningful assertions**: No trivial `assert!(true)` or `assert_eq!(1, 1)`
 4. **Real behavior**: Every test must exercise a real code path
 
@@ -212,58 +212,49 @@ When adding a new built-in pattern, follow this pattern:
 2. Implement the pattern
 3. Run tests to verify
 
-Example — adding a `npm test` pattern:
+Example — adding a `npm test` pattern. This example is a runnable doc test
+(verify with `cargo test --doc`):
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
+use double_o::{builtins, classify, Classification, CommandOutput};
 
-    #[test]
-    fn test_npm_test_success_pattern() {
-        let output = CommandOutput {
-            stdout: b"Test Suites: 1 passed, 1 total\nTests:       10 passed, 10 total\nTime:        2.345s\n".to_vec(),
-            stderr: vec![],
-            exit_code: 0,
-        };
+fn main() {
+    // Success path: large output with a matching pattern compresses to a summary.
+    let output = CommandOutput {
+        stdout: b"Test Suites: 1 passed, 1 total\nTests:       10 passed, 10 total\nTime:        2.345s\n".to_vec(),
+        stderr: vec![],
+        exit_code: 0,
+    };
 
-        if let Classification::Success { summary, .. } = classify(&output, "npm test", &BUILTINS) {
-            assert!(summary.contains("10 passed"));
-        } else {
-            panic!("Expected Success classification");
-        }
-    }
-
-    #[test]
-    fn test_npm_test_failure_pattern() {
-        let output = CommandOutput {
-            stdout: b"Test Suites: 1 failed, 1 total\n".to_vec(),
-            stderr: b"FAIL src/test.js\n  expected true to be false\n".to_vec(),
-            exit_code: 1,
-        };
-
-        if let Classification::Failure { output, .. } = classify(&output, "npm test", &BUILTINS) {
-            assert!(output.contains("FAIL") || output.contains("failed"));
-        } else {
-            panic!("Expected Failure classification");
-        }
+    match classify(&output, "npm test", builtins()) {
+        Classification::Success { summary, .. } => assert!(summary.contains("passed")),
+        other => panic!("expected Success, got {:?}", matches!(other, Classification::Success { .. })),
     }
 }
 ```
 
-Then add the pattern to `src/pattern/builtins.rs`:
+Then add the pattern to `src/pattern/builtins.rs` using the current strategy-based
+API:
 
 ```rust
-Pattern {
-    command_match: Regex::new(r"^npm\s+test\b").unwrap(),
-    success: Some(SuccessPattern {
-        pattern: Regex::new(r"Tests:\s+(?P<passed>\d+)\s+passed").unwrap(),
-        summary: "{passed} passed".into(),
-    }),
-    failure: Some(FailurePattern {
-        strategy: FailureStrategy::Tail { lines: 30 },
-    }),
-},
+use double_o::pattern::{FailurePattern, FailureStrategy, Pattern, SuccessPattern, SuccessStrategy};
+use regex::Regex;
+
+fn main() {
+    let pattern = Pattern {
+        command_match: Regex::new(r"^npm\s+test\b").unwrap(),
+        success: Some(SuccessPattern {
+            strategy: SuccessStrategy::Regex {
+                pattern: Regex::new(r"Tests:\s+(?P<passed>\d+)\s+passed").unwrap(),
+                summary: "{passed} passed".into(),
+            },
+        }),
+        failure: Some(FailurePattern {
+            strategy: FailureStrategy::Tail { lines: 30 },
+        }),
+    };
+    assert!(pattern.command_match.is_match("npm test"));
+}
 ```
 
 ## Debugging Tests

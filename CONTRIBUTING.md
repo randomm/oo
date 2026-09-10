@@ -100,7 +100,7 @@ See [Testing Guide](docs/testing.md) for comprehensive details.
 ### Quick Start
 
 - **TDD preferred** — write tests before implementation
-- **80%+ coverage** for new code (enforced by `cargo tarpaulin`)
+- **Coverage**: CI gate is 70% (interim); target is 80% for new code (measured by `cargo tarpaulin`)
 - **Unit tests** in-module (`#[cfg(test)]`)
 - **Integration tests** in `tests/` using `assert_cmd`
 - **Network-dependent tests**: mark `#[ignore]` with explanation
