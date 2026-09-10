@@ -9,6 +9,8 @@ This directory contains detailed documentation for `oo` beyond the user-facing R
 - **[Security Model](security-model.md)** — Trust assumptions, data handling, and API key security
 - **[Patterns](patterns.md)** — Creating custom patterns for command output compression
 - **[Learning Patterns](learn.md)** — Using `oo learn` to automatically generate patterns
+- **[CLI Reference](cli-reference.md)** — All subcommands, output tiers, and the savings indicator spec
+- **[Configuration](configuration.md)** — Environment variables, config files, and platform paths
 
 ## Quick Links
 
