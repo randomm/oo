@@ -18,7 +18,7 @@ flowchart TD
     H -->|Yes| I[Apply pattern<br/>success/failure logic]
     H -->|No| J[Detect command category<br/>Status/Content/Data/Unknown]
     J --> K[Apply category defaults]
-    I --> L{Output size > 4KB?}
+    I --> L{Output size > 4 KiB?}
     K --> L
     L -->|Yes| M[Store/index for recall]
     L -->|No| N[Pass through]
@@ -54,38 +54,18 @@ The classification engine decides how to present output to the agent:
 
 **Possible outcomes**:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
-- **Passthrough** (success, ≤4KB): Verbatim output
-- **Success** (success, >4KB, pattern match): Compressed summary
-- **Large** (success, >4KB, no pattern, Data category): Full output indexed, head+tail slice displayed
-- **Large** (success, >4KB, no pattern, Content/Unknown category): Same bounded tier — full output indexed for recall, only a byte-bounded head+tail slice displayed
+- **Passthrough** (success, ≤4 KiB): Verbatim output
+- **Success** (success, >4 KiB, pattern match): Compressed summary
+- **Large** (success, >4 KiB, no pattern, Data category): Full output indexed, head+tail slice displayed
+- **Bounded** (success, >4 KiB, no pattern, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
-2. Output < 4KB? Yes → Passthrough
+2. Output < 4 KiB? Yes → Passthrough
 3. Pattern matches? Yes → Success (extract summary)
 4. Detect category → apply category defaults
 
-**Savings indicator**: When compression occurs (Success and Failure arms), the
-savings are made visible on the indicator line itself: `{base_line} [saved {size}]`
-where the size is `humansize::format_size(merged_lossy().len() - rendered_line_bytes,
-BINARY)` — the same binary-unit idiom the Large tier already uses. `rendered_line_bytes`
-is the indicator line length EXCLUDING the savings suffix (call sites pass
-`line.len()` before the suffix is appended, so the figure overstates displayed
-bytes by the suffix's own ~15 B). For quiet success the figure is therefore
-approximately the full merged output size minus a short indicator line — the
-intended meaning, not an error. The metric is
-bytes, not tokens: bytes are exact, free, and already available (no tokenizer,
-no new dependency). The figure is suppressed when the saving is ≤ `MIN_SAVINGS`
-(4096 bytes, a named constant beside `SMALL_THRESHOLD` in `src/classify.rs`) so
-sub-KiB `[saved 996 B]` figures never appear — a threshold on the same binary scale
-as `SMALL_THRESHOLD` keeps the policy coherent. The Bounded and Large arms do not
-get a savings figure: the Large arm already reports its size (`indexed N`), and the
-Bounded arm's design purpose is *transparency* (bounded view + recall) rather than
-*compression* — its display is the head+tail slice itself, and the `● (output
-truncated: N total → use `oo recall` to query)` framing line already communicates
-the size relationship. A savings figure on the Bounded arm would double-report the
-same size relationship and misframe the arm's purpose. The Passthrough arm shows
-output verbatim, so nothing is saved.
+The **savings indicator** (the `[saved N]` suffix on compressed output) is specified in [docs/cli-reference.md](cli-reference.md#savings-indicator) (canonical).
 
 ### 3. Pattern Matching
 
@@ -95,7 +75,7 @@ Patterns define how to compress command output using regex.
 
 **Components**:
 - `mod.rs` — Pattern struct, matching logic
-- `builtins.rs` — 10 built-in patterns for common tools
+- `builtins.rs` — built-in patterns for common tools (list with `oo patterns`)
 - `toml.rs` — Load user-defined patterns from `~/.config/oo/patterns/`
 
 **Pattern structure**:
@@ -117,12 +97,7 @@ Commands are auto-categorized to determine default behavior:
 
 | Category | Examples | Default Behavior |
 |----------|----------|------------------|
-| Status | `cargo test`, `cargo build`, `cargo nextest run`, `pytest`, `eslint` | Quiet success (large output) |
-| Content | `git show`, `git diff`, `cat`, `bat` | Bounded display — full output indexed, head+tail slice shown (large output) |
-| Data | `git log`, `git status`, `gh api`, `ls` | Index for recall (large output) |
-| Unknown | Anything else (curl, docker, `sh -c`, etc.) | Bounded display — full output indexed, head+tail slice shown (large output) |
-
-Categories are detected by regex patterns in the command string.
+Category definitions and default behaviors: see [Command Categories in the Patterns guide](patterns.md#command-categories) (canonical).
 
 ### 5. Storage & Recall
 
@@ -131,7 +106,7 @@ Categories are detected by regex patterns in the command string.
 Large outputs that don't match patterns are stored for full-text retrieval.
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `~/.local/share/.oo/`
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS, `%LOCALAPPDATA%\.oo\` on Windows; override with `OO_DATA_DIR`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:
@@ -166,7 +141,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/exec.rs`](../src/exec.rs) | Shell command execution, output capture | `run()`, `CommandOutput` |
 | [`src/classify.rs`](../src/classify.rs) | Classification engine, category detection | `classify()`, `detect_category()` |
 | [`src/pattern/mod.rs`](../src/pattern/mod.rs) | Pattern matching, extraction logic | `find_matching()`, `extract_summary()` |
-| [`src/pattern/builtins.rs`](../src/pattern/builtins.rs) | 10 built-in patterns | `BUILTINS`, `pytest_pattern()`, `cargo_test_pattern()` |
+| [`src/pattern/builtins.rs`](../src/pattern/builtins.rs) | Built-in patterns for common tools (list with `oo patterns`) | `BUILTINS`, `builtin_patterns()` |
 | [`src/pattern/toml.rs`](../src/pattern/toml.rs) | Load/parse user patterns from TOML | `load_user_patterns()`, `parse_pattern_str()` |
 | [`src/store.rs`](../src/store.rs) | Storage backends (SQLite, Vipune) | `Store` trait, `SqliteStore` |
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
@@ -181,7 +156,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 
 ### 1. Bounded passthrough by default
 
-Small outputs (≤4KB) pass through unchanged for every category. Large Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small outputs (≤4 KiB) pass through unchanged for every category. Large Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
@@ -241,8 +216,8 @@ Everything else is treated as a shell command to execute.
 
 ## Performance Considerations
 
-- **Output size**: Only outputs >4KB are considered for compression/indexing. Small outputs pass through immediately.
-- **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of built-in patterns (currently 10).
+- **Output size**: Only outputs >4 KiB are considered for compression/indexing. Small outputs pass through immediately.
+- **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
 - **Storage**: SQLite indexes on `project_id` and `session` for fast queries.
 - **LLM learning**: Runs in background; doesn't block command execution.
 

@@ -64,7 +64,9 @@ do NOT count as displayed — only the indicator line does.
 
 The figure appears on:
 - **Success** — both the `✓ label (summary)` form and the quiet `✓ label` empty-summary
-  form (the quiet form is the largest compression win in the product)
+  form (the quiet form is the largest compression win in the product: for quiet success
+  the figure is therefore approximately the full merged output size minus the short
+  indicator line — the intended meaning, not an error)
 - **Failure** — the `✗ label` indicator line
 
 The figure does NOT appear on:

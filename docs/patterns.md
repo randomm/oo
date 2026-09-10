@@ -29,10 +29,14 @@ grep = "Error:|error\\["
 
 ## `[success]` section
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `pattern` | regex | Named captures become template variables |
-| `summary` | string | Template; `{capture_name}` replaced at runtime |
+`strategy` is optional and defaults to `"regex"`.
+
+| `strategy` | Required fields | Optional fields | Behaviour |
+|------------|-----------------|-----------------|-----------|
+| `regex` (default) | `pattern` (regex with named captures), `summary` (template) | — | Named captures become template variables in `summary` |
+| `tail` | — | `lines` (default 30) | Summary is the last N lines of output |
+| `head` | — | `lines` (default 20) | Summary is the first N lines of output |
+| `grep` | `grep` (regex) | — | Lines matching the regex become the summary |
 
 An empty `summary = ""` suppresses output on success (quiet pass) — the indicator
 line is `✓ label` with no summary. The savings figure (`[saved N KiB]`) is still
@@ -113,3 +117,7 @@ oo categorizes commands to determine default behavior when no pattern matches:
 | **Unknown** | Anything else (curl, docker, `sh -c`, etc.) | Full output indexed, bounded head+tail slice displayed if output > 4 KB |
 
 **Important:** Patterns always take priority over category defaults. If a pattern matches, it determines the output classification regardless of category.
+
+The full set of detected binaries and their categories is defined by `detect_category()` in [`src/classify.rs`](../src/classify.rs) — the code is the source of truth; the table above shows representative examples per category.
+
+The savings indicator (when and where the `[saved N]` figure appears) is specified in [docs/cli-reference.md](cli-reference.md#savings-indicator).
