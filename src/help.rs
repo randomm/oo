@@ -34,6 +34,28 @@ pub fn lookup(cmd: &str) -> Result<String, Error> {
     lookup_with_base_url(cmd, "https://cheat.sh")
 }
 
+/// Return true if `body` looks like an HTML document rather than a plain-text
+/// cheat sheet.
+///
+/// Detection scans only the first 1024 bytes after trimming leading
+/// whitespace and the UTF-8 BOM, so a bare `<` mid-document (e.g.
+/// `git checkout <branch>` in a valid sheet) can never trigger a false
+/// positive. Only HTML document markers count, matched case-insensitively
+/// anywhere within the window: `<!DOCTYPE`, `<html`, `<head>`, `<style>`.
+fn looks_like_html(body: &str) -> bool {
+    // Trim leading whitespace and any UTF-8 BOM (U+FEFF).
+    let trimmed = body.trim_start_matches(|c: char| c.is_ascii_whitespace() || c == '\u{feff}');
+    // Operate on bytes (not chars) per spec: the 1024-byte window must not
+    // land a marker check on a non-char boundary.
+    let bytes = trimmed.as_bytes();
+    let window: &[u8] = &bytes[..bytes.len().min(1024)];
+    let lower = window.to_ascii_lowercase();
+    const MARKERS: &[&[u8]] = &[b"<!doctype", b"<html", b"<head>", b"<style>"];
+    MARKERS
+        .iter()
+        .any(|m| lower.windows(m.len()).any(|w| w == *m))
+}
+
 /// Testable variant that accepts a custom base URL (e.g. a mockito server).
 ///
 /// Separating the base URL enables unit tests without live network access.
@@ -61,6 +83,14 @@ fn lookup_with_base_url(cmd: &str, base_url: &str) -> Result<String, Error> {
                 .take(MAX_BYTES)
                 .read_to_string(&mut buf)
                 .map_err(|e| Error::Help(format!("read response: {e}")))?;
+            // cheat.sh answers some unknown/multi-word topics (and, under
+            // browser-like User-Agents, even valid topics) with a 200 status
+            // and an HTML search page. The status code cannot distinguish this,
+            // so we inspect the body for HTML document markers and map the
+            // case to the same Error::Help variant as a 404.
+            if looks_like_html(&buf) {
+                return Err(Error::Help(format!("no help available for '{cmd}'")));
+            }
             Ok(buf)
         }
         Err(ureq::Error::StatusCode(404)) => {
@@ -225,19 +255,257 @@ mod tests {
         assert!(!content.is_empty());
     }
 
+    // --- HTML-detection tests (mockito, deterministic, no network) ---
+
+    #[test]
+    fn test_help_html_doctype_rejected() {
+        // Primary regression: cheat.sh returning 200 with an HTML body for an
+        // unknown topic must map to a "no help" error, not raw HTML.
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/somecmd?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<!DOCTYPE html>\n<html>\n<head><title>Search</title>\n</head>\n<body>no topic</body>\n</html>\n")
+            .create();
+
+        let result = lookup_with_base_url("somecmd", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for HTML body, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_html_html_marker_rejected() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/htmlmarker?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<html><body>cheat.sh</body></html>")
+            .create();
+
+        let result = lookup_with_base_url("htmlmarker", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for <html marker, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_html_head_marker_rejected() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/headmarker?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<head><title>cheat.sh/git</title></head>")
+            .create();
+
+        let result = lookup_with_base_url("headmarker", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for <head> marker, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_html_style_marker_rejected() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/stylemarker?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<style>body { margin: 0; }</style><body>x</body>")
+            .create();
+
+        let result = lookup_with_base_url("stylemarker", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for <style> marker, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_html_after_leading_whitespace_and_bom_rejected() {
+        // Mirrors the live browser-UA sample which began with "\n<html>...";
+        // leading whitespace and a UTF-8 BOM must be trimmed before scanning.
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/bomhtml?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("\u{feff}\n\n  <html>\n<head><title>cheat.sh/git</title></head>")
+            .create();
+
+        let result = lookup_with_base_url("bomhtml", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for BOM+whitespace HTML, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_html_marker_outside_window_allowed() {
+        // A bare `<` (and even an `<html` marker) appearing only AFTER the
+        // 1024-byte detection window must NOT be flagged as HTML — pins the
+        // window boundary.
+        let mut server = mockito::Server::new();
+        // 1024 bytes of harmless text, then a marker well outside the window.
+        let padded = "p".repeat(1024) + "\n<html><body>x</body></html>";
+        let mock = server
+            .mock("GET", "/farhtml?T")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body(padded.as_str())
+            .create();
+
+        let result = lookup_with_base_url("farhtml", &server.url());
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_plain_text_with_angle_brackets_allowed() {
+        // False-positive guard: a valid plain-text sheet containing angle
+        // brackets in code examples must still be returned, not classified
+        // as HTML. Pins "check document markers, not bare <".
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/git%20checkout?T")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body("git checkout - switch branches\n  git checkout <branch>\n  git clone --depth 1 <remote-url>\n  More: <https://git-scm.com/docs/git-checkout>\n")
+            .create();
+
+        let result = lookup_with_base_url("git checkout", &server.url());
+        assert!(
+            result.is_ok(),
+            "expected Ok for plain sheet with <>, got: {result:?}"
+        );
+        let text = result.unwrap();
+        assert!(
+            text.contains("git checkout <branch>"),
+            "body must be returned intact: {text}"
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_help_response_cap_html_rejected() {
+        // A >64 KiB HTML body must return the "no help" error rather than
+        // Ok-with-cap — pins the cap staying in place for HTML too.
+        let mut server = mockito::Server::new();
+        let html_prefix = "<!DOCTYPE html>\n<html>\n<head><title>cheat.sh</title>\n</head>\n<body>";
+        let padded = format!("{}{}</body></html>", html_prefix, "x".repeat(131_072));
+        let mock = server
+            .mock("GET", "/bighml?T")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(padded.as_str())
+            .create();
+
+        let result = lookup_with_base_url("bighml", &server.url());
+        assert!(
+            result.is_err(),
+            "expected Err for large HTML body, got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' error, got: {msg}"
+        );
+        mock.assert();
+    }
+
     #[test]
     #[ignore = "requires network"]
     fn test_lookup_nonexistent_command() {
-        // cheat.sh returns 200 with a "not found" page for most unknown commands
-        // rather than a 404, so we assert Ok with non-empty content OR a Help Err —
-        // either is acceptable; what is forbidden is a panic.
+        // Unknown topics now map to the Error::Help("no help available…")
+        // variant whether cheat.sh answers with 404 or 200+HTML — the old
+        // either-branch assertion (accepting Ok with non-empty content) is
+        // wrong by design. Only a network failure can produce a different
+        // error variant.
         let result = lookup("__nonexistent_oo_test_xyz__");
-        match result {
-            Ok(content) => assert!(!content.is_empty(), "expected non-empty response"),
-            Err(e) => assert!(
-                e.to_string().contains("no help") || e.to_string().contains("network"),
-                "unexpected error variant: {e}"
-            ),
-        }
+        let err = result.expect_err("unknown topic must not return Ok content");
+        assert!(
+            matches!(&err, Error::Help(_)),
+            "expected Error::Help variant, got: {err}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no help"),
+            "expected 'no help' in message, got: {msg}"
+        );
+    }
+
+    // --- looks_like_html unit tests ---------------------------------------
+
+    #[test]
+    fn test_looks_like_html_markers() {
+        assert!(looks_like_html("<!DOCTYPE html><html></html>"));
+        assert!(looks_like_html("<html><body>page</body></html>"));
+        assert!(looks_like_html("<head><title>t</title></head>"));
+        assert!(looks_like_html("<style>body{}</style>"));
+        assert!(looks_like_html("  \n <!doctype html>"));
+        assert!(looks_like_html("\u{feff}<html>"));
+    }
+
+    #[test]
+    fn test_looks_like_html_plain_text_with_angle_brackets() {
+        // Valid sheets contain bare `<` and `https://` URLs — not HTML.
+        let sheet = "git clone --depth 1 <remote-url>\nsee <https://git-scm.com> for more\nif (a < b) print";
+        assert!(!looks_like_html(sheet));
+    }
+
+    #[test]
+    fn test_looks_like_html_window_boundary() {
+        // A marker only appearing after the 1024-byte window is plain text.
+        let padding = "x ".repeat(550); // 1100 bytes
+        assert!(!looks_like_html(&format!("{padding}<html>")));
+    }
+
+    #[test]
+    fn test_looks_like_html_multibyte_at_window_edge() {
+        // BOM (3 bytes in UTF-8) near the window edge: the window slice must
+        // land on a char boundary (not mid-BOM) without panicking, and a
+        // marker just inside the window is still detected.
+        let body = format!("\u{feff}{}<style>", "x".repeat(1000));
+        assert!(looks_like_html(&body));
+        // A 4-byte char (U+10000) straddling the window edge must not panic
+        // the slice; the marker sits well past the window → plain text.
+        let body = format!("{}\u{10000}<style>", "x".repeat(1020));
+        assert!(!looks_like_html(&body));
     }
 }
