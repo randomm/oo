@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-10
+
+### Bug Fixes
+
+- *(#149)* Strip sudo/env prefixes and recognise cargo nextest run as Status (#157)
+- *(help)* Detect HTML responses from cheat.sh and map to no-help error ([#164](https://github.com/randomm/oo/pull/164))
+
+### Features
+
+- *(#148)* Bound the Content/Unknown passthrough path (#155)
+- *(#150)* Report compression savings in indicator lines (#156)
+- *(#147)* Return FTS5 snippets from oo recall instead of full blobs (#158)
+- List all 7 reserved subcommands in both help surfaces ([#163](https://github.com/randomm/oo/pull/163)) ([#165](https://github.com/randomm/oo/pull/165))
+
+### Miscellaneous
+
+- Fix documentation accuracy, consistency, and new-user experience ([#167](https://github.com/randomm/oo/pull/167))
+
+### Refactoring
+
+- *(#151)* Unify classification and display into a single path (#153)
+
+
 ## [0.5.0] - 2026-05-20
 
 ### Features
