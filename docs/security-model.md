@@ -32,7 +32,7 @@ You must trust:
 
 **Where it goes**:
 
-- **Small outputs (<4KB)**: Displayed directly, never stored
+- **Small outputs (<4 KiB)**: Displayed directly, never stored
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
 - **Large unpatterned outputs**: Stored locally in `~/.local/share/oo/` for recall
 
@@ -239,17 +239,16 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 
 ## Reporting Security Issues
 
-If you discover a security vulnerability, please:
+Report security vulnerabilities privately through [GitHub Security Advisories](https://github.com/randomm/oo/security/advisories) — this ensures responsible disclosure.
 
-1. Do NOT file a public GitHub issue
-2. Email the maintainer privately (see [README.md](../README.md) for contact)
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Impact assessment
-   - Proposed fix (if applicable)
+**Do not open a public issue for security vulnerabilities.** Include:
 
-We will acknowledge receipt and work on a fix promptly.
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested fix (if known)
+
+We aim to acknowledge reports within 7 days and will communicate a remediation timeline. This section mirrors the [SECURITY.md](../SECURITY.md) policy.
 
 ## Compliance
 

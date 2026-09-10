@@ -95,28 +95,6 @@ truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or `sh -c` 
 cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
 for details.
 
-### Measuring the savings
-
-When oo compresses output, the savings are made visible on the indicator line itself:
-
-```
-$ oo cargo test
-✓ cargo test (47 passed, 2.1s) [saved 46.1 KiB]
-```
-
-The figure is the raw merged output size minus the bytes actually printed on the
-indicator line, formatted with `humansize` binary units (the same idiom already used
-by the Large tier's `indexed N` figure). The savings figure appears on the Success
-arm (both the `✓ label (summary)` and the quiet `✓ label` form) and on the Failure
-arm — these are the arms where compression happens. The figure is suppressed when
-the saving is below `MIN_SAVINGS` (4 KiB), so a `[saved 12 B]` suffix on every command
-never appears. The Large and Bounded tiers do not get a savings figure: the Large
-tier already reports its size (`indexed N`), and the Bounded tier's display is the
-bounded head+tail slice itself — the `● (output truncated: N total → use `oo recall`
-to query)` framing line already communicates the size relationship, so a savings
-figure there would be double-reporting. The Passthrough tier shows output verbatim,
-so nothing is saved.
-
 ---
 
 ## Installation
@@ -164,6 +142,34 @@ cd oo
 cargo build --release
 cp target/release/oo /usr/local/bin/
 ```
+
+---
+
+## Quick Start
+
+```bash
+# Wrap any command — output is classified and compressed
+$ oo cargo test
+✓ cargo test (47 passed, 2.1s)
+
+# Large unrecognised output is indexed — query it later
+$ oo git log --oneline -100
+● git (indexed 12.4 KiB → use `oo recall` to query)
+$ oo recall "merge commit"
+
+# Teach oo a new pattern for an unrecognised command
+$ oo learn rspec spec/
+```
+
+**Shell semantics:** `oo` runs programs directly — it does not invoke a shell. Use
+`oo sh -c '<command>'` when you need shell syntax (pipes, `&&`, globbing):
+
+```bash
+oo sh -c 'git log --oneline | head -20'
+```
+
+See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for how the
+`[saved N KiB]` figure on the indicator line works.
 
 ---
 
@@ -275,8 +281,11 @@ real output to analyze. See [Learning Patterns](docs/learn.md).
 - [Testing Guide](docs/testing.md) — How to run, write, and understand tests
 - [Architecture](docs/architecture.md) — System design and module responsibilities
 - [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [CLI Reference](docs/cli-reference.md) — All subcommands, output tiers, and the savings indicator spec
+- [Configuration](docs/configuration.md) — Environment variables, config files, and platform paths
 - [Custom Patterns](docs/patterns.md) — Creating patterns for command output compression
 - [Learning Patterns](docs/learn.md) — Using `oo learn` to generate patterns automatically
+- [Changelog](CHANGELOG.md) — Release history
 
 **For contributors**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and workflow.
 **For agents**: See [AGENTS.md](AGENTS.md) for project-specific agent conventions.

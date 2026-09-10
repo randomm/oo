@@ -11,7 +11,7 @@
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
 | `oo version` | Print version |
-| `oo patterns` | List all learned patterns |
+| `oo patterns` | List all loaded patterns (built-in + user) |
 
 ---
 
@@ -29,14 +29,15 @@ oo gh issue list --limit 10
 
 ### Output behavior
 
-oo classifies command output into four tiers:
+oo classifies command output into five tiers:
 
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
 | **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
 | **Failure** | `✗ label` followed by error output | Non-zero exit code |
-| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern |
+| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern, Data category |
+| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without pattern, Content or Unknown category (full output indexed; display is bounded) |
 
 Large unpatterned output (Data, Content, or Unknown category) is indexed in full and
 retrievable via `oo recall`. The display is a byte-bounded head+tail slice separated by a
@@ -63,7 +64,9 @@ do NOT count as displayed — only the indicator line does.
 
 The figure appears on:
 - **Success** — both the `✓ label (summary)` form and the quiet `✓ label` empty-summary
-  form (the quiet form is the largest compression win in the product)
+  form (the quiet form is the largest compression win in the product: for quiet success
+  the figure is therefore approximately the full merged output size minus the short
+  indicator line — the intended meaning, not an error)
 - **Failure** — the `✗ label` indicator line
 
 The figure does NOT appear on:
@@ -75,8 +78,8 @@ The figure does NOT appear on:
   recall), not compression, so a savings figure would misframe the arm and
   double-report the size relationship.
 
-When `saved ≤ MIN_SAVINGS` (4096 bytes, a named constant in `src/classify.rs` beside
-`SMALL_THRESHOLD`), no suffix is printed — a `[saved 12 B]` suffix on every command
+The suffix is suppressed unless `saved > MIN_SAVINGS` (4096 bytes, a named constant in
+`src/classify.rs` beside `SMALL_THRESHOLD`) — a `[saved 12 B]` suffix on every command
 would itself waste context. The threshold is on the same binary scale as
 `SMALL_THRESHOLD` to keep the policy coherent.
 
@@ -326,7 +329,7 @@ oo version
 ### Output format
 
 ```
-oo 0.4.0
+oo <version>
 ```
 
 ### Exit codes
@@ -337,7 +340,7 @@ Always returns 0.
 
 ## `oo patterns`
 
-List all learned patterns from `~/.config/oo/patterns/`.
+List all loaded patterns: built-in patterns, project-local patterns, and user patterns from `~/.config/oo/patterns/`.
 
 ### Usage
 
@@ -347,21 +350,24 @@ oo patterns
 
 ### Output format
 
-Each pattern shows its command regex and components:
+Patterns are grouped under section headers — `Built-in (N patterns):`, `Project (dir):` (only when project-local patterns exist), and `User (dir):`. Each pattern line shows its command regex plus the `[success]` and/or `[failure]` flags for the strategies it defines (two-space indent):
 
 ```
-\\bcargo\\s+test\\b  [success] [failure]
-\\bpytest\\b
-\\bterraform\\s+plan\\b  [success]
+Built-in (N patterns):
+  \\bcargo\\s+test\\b  [success] [failure]
+  \\bpytest\\b
+
+User (~/.config/oo/patterns):
+  \\bterraform\\s+plan\\b  [success]
 ```
 
-If the directory doesn't exist or contains no valid TOML files:
+If the user directory doesn't exist or contains no valid TOML files:
 
 ```
 no learned patterns yet
 ```
 
-Invalid or corrupt TOML files are skipped silently.
+Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` headers are always printed.
 
 ### Exit codes
 

@@ -35,12 +35,14 @@ The provider is determined from the configured provider or auto-detected from
 the available API key.
 
 > **Note:** When configuring manually, set `api_key_env` to match the env var for
-> your chosen provider:
+> your chosen provider. The default model is `claude-haiku-4-5` (see
+> [Configuration — model reference](configuration.md#learn-section)); the example
+> below just shows the shape of the section:
 >
 > ```toml
 > [learn]
 > provider    = "anthropic"
-> model       = "claude-3-5-sonnet-20241022"
+> model       = "<model identifier>"
 > api_key_env = "ANTHROPIC_API_KEY"
 > ```
 
@@ -54,6 +56,8 @@ available. The command itself still runs and its output is not affected.
 `~/.config/oo/patterns/<label>.toml` — where `<label>` is derived from the command name.
 
 Existing files are overwritten, so running `oo learn` again refines the pattern.
+See [Custom Patterns](patterns.md) for the TOML format the generated files use, and
+[examples/](../examples/) for runnable pattern examples.
 The filename is derived from the first word of the command (the binary name), plus the
 second word if it is a subcommand rather than a flag — for example, `cargo test` produces
 `cargo-test.toml`, while `cargo --version` produces `cargo.toml`. This means each

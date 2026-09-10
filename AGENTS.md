@@ -113,7 +113,7 @@ Orientation for agents new to the codebase:
 | `src/main.rs` | CLI entry point and subcommand dispatch |
 | `src/exec.rs` | Shell command execution and output capture |
 | `src/classify.rs` | Classification engine — touch carefully, well-tested |
-| `src/pattern/` | Built-in patterns (10), user TOML loading, pattern matching (split into `mod.rs`, `builtins.rs`, `toml.rs`) |
+| `src/pattern/` | Built-in patterns (list with `oo patterns`), user TOML loading, pattern matching (split into `mod.rs`, `builtins.rs`, `toml.rs`) |
 | `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag |
 | `src/session.rs` | Session tracking and context management |
 | `src/learn.rs` | LLM integration, background re-exec, Anthropic only |
