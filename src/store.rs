@@ -93,10 +93,14 @@ pub trait Store {
         limit: usize,
     ) -> Result<Vec<SearchResult>, Error>;
 
-    /// Delete all entries for a specific session.
+    /// Delete all entries for a project.
+    ///
+    /// Removes every entry stored for `project_id`, regardless of the session
+    /// that indexed it, and including entries with NULL or unparseable
+    /// metadata — exactly the set `search` can return.
     ///
     /// Returns the number of entries deleted.
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error>;
+    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
 
     /// Delete entries older than `max_age_secs` seconds.
     ///
@@ -315,36 +319,18 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
-        // Find entries matching this session
-        let ids: Vec<String> = {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT id, metadata FROM entries WHERE project = ?1")
-                .map_err(map_err)?;
-            stmt.query_map(rusqlite::params![project_id], |row| {
-                let id: String = row.get(0)?;
-                let meta_json: Option<String> = row.get(1)?;
-                Ok((id, meta_json))
-            })
-            .map_err(map_err)?
-            .filter_map(|r| r.ok())
-            .filter(|(_, meta_json)| {
-                meta_json
-                    .as_deref()
-                    .and_then(parse_meta)
-                    .is_some_and(|m| m.source == "oo" && m.session == session_id)
-            })
-            .map(|(id, _)| id)
-            .collect()
-        };
-
-        let count = ids.len();
-        for id in &ids {
-            self.conn
-                .execute("DELETE FROM entries WHERE id = ?1", rusqlite::params![id])
-                .map_err(map_err)?;
-        }
+    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
+        // Project-scoped delete: drop every row for this project — including
+        // rows with NULL or unparseable metadata — so it removes exactly the
+        // set `search` can return. The FTS5 shadow table is kept in sync by
+        // the entries_ad trigger, so a plain DELETE suffices.
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM entries WHERE project = ?1",
+                rusqlite::params![project_id],
+            )
+            .map_err(map_err)?;
         Ok(count)
     }
 
@@ -453,21 +439,19 @@ impl Store for VipuneStore {
             .collect())
     }
 
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
+    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
+        // Project-scoped delete: drop every entry for this project regardless
+        // of metadata, so it removes exactly what `search` can return.
         let entries = self
             .store
             .list(project_id, 10_000)
             .map_err(|e| Error::Store(e.to_string()))?;
         let mut count = 0;
         for entry in entries {
-            if let Some(meta) = entry.metadata.as_deref().and_then(parse_meta) {
-                if meta.source == "oo" && meta.session == session_id {
-                    self.store
-                        .delete(&entry.id)
-                        .map_err(|e| Error::Store(e.to_string()))?;
-                    count += 1;
-                }
-            }
+            self.store
+                .delete(&entry.id)
+                .map_err(|e| Error::Store(e.to_string()))?;
+            count += 1;
         }
         Ok(count)
     }

@@ -17,7 +17,7 @@ use double_o::{
 )]
 struct Cli {
     /// A subcommand, or a command to run. Subcommands:
-    /// recall (recall indexed output), forget (clear session index),
+    /// recall (recall indexed output), forget (clear indexed output for this project),
     /// learn (auto-generate a compression pattern), help (cheat.sh sheet),
     /// init (set up project hooks), patterns (list compression patterns),
     /// version (print oo version). Any other command runs as a shell command.
@@ -55,8 +55,8 @@ fn main() {
             println!("Usage: oo <command> [args...]");
             println!();
             println!("Commands:");
-            println!("  recall [--full] <query>   Search session output");
-            println!("  forget                     Clear session data");
+            println!("  recall [--full] <query>   Search indexed output");
+            println!("  forget                     Clear indexed output for this project");
             println!("  learn [--hint <text>] <cmd> [args...]   Learn output compression patterns");
             println!(
                 "  help [cmd]                 Show help (or cheat-sheet for cmd via cheat.sh)"

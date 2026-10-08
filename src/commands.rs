@@ -304,11 +304,10 @@ pub fn cmd_forget() -> i32 {
     };
 
     let project_id = session::project_id();
-    let sid = session::session_id();
 
-    match store.delete_by_session(&project_id, &sid) {
+    match store.delete_project(&project_id) {
         Ok(count) => {
-            println!("Cleared session data ({count} entries)");
+            println!("Cleared project data ({count} entries)");
             0
         }
         Err(e) => {

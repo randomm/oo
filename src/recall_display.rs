@@ -92,7 +92,7 @@ pub fn cmd_recall(query: &str, full: bool) -> i32 {
             for r in &results {
                 if let Some(meta) = &r.meta {
                     let age = format_age(meta.timestamp);
-                    println!("[session] {} ({age}):", meta.command);
+                    println!("[oo] {} ({age}):", meta.command);
                 } else {
                     println!("[memory] project memory:");
                 }
