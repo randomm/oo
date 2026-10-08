@@ -203,18 +203,22 @@ and moves on.
 ### Use with pi
 
 `oo init --agent pi` installs a pi extension (`.pi/extensions/oo.ts` at the git
-root, or `~/.pi/agent/extensions/oo.ts` with `--global`) that hooks pi's bash
+root, or `~/.pi/agent/extensions/oo.ts` with `--global` — or
+`$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set, since the
+variable is the final extensions directory) that hooks pi's bash
 tool calls and rewrites bare shell commands to their `oo`-prefixed form via
 `oo rewrite`. pi agents then get token-efficient output automatically — no
 prompt instruction required.
 
 ```bash
 oo init --agent pi           # project: <git-root>/.pi/extensions/oo.ts
-oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts
+oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_EXTENSIONS_DIR/oo.ts)
 ```
 
-- The extension probes `oo` at load and silently disables itself (status note
-  only) if the binary is missing.
+- The extension carries an `ooAvailable` flag, initially true: if the load
+  probe fails (binary missing, error, or timeout) it is set false and the
+  `tool_call` handler passes every command through untouched (status note
+  only).
 - It leaves nested (codemode) tool calls untouched, skips commands already
   starting with `oo `, and fails open on any error — a failing handler never
   blocks your shell commands.

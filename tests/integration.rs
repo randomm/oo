@@ -470,6 +470,46 @@ fn test_init_agent_pi_global_writes_under_home() {
     );
 }
 
+/// `OO_PI_EXTENSIONS_DIR` is the FINAL extensions directory: the file lands
+/// at `$OO_PI_EXTENSIONS_DIR/oo.ts`, never with a `.pi/agent/extensions`
+/// suffix appended, and the git root is never consulted.
+#[test]
+fn test_init_agent_pi_global_extensions_dir_is_final_dir() {
+    let ext_dir = TempDir::new().unwrap();
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "pi", "--global"])
+        .current_dir(repo.path())
+        .env("HOME", repo.path())
+        .env("OO_PI_EXTENSIONS_DIR", ext_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created"));
+
+    let ext = ext_dir.path().join("oo.ts");
+    assert!(
+        ext.exists(),
+        "global oo.ts must land at $OO_PI_EXTENSIONS_DIR/oo.ts"
+    );
+    // No `.pi/agent/extensions` suffix must be appended under the override.
+    let suffixed = ext_dir
+        .path()
+        .join(".pi")
+        .join("agent")
+        .join("extensions")
+        .join("oo.ts");
+    assert!(
+        !suffixed.exists(),
+        "no .pi/agent/extensions suffix may be appended"
+    );
+    // The project (git) root must NOT have received the file.
+    let project_ext = repo.path().join(".pi").join("extensions").join("oo.ts");
+    assert!(
+        !project_ext.exists(),
+        "global install must not write under the git root"
+    );
+}
+
 /// `oo init --agent claude-code` is not yet supported — clear error, exit 1.
 #[test]
 fn test_init_agent_claude_code_not_yet_supported() {

@@ -314,11 +314,11 @@ supported values (`pi`, `claude-code`).
 | Scope | Path |
 |-------|------|
 | project (default) | `<git-root>/.pi/extensions/oo.ts` (cwd when not in a git repo) |
-| global (`--global`) | `~/.pi/agent/extensions/oo.ts` (home-based; never consults the git root; override with `OO_PI_EXTENSIONS_DIR`) |
+| global (`--global`) | `$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set (the variable is the final extensions directory — no path suffix is appended); otherwise `~/.pi/agent/extensions/oo.ts`. Never consults the git root |
 
 ### Pi extension behaviour
 
-- At load, probes `oo --version` and silently disables itself (status note only) if `oo` is missing or errors.
+- At load, probes `oo --version` and updates its `ooAvailable` flag (initially true) so that a missing or erroring `oo` (non-zero exit, timeout, exception) hard-disables the handler: it returns undefined for every tool call without invoking `oo rewrite` (status note only).
 - On bash `tool_call`: skips empty commands, commands already starting with `oo ` (including `oo rewrite` itself), and nested calls (`parentToolCallId` set — codemode scripts see raw output).
 - Honors the `OO_DISABLE=1` environment opt-out.
 - Calls `oo rewrite <cmd>` (2000 ms timeout) and swaps in the rewritten command only when it is exit 0, non-empty, and different.

@@ -16,13 +16,16 @@ pub const EXTENSION_FILENAME: &str = "oo.ts";
 /// byte-identical files (idempotency is byte-equality, not substring match).
 ///
 /// Behaviour contract (see issue #171 acceptance criteria):
-/// - at load, probes `oo --version` via `pi.exec` with a short timeout and
-///   silently disables itself (status note only) if `oo` is missing or errors;
-/// - the `tool_call` handler acts only on `toolName === "bash"`, ignores empty
-///   commands and commands already starting with `oo `, and returns
-///   immediately when `event.parentToolCallId` is set (nested codemode calls
-///   are left raw — the guards short-circuit BEFORE any `pi.exec` call);
-/// - honours the `OO_DISABLE=1` environment opt-out;
+/// - carries an `ooAvailable` flag (true initially) that the load-time
+///   `oo --version` probe updates: false on any probe failure (missing
+///   binary, non-zero exit, timeout, exception), true on success; while the
+///   asynchronous probe is still pending the flag is treated as available —
+///   the handler never blocks on it;
+/// - the `tool_call` handler acts only on `toolName === "bash"`, and every
+///   guard returns immediately (undefined) BEFORE any `pi.exec` call: the
+///   `ooAvailable` flag, empty commands, commands already starting with
+///   `oo `, `event.parentToolCallId` set (nested codemode calls are left
+///   raw), and the `OO_DISABLE=1` environment opt-out;
 /// - calls `oo rewrite <cmd>` via `pi.exec` with a 2000ms timeout and the
 ///   context abort signal, mutating `event.input.command` only when the exit
 ///   code is 0 and stdout is non-empty and differs from the original;
@@ -50,6 +53,13 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 const REWRITE_TIMEOUT_MS = 2000;
+
+// Availability of the `oo` binary. True initially so a slow load-time probe
+// never makes the first tool call wait; flipped by the probe — false on any
+// probe failure (missing binary, non-zero exit, timeout, exception), true on
+// success. While the probe is still pending the handler treats the binary as
+// available (a failed rewrite is a harmless pass-through anyway).
+let ooAvailable = true;
 
 // Local reimplementation of the package's `isToolCallEventType("bash", event)`
 // type guard: that helper is a value export, so importing it would pull in the
@@ -121,6 +131,8 @@ export default async function (pi: ExtensionAPI) {
   // version probe must never leave a gap where bash tool calls are missed.
   pi.on("tool_call", async (event, ctx) => {
     try {
+      if (!ooAvailable) return;
+
       if (!isBashToolCallEvent(event)) return;
 
       const cmd = event.input.command;
@@ -152,16 +164,21 @@ export default async function (pi: ExtensionAPI) {
 
   // Probe `oo` at load time; disable silently (status note only) if the
   // binary is missing or errors. Any exit-0 output counts as a version
-  // success — `oo --version` prints "oo <version>". When the probe fails the
-  // registered handler stays a pass-through no-op (oo rewrite would fail
-  // anyway), so nothing is lost.
+  // success — `oo --version` prints "oo <version>". On any probe failure
+  // (missing binary, non-zero exit, timeout, exception) the handler is
+  // switched to a hard pass-through no-op via `ooAvailable = false` (oo
+  // rewrite would fail anyway), so nothing is lost.
   try {
     const ver = await pi.exec("oo", ["--version"], { timeout: REWRITE_TIMEOUT_MS });
     if (ver.code !== 0) {
+      ooAvailable = false;
       reportOoUnavailable("oo binary not found in PATH");
       console.warn("[oo] oo binary not found in PATH — extension disabled");
+    } else {
+      ooAvailable = true;
     }
   } catch {
+    ooAvailable = false;
     reportOoUnavailable("oo version probe failed");
     console.warn("[oo] could not probe oo — extension disabled");
   }
@@ -170,19 +187,34 @@ export default async function (pi: ExtensionAPI) {
 
 /// Resolve the directory the extension file is written into.
 ///
-/// - global: `<home>/.pi/agent/extensions` — resolved from the home/override
-///   dir and NEVER consults `find_root`/git root;
+/// - global: `$OO_PI_EXTENSIONS_DIR` when set — it IS the extensions
+///   directory itself (the file lands at `$OO_PI_EXTENSIONS_DIR/oo.ts`),
+///   otherwise `<home>/.pi/agent/extensions`; never consults
+///   `find_root`/git root;
 /// - project: `<git-root>/.pi/extensions` — `find_root` walks up to `.git`
 ///   and falls back to cwd outside a repo.
-fn target_dir(cwd: &Path, global: bool) -> PathBuf {
+fn target_dir(cwd: &Path, global: bool) -> Result<PathBuf, Error> {
     if global {
-        let home = std::env::var_os("OO_PI_EXTENSIONS_DIR")
-            .or_else(|| std::env::var_os("HOME"))
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        home.join(".pi").join("agent").join("extensions")
+        if let Some(override_dir) = std::env::var_os("OO_PI_EXTENSIONS_DIR") {
+            if override_dir.is_empty() {
+                return Err(Error::Init(format!(
+                    "OO_PI_EXTENSIONS_DIR is set but empty; expected the pi extensions directory (got {:?})",
+                    override_dir
+                )));
+            }
+            return Ok(PathBuf::from(override_dir));
+        }
+        match std::env::var_os("HOME") {
+            Some(home) if !home.as_os_str().is_empty() => {
+                Ok(PathBuf::from(home).join(".pi").join("agent").join("extensions"))
+            }
+            _ => Err(Error::Init(
+                "cannot determine the global pi extensions directory: $OO_PI_EXTENSIONS_DIR is not set and $HOME is unset or empty"
+                    .to_string(),
+            )),
+        }
     } else {
-        find_root(cwd).join(".pi").join("extensions")
+        Ok(find_root(cwd).join(".pi").join("extensions"))
     }
 }
 
@@ -193,7 +225,7 @@ fn target_dir(cwd: &Path, global: bool) -> PathBuf {
 /// NOT overwritten — the caller is told how to proceed (still exit 0, mirroring
 /// the Claude path's warn-and-skip semantics).
 pub fn run(cwd: &Path, global: bool) -> Result<(), Error> {
-    let dir = target_dir(cwd, global);
+    let dir = target_dir(cwd, global)?;
     let path = dir.join(EXTENSION_FILENAME);
 
     fs::create_dir_all(&dir)
@@ -259,6 +291,7 @@ mod tests {
     #[test]
     fn extension_source_contains_required_tokens() {
         for token in [
+            "ooAvailable",      // hard-disable flag consulted first by the handler
             "parentToolCallId", // nested codemode calls left raw
             "try {",            // handler fail-open wrapper
             "catch",            // ...with catch, returning undefined
@@ -281,6 +314,31 @@ mod tests {
             OO_TS_EXTENSION.starts_with("// oo pi extension") && OO_TS_EXTENSION.contains("(v0.1)"),
             "extension must carry a version marker comment"
         );
+    }
+
+    #[test]
+    fn extension_source_oo_available_guard_first_in_handler() {
+        // The `ooAvailable` hard-disable guard must short-circuit BEFORE every
+        // other handler guard (bash-only, empty, parentToolCallId, `oo ` prefix)
+        // and before any `pi.exec` call.
+        let handler = OO_TS_EXTENSION.find("pi.on(").expect("handler");
+        let scope = &OO_TS_EXTENSION[handler..];
+        let available = scope
+            .find("if (!ooAvailable) return;")
+            .expect("ooAvailable guard");
+        for token in [
+            "isBashToolCallEvent(event)",
+            "cmd.trim() === \"\"",
+            "parentToolCallId",
+            "cmd.startsWith(\"oo \")",
+            "rewriteCommand(pi, cmd, ctx.signal)",
+        ] {
+            let at = scope[available..].find(token).expect(token) + available;
+            assert!(
+                available < at,
+                "ooAvailable guard must precede {token:?} in the handler"
+            );
+        }
     }
 
     #[test]
@@ -343,21 +401,23 @@ mod tests {
 
     #[test]
     fn target_dir_project_under_git_root() {
+        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         fs::create_dir_all(dir.path().join(".git")).unwrap();
         let sub = dir.path().join("a").join("b");
         fs::create_dir_all(&sub).unwrap();
         assert_eq!(
-            target_dir(&sub, false),
+            target_dir(&sub, false).unwrap(),
             dir.path().join(".pi").join("extensions")
         );
     }
 
     #[test]
     fn target_dir_project_falls_back_to_cwd_outside_repo() {
+        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         assert_eq!(
-            target_dir(dir.path(), false),
+            target_dir(dir.path(), false).unwrap(),
             dir.path().join(".pi").join("extensions")
         );
     }
@@ -369,7 +429,7 @@ mod tests {
         fs::create_dir_all(repo.path().join(".git")).unwrap();
         with_home(home.path(), |_| {
             assert_eq!(
-                target_dir(repo.path(), true),
+                target_dir(repo.path(), true).unwrap(),
                 home.path().join(".pi").join("agent").join("extensions")
             );
         });
@@ -377,6 +437,9 @@ mod tests {
 
     #[test]
     fn target_dir_global_honors_override_env() {
+        // OO_PI_EXTENSIONS_DIR IS the extensions directory itself — the file
+        // lands at `$OO_PI_EXTENSIONS_DIR/oo.ts`, no `.pi/agent/extensions`
+        // suffix appended.
         let override_dir = tempfile::TempDir::new().unwrap();
         let other_home = tempfile::TempDir::new().unwrap();
         let _guard = env_guard();
@@ -385,14 +448,38 @@ mod tests {
             std::env::set_var("HOME", other_home.path());
         }
         assert_eq!(
-            target_dir(Path::new("/tmp"), true),
-            override_dir
-                .path()
-                .join(".pi")
-                .join("agent")
-                .join("extensions")
+            target_dir(Path::new("/tmp"), true).unwrap(),
+            override_dir.path()
+        );
+        unsafe {
+            std::env::remove_var("OO_PI_EXTENSIONS_DIR");
+            std::env::remove_var("HOME");
+        }
+    }
+
+    #[test]
+    fn target_dir_global_empty_override_is_error() {
+        let _guard = env_guard();
+        unsafe { std::env::set_var("OO_PI_EXTENSIONS_DIR", "") };
+        let err = target_dir(Path::new("/tmp"), true).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("OO_PI_EXTENSIONS_DIR"),
+            "error must name the offending variable: {err:?}"
         );
         unsafe { std::env::remove_var("OO_PI_EXTENSIONS_DIR") };
+    }
+    #[test]
+    fn target_dir_global_without_home_or_override_is_error() {
+        let _guard = env_guard();
+        unsafe {
+            std::env::remove_var("OO_PI_EXTENSIONS_DIR");
+            std::env::remove_var("HOME");
+        }
+        let err = target_dir(Path::new("/tmp"), true).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("HOME"),
+            "error must name HOME: {err:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -401,6 +488,7 @@ mod tests {
 
     #[test]
     fn run_creates_extension_under_project_dir() {
+        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         run(dir.path(), false).expect("install must succeed");
         let ext = dir.path().join(".pi").join("extensions").join("oo.ts");
@@ -413,6 +501,7 @@ mod tests {
 
     #[test]
     fn run_is_noop_for_identical_file() {
+        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         run(dir.path(), false).unwrap();
         let before =
@@ -425,6 +514,7 @@ mod tests {
 
     #[test]
     fn run_does_not_overwrite_different_file() {
+        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         let ext_dir = dir.path().join(".pi").join("extensions");
         fs::create_dir_all(&ext_dir).unwrap();
@@ -456,5 +546,34 @@ mod tests {
             .join("oo.ts");
         let content = fs::read_to_string(&ext).expect("global oo.ts must be created");
         assert_eq!(content, OO_TS_EXTENSION);
+    }
+
+    #[test]
+    fn run_global_writes_under_extensions_dir_override() {
+        // OO_PI_EXTENSIONS_DIR is the final extensions directory: the file
+        // lands at `$OO_PI_EXTENSIONS_DIR/oo.ts` directly.
+        let override_dir = tempfile::TempDir::new().unwrap();
+        let cwd = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
+        unsafe { std::env::set_var("OO_PI_EXTENSIONS_DIR", override_dir.path()) };
+        run(cwd.path(), true).expect("global install must succeed");
+        unsafe { std::env::remove_var("OO_PI_EXTENSIONS_DIR") };
+        let ext = override_dir.path().join("oo.ts");
+        let content = fs::read_to_string(&ext).expect("global oo.ts must be created");
+        assert_eq!(content, OO_TS_EXTENSION);
+    }
+
+    #[test]
+    fn run_global_without_home_or_override_fails() {
+        let _guard = env_guard();
+        unsafe {
+            std::env::remove_var("OO_PI_EXTENSIONS_DIR");
+            std::env::remove_var("HOME");
+        }
+        let err = run(Path::new("/tmp"), true).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("HOME"),
+            "error must name HOME: {err:?}"
+        );
     }
 }
