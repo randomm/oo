@@ -995,6 +995,87 @@ fn test_project_patterns_override_builtins() {
 }
 
 // ---------------------------------------------------------------------------
+// oo rewrite (#170)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_rewrite_builtin_pattern_prints_and_exits_zero() {
+    oo().args(["rewrite", "pytest -q"])
+        .assert()
+        .success()
+        .stdout("oo pytest -q\n");
+}
+
+#[test]
+fn test_rewrite_multi_segment_only_matching_segment_rewritten() {
+    oo().args(["rewrite", "cd src && cargo build"])
+        .assert()
+        .success()
+        .stdout("cd src && oo cargo build\n");
+}
+
+#[test]
+fn test_rewrite_no_pattern_exits_one_no_output() {
+    oo().args(["rewrite", "git log --stat"])
+        .assert()
+        .code(1)
+        .stdout("");
+}
+
+#[test]
+fn test_rewrite_pipe_not_rewritten() {
+    oo().args(["rewrite", "cargo test | tee out.txt"])
+        .assert()
+        .code(1)
+        .stdout("");
+}
+
+#[test]
+fn test_rewrite_empty_arg_exits_one_no_output() {
+    oo().args(["rewrite", ""]).assert().code(1).stdout("");
+}
+
+#[test]
+fn test_rewrite_no_arg_exits_one_no_output() {
+    oo().arg("rewrite").assert().code(1).stdout("");
+}
+
+#[test]
+fn test_rewrite_does_not_execute_command() {
+    // A fake command with no pattern: if rewrite ever executed the command,
+    // the failure indicator or output would appear. None may appear.
+    let (keep, path) = make_fake_bin(
+        "oo_rewrite_noop_xyz",
+        "#!/bin/sh\necho SHOULD_NOT_APPEAR\nexit 7\n",
+    );
+    let _ = keep;
+    oo().args(["rewrite", "oo_rewrite_noop_xyz"])
+        .env("PATH", path)
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("SHOULD_NOT_APPEAR").not());
+}
+
+#[test]
+fn test_rewrite_project_pattern_drives_rewrite() {
+    // A project-local pattern for a non-builtin command must drive the
+    // rewrite through the same load path as `oo <cmd>`.
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let pat_dir = dir.path().join(".oo").join("patterns");
+    std::fs::create_dir_all(&pat_dir).unwrap();
+    std::fs::write(pat_dir.join("mytool.toml"), "command_match = \"^mytool\"\n").unwrap();
+
+    oo().args(["rewrite", "mytool --fast"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env("XDG_CONFIG_HOME", dir.path().join(".config"))
+        .assert()
+        .success()
+        .stdout("oo mytool --fast\n");
+}
+
+// ---------------------------------------------------------------------------
 // Savings suffix (issue #150)
 // ---------------------------------------------------------------------------
 
@@ -1235,5 +1316,6 @@ fn test_clap_short_help_lists_all_subcommands() {
         .stdout(predicate::str::contains("help ("))
         .stdout(predicate::str::contains("init ("))
         .stdout(predicate::str::contains("patterns ("))
+        .stdout(predicate::str::contains("rewrite ("))
         .stdout(predicate::str::contains("version ("));
 }

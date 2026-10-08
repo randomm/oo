@@ -7,7 +7,9 @@ use crate::classify::Classification;
 pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
-use crate::{classify, commands_patterns, exec, help, init, learn, pattern, session, store};
+use crate::{
+    classify, commands_patterns, exec, help, init, learn, pattern, rewrite, session, store,
+};
 
 pub enum Action {
     Run(Vec<String>),
@@ -18,6 +20,7 @@ pub enum Action {
     Help(Option<String>),
     Init(InitFormat),
     Patterns,
+    Rewrite(String),
 }
 
 /// Parse `--format <value>` from the remaining init args.
@@ -101,6 +104,14 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("help") => Action::Help(args.get(1).cloned()),
         Some("init") => Action::Init(parse_init_format(&args[1..])),
         Some("patterns") => Action::Patterns,
+        Some("rewrite") => {
+            let command: String = args
+                .get(1..)
+                .map(|rest| rest.join(" "))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_default();
+            Action::Rewrite(command)
+        }
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -416,6 +427,25 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
             }
         }
         let _ = std::fs::remove_file(status_path);
+    }
+}
+
+/// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
+/// form on stdout (exit 0) when at least one segment has an oo pattern, or
+/// print nothing and return 1 otherwise. Never executes the command.
+pub fn cmd_rewrite(command: &str) -> i32 {
+    // Same load order as `oo <cmd>` (run_command_args): project patterns,
+    // then user patterns, then builtins — first match wins.
+    let mut all_patterns = load_project_patterns();
+    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
+    all_patterns.extend_from_slice(pattern::builtins());
+
+    match rewrite::rewrite(command, &all_patterns) {
+        Some(rewritten) => {
+            println!("{rewritten}");
+            0
+        }
+        None => 1,
     }
 }
 

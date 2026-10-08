@@ -12,6 +12,7 @@
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in + user) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
 
 ---
 
@@ -374,6 +375,61 @@ Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` he
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
+
+---
+
+## `oo rewrite <command...>`
+
+Print an `oo`-prefixed version of a shell command for agent hooks. It never
+executes the command and never reads from or writes to the output index store.
+This is a reserved subcommand.
+
+### Usage
+
+```bash
+oo rewrite pytest -q
+oo rewrite "cd src && cargo build"
+```
+
+### Behavior
+
+Splits the command into shell segments on `&&`, `||`, and `;` (outside
+quotes). Each segment that matches an `oo` pattern is prefixed with `oo`; all
+other segments are left unchanged. At least one segment must match for the
+command to be rewritten. `VAR=value` environment prefixes are preserved in
+front of `oo`. Segments already starting with `oo` are not wrapped again.
+
+### Exit code contract
+
+| Exit | Condition |
+|------|-----------|
+| 0 | At least one segment matched an `oo` pattern; the rewritten command is printed on stdout |
+| 1 | No segment matched, or the command is empty, or it contains a construct `oo` refuses to rewrite (see below) — nothing is printed |
+
+### Examples
+
+```bash
+$ oo rewrite pytest -q
+oo pytest -q
+
+$ oo rewrite git status && pytest -q
+git status && oo pytest -q
+
+$ oo rewrite git log --stat
+# (no output — no pattern)
+exit 1
+```
+
+### Refused constructs
+
+A command is left unchanged (exit 1, no output) when it contains, outside
+quotes, a pipe (`|`), redirection (`<`/`>`), heredoc (`<<`), command
+substitution (`$()`/backticks), or background `&`. `&&`, `||`, and `;` inside
+quotes are not treated as segment separators.
+
+### Exit codes
+
+See the **Exit code contract** table above (0 or 1).
 
 ---
 
