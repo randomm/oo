@@ -5,6 +5,13 @@
 //! segment matches an oo pattern, exit 1 with no output otherwise. It never
 //! executes the command and never touches the store.
 
+/// The loaded patterns shared by `oo rewrite` and the hook processors: the
+/// canonical set assembled in [`crate::pattern_load`] (project-local, then
+/// user config, then builtins), loaded once per process. The assembly lives
+/// in the leaf `pattern_load` module so this module stays a pure rewriter
+/// with no dependency on the dispatch layer.
+pub(crate) use crate::pattern_load::PATTERNS;
+
 use crate::pattern::{self, Pattern};
 
 /// Maximum command length (bytes) accepted by [`rewrite`]. Realistic shell

@@ -152,6 +152,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
 | [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
+| [`src/hook.rs`](src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
 | [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
 
 ## Key Design Decisions
@@ -190,9 +191,10 @@ These are built-in commands (not shell commands):
 | `forget` | `cmd_forget()` | Clear all indexed outputs for the current project |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
-| `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats) or the pi extension (`--agent pi`) |
+| `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats), the pi extension (`--agent pi`), or the Claude Code `settings.json` hook (`--agent claude-code`) |
 | `version` | Built-in to clap | Print version |
 | `rewrite` | `cmd_rewrite()` | Print `oo`-prefixed form of a command for agent hooks (never executes) |
+| `hook` | `cmd_hook()` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `_learn_bg` | `run_background()` | Internal command for background learning |
 
 Everything else is treated as a shell command to execute.

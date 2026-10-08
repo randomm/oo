@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::LazyLock;
 
 use humansize::{BINARY, format_size};
 use std::io::Write;
@@ -9,7 +8,8 @@ pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, init, init_pi, learn, pattern, rewrite, session, store,
+    classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern,
+    pattern_load, rewrite, session, store,
 };
 
 pub enum Action {
@@ -22,6 +22,7 @@ pub enum Action {
     Init(InitMode),
     Patterns,
     Rewrite(String),
+    Hook(Option<String>),
 }
 
 /// Resolved mode for `oo init`: the legacy `--format` value or the new
@@ -32,6 +33,8 @@ pub enum InitMode {
     Format(InitFormat),
     /// `--agent pi [--global]` — install the pi extension.
     Pi { global: bool },
+    /// `--agent claude-code [--global]` — install the Claude Code hook (issue #172).
+    ClaudeCode { global: bool },
 }
 
 /// Agents supported by `oo init --agent`.
@@ -101,10 +104,7 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     }
     match agent.as_str() {
         "pi" => Ok(InitMode::Pi { global }),
-        // Supported by name, implementation pending (sibling ticket).
-        "claude-code" => Err(format!(
-            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: {supported}"
-        )),
+        "claude-code" => Ok(InitMode::ClaudeCode { global }),
         _ => unreachable!("agent validated against SUPPORTED_AGENTS above"),
     }
 }
@@ -204,6 +204,10 @@ pub fn parse_action(args: &[String]) -> Action {
                 .unwrap_or_default();
             Action::Rewrite(command)
         }
+        // `oo hook claude` — stdin-JSON PreToolUse processor (issue #172).
+        // Must be recognised before the `Run` fall-through, else `hook` would
+        // be treated as a shell command to spawn.
+        Some("hook") => Action::Hook(args.get(1).cloned()),
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -222,7 +226,7 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
     }
 
     // Load patterns (first match wins: project overrides user overrides builtins).
-    let all_patterns = all_patterns();
+    let all_patterns = pattern_load::all_patterns();
 
     // Run command
     let output = match exec::run(args) {
@@ -519,26 +523,11 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// Load all patterns in the canonical precedence order — project-local,
-/// then user config, then builtins — so first-match-wins gives project
-/// patterns priority over user patterns over builtins. Single source of the
-/// ordering for both `oo <cmd>` and `oo rewrite`.
-fn all_patterns() -> Vec<pattern::Pattern> {
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-    all_patterns
-}
-
-/// Loaded patterns for `oo rewrite`: same set and order as `oo <cmd>`
-/// (see [`all_patterns`]). Loaded once per process.
-static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
-
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
 /// print nothing and return 1 otherwise. Never executes the command.
 pub fn cmd_rewrite(command: &str) -> i32 {
-    match rewrite::rewrite(command, &REWRITE_PATTERNS) {
+    match rewrite::rewrite(command, &rewrite::PATTERNS) {
         Some(rewritten) => {
             println!("{rewritten}");
             0
@@ -599,18 +588,47 @@ pub fn cmd_init(mode: InitMode) -> i32 {
                 }
             }
         }
+        InitMode::ClaudeCode { global } => match std::env::current_dir().map_err(Error::from) {
+            Err(e) => {
+                eprintln!("oo: {e}");
+                1
+            }
+            Ok(cwd) => match crate::hook::claude_settings_path(&cwd, *global) {
+                Err(e) => {
+                    eprintln!("oo: {e}");
+                    1
+                }
+                Ok(path) => match crate::hook::merge_oo_hook(&path) {
+                    Ok(_) => {
+                        println!(
+                            "Installed `oo hook claude` PreToolUse hook in {}",
+                            path.display()
+                        );
+                        println!("Uninstall: remove the `oo hook claude` entry from that file.");
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("oo: {e}");
+                        1
+                    }
+                },
+            },
+        },
     }
 }
 
-/// Load project-local patterns from `<git-root>/.oo/patterns/`.
-///
-/// Returns an empty vec when cwd cannot be determined or the directory
-/// does not exist (gracefully handled by `load_user_patterns`).
-pub fn load_project_patterns() -> Vec<pattern::Pattern> {
-    let Ok(cwd) = std::env::current_dir() else {
-        return Vec::new();
-    };
-    pattern::load_user_patterns(&init::project_patterns_dir(&cwd))
+/// Entry point for `oo hook <agent>`: dispatch to the agent-specific stdin
+/// processor. `claude` reads the PreToolUse JSON on stdin and rewrites Bash
+/// commands (issue #172); anything else errors. The claude processor is
+/// fail-open and returns 0.
+pub fn cmd_hook(agent: &str) -> i32 {
+    match agent {
+        "claude" => crate::hook::cmd_hook_claude(),
+        other => {
+            eprintln!("oo: unknown hook agent '{other}'; supported hook agents: claude");
+            1
+        }
+    }
 }
 
 #[cfg(test)]

@@ -125,7 +125,7 @@ fn test_help_includes_help_cmd_in_usage() {
         .stdout(predicate::str::contains("help [cmd]"));
 }
 
-/// The no-args / `oo help` output must list all 7 reserved subcommands,
+/// The no-args / `oo help` output must list all 8 reserved subcommands,
 /// each with a one-line description, plus the tool description line.
 fn assert_full_subcommand_list(
     assertion: assert_cmd::assert::Assert,
@@ -139,6 +139,7 @@ fn assert_full_subcommand_list(
         ("init", "Set up hooks for agent frameworks"),
         ("patterns", "List output compression patterns"),
         ("version", "Show version"),
+        ("hook", "Agent hook processor"),
     ] {
         assertion = assertion.stdout(predicate::str::contains(name));
         assertion = assertion.stdout(predicate::str::contains(description));
@@ -510,17 +511,139 @@ fn test_init_agent_pi_global_extensions_dir_is_final_dir() {
     );
 }
 
-/// `oo init --agent claude-code` is not yet supported — clear error, exit 1.
+// ---------------------------------------------------------------------------
+// oo init --agent claude-code
+// ---------------------------------------------------------------------------
+
+/// `oo init --agent claude-code` in a temp git repo merges the oo hook into
+/// `.claude/settings.json` at the git root and prints the written path. HOME
+/// and OO_CLAUDE_DIR are overridden (defensive) so the child never touches the
+/// real home / claude config.
 #[test]
-fn test_init_agent_claude_code_not_yet_supported() {
+fn test_init_agent_claude_code_creates_settings_json_at_git_root() {
     let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
     oo().args(["init", "--agent", "claude-code"])
         .current_dir(dir.path())
         .env("HOME", dir.path())
+        .env_remove("OO_CLAUDE_DIR")
+        .assert()
+        .success();
+
+    let settings = dir.path().join(".claude").join("settings.json");
+    assert!(
+        settings.exists(),
+        ".claude/settings.json must exist after oo init --agent claude-code"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+    assert!(
+        count_oo_hook_entries(&v) >= 1,
+        "settings.json must register `oo hook claude`"
+    );
+}
+
+/// Count the `oo hook claude` entries under `hooks.PreToolUse` (summed across
+/// all matcher groups) — the shared check for the init-claude-code tests.
+fn count_oo_hook_entries(v: &serde_json::Value) -> usize {
+    v["hooks"]["PreToolUse"]
+        .as_array()
+        .map(|groups| {
+            groups
+                .iter()
+                .filter_map(|g| g["hooks"].as_array())
+                .map(|cmds| {
+                    cmds.iter()
+                        .filter(|c| c["command"] == "oo hook claude")
+                        .count()
+                })
+                .sum::<usize>()
+        })
+        .unwrap_or(0)
+}
+
+/// Re-running `oo init --agent claude-code` is idempotent — exactly one oo
+/// entry remains.
+#[test]
+fn test_init_agent_claude_code_idempotent() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let settings = dir.path().join(".claude").join("settings.json");
+    oo().args(["init", "--agent", "claude-code"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env_remove("OO_CLAUDE_DIR")
+        .assert()
+        .success();
+    let before = std::fs::read_to_string(&settings).unwrap();
+    oo().args(["init", "--agent", "claude-code"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env_remove("OO_CLAUDE_DIR")
+        .assert()
+        .success();
+    let after = std::fs::read_to_string(&settings).unwrap();
+    assert_eq!(before, after, "idempotent re-run must not change the file");
+    let v: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(
+        count_oo_hook_entries(&v),
+        1,
+        "exactly one oo hook entry after re-run"
+    );
+}
+
+/// `oo init --agent claude-code --global` writes under the env-overridden
+/// `OO_CLAUDE_DIR` (the final settings directory), never under the git root.
+#[test]
+fn test_init_agent_claude_code_global_writes_under_override() {
+    let override_dir = TempDir::new().unwrap();
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "claude-code", "--global"])
+        .current_dir(repo.path())
+        .env("HOME", repo.path())
+        .env("OO_CLAUDE_DIR", override_dir.path())
+        .assert()
+        .success();
+
+    let settings = override_dir.path().join("settings.json");
+    assert!(
+        settings.exists(),
+        "global settings.json must land at $OO_CLAUDE_DIR/settings.json"
+    );
+    // The project (git) root must NOT have received the file.
+    let project_settings = repo.path().join(".claude").join("settings.json");
+    assert!(
+        !project_settings.exists(),
+        "global install must not write under the git root"
+    );
+}
+
+/// A malformed existing settings.json is NOT overwritten — the command errors
+/// and the file is left intact.
+#[test]
+fn test_init_agent_claude_code_malformed_existing_errors() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let claude_dir = dir.path().join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    let settings = claude_dir.join("settings.json");
+    let corrupt = "{\"hooks\": {";
+    std::fs::write(&settings, corrupt).unwrap();
+
+    oo().args(["init", "--agent", "claude-code"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env_remove("OO_CLAUDE_DIR")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not yet supported"))
-        .stderr(predicate::str::contains("claude-code"));
+        .stderr(predicate::str::contains("not valid JSON"));
+
+    assert_eq!(
+        std::fs::read_to_string(&settings).unwrap(),
+        corrupt,
+        "malformed settings.json must not be overwritten"
+    );
 }
 
 /// Unknown agent values error naming the supported values.
@@ -534,6 +657,126 @@ fn test_init_agent_unknown_value_errors() {
         .failure()
         .stderr(predicate::str::contains("unknown --agent value 'cursor'"))
         .stderr(predicate::str::contains("pi, claude-code"));
+}
+
+// ---------------------------------------------------------------------------
+// oo hook claude (stdin-JSON PreToolUse processor)
+// ---------------------------------------------------------------------------
+
+/// `oo hook claude` rewrites a Bash command that has an oo pattern, printing
+/// hookSpecificOutput JSON with the rewritten command and exit 0.
+#[test]
+fn test_hook_claude_rewrites_bash_command() {
+    let stdin = "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cargo test --release\"}}";
+    let dir = TempDir::new().unwrap();
+    let out = oo()
+        .args(["hook", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .write_stdin(stdin)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "oo hook claude must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("hook output must be valid JSON: {stdout}");
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+    assert!(
+        v["hookSpecificOutput"]["updatedInput"]["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("oo cargo test")
+    );
+}
+
+/// A Bash command with no matching pattern prints nothing and exits 0.
+#[test]
+fn test_hook_claude_no_rewrite_is_quiet_exit_zero() {
+    let stdin = "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat file.txt\"}}";
+    let dir = TempDir::new().unwrap();
+    let out = oo()
+        .args(["hook", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .write_stdin(stdin)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty(), "no rewrite -> empty stdout");
+}
+
+/// A non-Bash tool prints nothing and exits 0.
+#[test]
+fn test_hook_claude_non_bash_is_quiet() {
+    let stdin = "{\"tool_name\":\"Read\",\"tool_input\":{\"command\":\"cargo test\"}}";
+    let dir = TempDir::new().unwrap();
+    let out = oo()
+        .args(["hook", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .write_stdin(stdin)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+}
+
+/// Invalid / empty stdin prints nothing and exits 0 (fail-open).
+#[test]
+fn test_hook_claude_invalid_json_is_quiet_exit_zero() {
+    for stdin in [r#"{"tool_name":"Bash","#, "", "not json"] {
+        let dir = TempDir::new().unwrap();
+        let out = oo()
+            .args(["hook", "claude"])
+            .current_dir(dir.path())
+            .env("HOME", dir.path())
+            .write_stdin(stdin)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "must exit 0 for stdin {stdin:?}");
+        assert!(
+            out.stdout.is_empty(),
+            "must print nothing for stdin {stdin:?}"
+        );
+    }
+}
+
+/// OO_DISABLE=1 makes the hook a hard pass-through (empty stdout, exit 0).
+#[test]
+fn test_hook_claude_oo_disable_is_passthrough() {
+    let stdin = "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cargo test\"}}";
+    let dir = TempDir::new().unwrap();
+    let out = oo()
+        .args(["hook", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env("OO_DISABLE", "1")
+        .write_stdin(stdin)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty(), "OO_DISABLE=1 must not rewrite");
+}
+
+/// The hook preserves other tool_input fields (description, timeout) in
+/// updatedInput.
+#[test]
+fn test_hook_claude_preserves_tool_input_fields() {
+    let stdin = "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cargo test\",\"description\":\"view history\",\"timeout\":12000}}";
+    let dir = TempDir::new().unwrap();
+    let out = oo()
+        .args(["hook", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .write_stdin(stdin)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let updated = &v["hookSpecificOutput"]["updatedInput"];
+    assert_eq!(updated["description"], "view history");
+    assert_eq!(updated["timeout"], 12000);
 }
 
 /// `--agent pi` combined with `--format` is a mutual-exclusion error
@@ -1556,7 +1799,7 @@ fn test_passthrough_no_savings() {
 // (`-h, --help` / `-V, --version`) and would be vacuous on this surface.
 // ---------------------------------------------------------------------------
 
-/// All 7 reserved subcommand names appear in `oo --help` output with a
+/// All 8 reserved subcommand names appear in `oo --help` output with a
 /// one-line description alongside each. `init` and `patterns` are the two
 /// names missing from the old doc-comment — those assertions are the ones
 /// that would fail on the pre-fix binary.
@@ -1574,6 +1817,7 @@ fn test_clap_help_lists_all_subcommands() {
         .stdout(predicate::str::contains("help ("))
         .stdout(predicate::str::contains("init ("))
         .stdout(predicate::str::contains("patterns ("))
+        .stdout(predicate::str::contains("hook ("))
         .stdout(predicate::str::contains("version ("));
 }
 
@@ -1592,5 +1836,6 @@ fn test_clap_short_help_lists_all_subcommands() {
         .stdout(predicate::str::contains("init ("))
         .stdout(predicate::str::contains("patterns ("))
         .stdout(predicate::str::contains("rewrite ("))
+        .stdout(predicate::str::contains("hook ("))
         .stdout(predicate::str::contains("version ("));
 }

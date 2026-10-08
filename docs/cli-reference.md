@@ -9,7 +9,8 @@
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi [--global]`) |
+| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
+| `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in + user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
@@ -303,7 +304,7 @@ oo init --agent pi --global
 | Agent | Description |
 |-------|-------------|
 | `pi` | Installs a pi (pi-coding-agent) TypeScript extension that rewrites bash tool calls via `oo rewrite` |
-| `claude-code` | Not yet supported — returns a clear error naming supported agents (delivered in a sibling ticket) |
+| `claude-code` | Merges a `oo hook claude` PreToolUse hook entry into `.claude/settings.json` (project) or `~/.claude/settings.json` (`--global`) |
 
 `--agent` and `--format` cannot be combined (the combination errors — see
 above). Unknown agent values, and `--agent` with no value, error naming the
@@ -316,7 +317,14 @@ supported values (`pi`, `claude-code`).
 | project (default) | `<git-root>/.pi/extensions/oo.ts` (cwd when not in a git repo) |
 | global (`--global`) | `$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set (the variable is the final extensions directory — no path suffix is appended); otherwise `~/.pi/agent/extensions/oo.ts`. Never consults the git root |
 
-`OO_PI_EXTENSIONS_DIR` is a trusted path: when set, its value is used as-is — the file is written directly into it, with no sanitisation or additional path components. A set-but-empty `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
+### File locations (`--agent claude-code`)
+
+| Scope | Path |
+|-------|------|
+| project (default) | `<git-root>/.claude/settings.json` (cwd when not in a git repo) |
+| global (`--global`) | `$OO_CLAUDE_DIR/settings.json` when `OO_CLAUDE_DIR` is set (the variable is the final config directory — no path suffix is appended); otherwise `~/.claude/settings.json`. Never consults the git root |
+
+`OO_PI_EXTENSIONS_DIR` and `OO_CLAUDE_DIR` are trusted paths: when set, their values are used as-is — the file is written directly into the named directory, with no sanitisation or additional path components. A set-but-empty variable is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
 
 ### Pi extension behaviour
 
@@ -330,9 +338,13 @@ Install is idempotent: an existing identical file is a no-op ("already installed
 
 ### Behavior
 
-- Creates `.claude/hooks.json` if it doesn't exist (for Claude format), or `.pi/extensions/oo.ts` for `--agent pi`
+- `--agent pi` creates `.pi/extensions/oo.ts` (idempotent, never overwrites a different file)
+- `--agent claude-code` merges a `oo hook claude` PreToolUse entry into `.claude/settings.json` (project) or `~/.claude/settings.json` (`--global`); idempotent, never overwrites a malformed file
+- `--format claude` (default) and plain `oo init` create `.claude/hooks.json` (legacy)
 - Prints a snippet to add to your project's `AGENTS.md` file (format modes)
 - The snippet instructs agents to prefix commands with `oo`
+
+`--format claude` (the legacy `.claude/hooks.json`, which only blocks `--help`/`-h` calls) and `--agent claude-code` (the rewriting hook in `.claude/settings.json`) are **independent installers** — one does not imply the other; install both for full Claude Code coverage. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
 
 ### Output format
 
@@ -429,6 +441,40 @@ The rewritten output preserves the original text byte-for-byte except for
 the inserted `oo ` prefix(es) and canonical separator spacing. Exit 1 also
 covers a pattern file that failed to load, an unquoted newline inside a
 segment, and an env value containing a quote or backslash.
+
+---
+
+## `oo hook claude`
+
+Stdin-JSON processor for Claude Code PreToolUse hooks (installed by `oo init --agent claude-code`). Reads a PreToolUse event as JSON on stdin and, for a Bash tool call whose command has an `oo` rewrite, prints a `hookSpecificOutput` object with the rewritten command on stdout and exits 0. For everything else (no rewrite, non-Bash, invalid/empty JSON, missing fields) it prints nothing and exits 0 — **fail-open**.
+
+### Stdin / stdout contract
+
+**Input (stdin):** `PreToolUse` JSON object
+```json
+{
+  "tool_name": "Bash",
+  "tool_input": { "command": "cargo test", "description": "view history", "timeout": 12000 }
+}
+```
+
+**Output (stdout, when a rewrite applies):**
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecisionReason": "oo auto-rewrite",
+    "updatedInput": { "command": "oo cargo test", "description": "view history", "timeout": 12000 }
+  }
+}
+```
+
+**Output (no rewrite / non-Bash / invalid input):** empty (no output, exit 0).
+
+- Only `Bash` tool calls are rewritten; other tools pass through unchanged.
+- All `tool_input` fields are preserved in `updatedInput` (only `command` is replaced); JSON escaping is handled by `serde_json`.
+- Compound commands are rewritten per segment and pipes are left alone (per `oo rewrite` semantics).
+- `OO_DISABLE=1` disables only the hook's rewriting: the hook passes commands through untouched (no rewrite, no output, exit 0). It does **not** disable the `oo` runner itself.
 
 ---
 
