@@ -79,6 +79,10 @@ pub mod init_pi;
 pub mod learn;
 /// Pattern matching and output compression.
 pub mod pattern;
+/// Canonical pattern-set assembly (project/user/builtins precedence) shared
+/// by the dispatch layer and the rewrite/hook feature modules.
+#[doc(hidden)]
+pub mod pattern_load;
 /// Session tracking and management.
 pub mod session;
 /// Storage backends for indexed output.
@@ -115,7 +119,7 @@ pub use store::{SessionMeta, Store};
 pub use commands::{
     Action, InitFormat, InitMode, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_hook,
     cmd_init, cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_rewrite, cmd_run,
-    load_project_patterns, parse_action, render_classification, try_index, write_learn_status,
+    parse_action, render_classification, try_index, write_learn_status,
 };
 
 // Internal type re-exported for learn module

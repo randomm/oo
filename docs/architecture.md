@@ -152,7 +152,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
 | [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
-| [`src/hook.rs`](../src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](../src/hook_tests.rs)) | `cmd_hook_claude()`, `install_settings_json()` |
+| [`src/hook.rs`](../src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](../src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
 | [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
 
 ## Key Design Decisions

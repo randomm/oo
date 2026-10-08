@@ -5,7 +5,12 @@
 //! segment matches an oo pattern, exit 1 with no output otherwise. It never
 //! executes the command and never touches the store.
 
-use std::sync::LazyLock;
+/// The loaded patterns shared by `oo rewrite` and the hook processors: the
+/// canonical set assembled in [`crate::pattern_load`] (project-local, then
+/// user config, then builtins), loaded once per process. The assembly lives
+/// in the leaf `pattern_load` module so this module stays a pure rewriter
+/// with no dependency on the dispatch layer.
+pub(crate) use crate::pattern_load::REWRITE_PATTERNS;
 
 use crate::pattern::{self, Pattern};
 
@@ -13,23 +18,6 @@ use crate::pattern::{self, Pattern};
 /// commands stay well below this; the bound caps the worst-case regex work
 /// done over attacker-influenced input.
 const MAX_REWRITE_INPUT_BYTES: usize = 16 * 1024;
-
-/// Loaded patterns shared by `oo rewrite` and the hook processors: same set
-/// and precedence order as `oo <cmd>` — project-local, then user config,
-/// then builtins (see [`crate::commands::load_project_patterns`]). Loaded
-/// once per process. Lives here (not in `commands`) so the dispatch layer
-/// and the feature modules all depend in one direction.
-pub(crate) static REWRITE_PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
-
-/// Load all patterns in the canonical precedence order — project-local,
-/// then user config, then builtins — so first-match-wins gives project
-/// patterns priority over user patterns over builtins.
-pub(crate) fn all_patterns() -> Vec<Pattern> {
-    let mut all_patterns = crate::commands::load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&crate::learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-    all_patterns
-}
 
 /// Rewrite `command` if at least one of its shell segments has an oo pattern.
 ///

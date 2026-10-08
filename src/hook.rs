@@ -22,55 +22,49 @@ pub const HOOK_COMMAND: &str = "oo hook claude";
 /// Resolve the Claude Code `settings.json` path for the given scope.
 ///
 /// - `global`: `$OO_CLAUDE_DIR/settings.json` when `OO_CLAUDE_DIR` is set
-///   (trusted path, used as-is — no suffix appended); a set-but-empty value,
-///   or an unset/empty `HOME`, is an error (exit 1). Never consults the git
-///   root.
+///   (trusted path, used as-is — no suffix appended). A set-but-empty value,
+///   or an unset/empty `HOME`, is an error — the caller prints it and exits 1
+///   (mirrors `init_pi::target_dir`, which returns `Err` for the identical
+///   conditions). Never consults the git root.
 /// - project: `<git-root>/.claude/settings.json` (`find_root` walks up to
-///   `.git` and falls back to cwd outside a repo).
-pub fn claude_settings_path(cwd: &std::path::Path, global: bool) -> PathBuf {
+///   `.git` and falls back to cwd outside a repo). Always `Ok`.
+pub fn claude_settings_path(cwd: &std::path::Path, global: bool) -> Result<PathBuf, Error> {
     if global {
         if let Some(dir) = std::env::var_os("OO_CLAUDE_DIR") {
             if dir.is_empty() {
-                eprintln!(
-                    "oo: OO_CLAUDE_DIR is set but empty; expected the Claude Code config directory"
-                );
-                std::process::exit(1);
+                return Err(Error::Init(
+                    "OO_CLAUDE_DIR is set but empty; expected the Claude Code config directory"
+                        .into(),
+                ));
             }
-            return PathBuf::from(dir).join("settings.json");
+            return Ok(PathBuf::from(dir).join("settings.json"));
         }
         match std::env::var_os("HOME") {
             Some(home) if !home.as_os_str().is_empty() => {
-                PathBuf::from(home).join(".claude").join("settings.json")
+                Ok(PathBuf::from(home).join(".claude").join("settings.json"))
             }
-            _ => {
-                eprintln!(
-                    "oo: cannot determine the global Claude Code config directory: $OO_CLAUDE_DIR is not set and $HOME is unset or empty"
-                );
-                std::process::exit(1)
-            }
+            _ => Err(Error::Init(
+                "cannot determine the global Claude Code config directory: \
+                 $OO_CLAUDE_DIR is not set and $HOME is unset or empty"
+                    .into(),
+            )),
         }
     } else {
-        find_root(cwd).join(".claude").join("settings.json")
+        Ok(find_root(cwd).join(".claude").join("settings.json"))
     }
-}
-
-/// Install a Claude Code PreToolUse hook into the given settings.json.
-///
-/// Merges the `oo hook claude` entry into `hooks.PreToolUse` without
-/// clobbering other keys or hooks, creates the file when absent, and is
-/// idempotent (exactly one oo entry). A malformed existing file is NOT
-/// overwritten — the error is reported and the file left intact.
-pub fn install_settings_json(settings_path: &std::path::Path) -> Result<(), Error> {
-    merge_oo_hook(settings_path).map(|_| ())
 }
 
 /// Entry point for `oo hook claude`: read the PreToolUse JSON from stdin and
 /// print the `hookSpecificOutput` JSON when a Bash command rewrites, else
 /// print nothing. Always returns 0 (fail-open); see [`handle`].
 pub fn cmd_hook_claude() -> i32 {
-    let mut buf = String::new();
-    let _ = std::io::stdin().read_to_string(&mut buf);
-    if let Some(out) = handle(Ok(buf)) {
+    // Read the raw bytes and decode lossily: a mid-stream UTF-8 error still
+    // yields the complete buffer (with replacement chars) rather than a
+    // partial one, so the input is always whole and `Ok` stays honest.
+    let mut buf = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut buf);
+    let text = String::from_utf8_lossy(&buf).to_string();
+    if let Some(out) = handle(Ok(text)) {
         println!("{out}");
     }
     0
@@ -130,7 +124,7 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
 /// Merge the `oo hook claude` entry into `hooks.PreToolUse` in
 /// `settings_path`, writing the result back to the same path (plain write —
 /// the caller never relies on the write being crash-atomic) and returning the
-/// updated JSON string. See [`install_settings_json`].
+/// updated JSON string.
 ///
 /// Rules:
 /// - Absent file → create with the single oo entry.
@@ -140,71 +134,11 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
 ///   key and hook is preserved.
 /// - Malformed existing JSON → error (file NOT overwritten).
 pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
-    let existing = match std::fs::read_to_string(settings_path) {
-        Ok(s) => Some(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
-            return Err(Error::Init(format!(
-                "cannot read {}: {e}",
-                settings_path.display()
-            )));
-        }
-    };
-
-    let mut doc = match &existing {
-        None => serde_json::Value::Object(serde_json::Map::new()),
-        Some(s) => serde_json::from_str::<serde_json::Value>(s).map_err(|e| {
-            Error::Init(format!(
-                "existing {} is not valid JSON — refusing to overwrite it: {e}",
-                settings_path.display()
-            ))
-        })?,
-    };
-
-    if !doc.is_object() {
-        return Err(Error::Init(format!(
-            "existing {} is not a JSON object — refusing to overwrite it",
-            settings_path.display()
-        )));
-    }
-
-    // `hooks` must be absent or an object — a garbage-typed `hooks` key (e.g.
-    // a string) is refused rather than silently clobbered, mirroring the
-    // `PreToolUse` non-array refusal below.
-    let doc_obj = doc.as_object_mut().unwrap();
-    match doc_obj.get("hooks") {
-        None => {
-            doc_obj.insert(
-                "hooks".to_string(),
-                serde_json::Value::Object(serde_json::Map::new()),
-            );
-        }
-        Some(h) if h.is_object() => {}
-        Some(_) => {
-            return Err(Error::Init(format!(
-                "existing {} has a non-object hooks key — refusing to modify it",
-                settings_path.display()
-            )));
-        }
-    }
-    let hooks_obj = doc_obj
-        .get_mut("hooks")
-        .and_then(|h| h.as_object_mut())
-        .expect("hooks is an object");
+    let mut doc = load_or_create(settings_path)?;
+    let pretooluse = pretooluse_array(settings_path, &mut doc)?;
 
     let command_entry = serde_json::json!({"type": "command", "command": HOOK_COMMAND});
     let new_group = serde_json::json!({"matcher": "Bash", "hooks": [command_entry.clone()]});
-
-    // Find the PreToolUse array, creating it if absent.
-    let pretooluse = hooks_obj
-        .entry("PreToolUse".to_string())
-        .or_insert_with(|| serde_json::Value::Array(vec![]));
-    let Some(pretooluse) = pretooluse.as_array_mut() else {
-        return Err(Error::Init(format!(
-            "existing {} has a non-array hooks.PreToolUse — refusing to modify it",
-            settings_path.display()
-        )));
-    };
 
     // Idempotency: any group already carrying the exact oo command is a no-op.
     let already_present = pretooluse.iter().any(|group| {
@@ -233,18 +167,106 @@ pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
     let serialized = serde_json::to_string_pretty(&doc)
         .map_err(|e| Error::Init(format!("JSON serialize failed: {e}")))?;
 
-    // Plain write, matching the pi installer (`init_pi`); a malformed
-    // existing file was already refused above, and the caller never relies
-    // on the write being crash-atomic. `create_dir_all` first: plain
-    // `fs::write` cannot create the parent, and both sibling installers do.
+    // Write atomically: temp file in the same directory, then rename over
+    // the target. A mid-write failure (disk full, power loss) leaves either
+    // the old file or the complete new file — never a truncated target.
     if let Some(parent) = settings_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| Error::Init(format!("cannot create {}: {e}", parent.display())))?;
     }
-    std::fs::write(settings_path, &serialized)
-        .map_err(|e| Error::Init(format!("cannot write {}: {e}", settings_path.display())))?;
+    let tmp_path = settings_path.with_file_name(format!(
+        "{}.tmp",
+        settings_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("settings.json")
+    ));
+    std::fs::write(&tmp_path, &serialized)
+        .map_err(|e| Error::Init(format!("cannot write {}: {e}", tmp_path.display())))?;
+    std::fs::rename(&tmp_path, settings_path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        Error::Init(format!(
+            "cannot rename {} to {}: {e}",
+            tmp_path.display(),
+            settings_path.display()
+        ))
+    })?;
 
     Ok(serialized)
+}
+
+/// Read the existing settings file (or create an empty object when absent),
+/// parsing and validating that any existing content is a JSON object.
+fn load_or_create(settings_path: &std::path::Path) -> Result<serde_json::Value, Error> {
+    let existing = match std::fs::read_to_string(settings_path) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(Error::Init(format!(
+                "cannot read {}: {e}",
+                settings_path.display()
+            )));
+        }
+    };
+
+    let doc = match &existing {
+        None => serde_json::Value::Object(serde_json::Map::new()),
+        Some(s) => serde_json::from_str::<serde_json::Value>(s).map_err(|e| {
+            Error::Init(format!(
+                "existing {} is not valid JSON — refusing to overwrite it: {e}",
+                settings_path.display()
+            ))
+        })?,
+    };
+
+    if !doc.is_object() {
+        return Err(Error::Init(format!(
+            "existing {} is not a JSON object — refusing to overwrite it",
+            settings_path.display()
+        )));
+    }
+    Ok(doc)
+}
+
+/// Validate and locate the mutable `hooks.PreToolUse` array, creating the
+/// `hooks` object / `PreToolUse` array when absent. A garbage-typed `hooks`
+/// key (e.g. a string) or a non-array `PreToolUse` is refused rather than
+/// silently clobbered.
+fn pretooluse_array<'a>(
+    settings_path: &std::path::Path,
+    doc: &'a mut serde_json::Value,
+) -> Result<&'a mut Vec<serde_json::Value>, Error> {
+    let doc_obj = doc.as_object_mut().unwrap();
+    match doc_obj.get("hooks") {
+        None => {
+            doc_obj.insert(
+                "hooks".to_string(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
+        }
+        Some(h) if h.is_object() => {}
+        Some(_) => {
+            return Err(Error::Init(format!(
+                "existing {} has a non-object hooks key — refusing to modify it",
+                settings_path.display()
+            )));
+        }
+    }
+    let hooks_obj = doc_obj
+        .get_mut("hooks")
+        .and_then(|h| h.as_object_mut())
+        .expect("hooks is an object");
+
+    let pretooluse = hooks_obj
+        .entry("PreToolUse".to_string())
+        .or_insert_with(|| serde_json::Value::Array(vec![]));
+    let Some(pretooluse) = pretooluse.as_array_mut() else {
+        return Err(Error::Init(format!(
+            "existing {} has a non-array hooks.PreToolUse — refusing to modify it",
+            settings_path.display()
+        )));
+    };
+    Ok(pretooluse)
 }
 
 #[cfg(test)]

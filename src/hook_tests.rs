@@ -96,6 +96,52 @@ mod tests {
     }
 
     #[test]
+    fn handle_json_escapes_quotes_backslashes_and_newlines_in_command() {
+        // The spec's edge-case list calls this a coverage gap: a command
+        // containing embedded quotes, backslashes, or newlines must round-trip
+        // through serde_json so the hookSpecificOutput is valid, parseable JSON
+        // with the exact original command recovered from updatedInput.command.
+        //
+        // We use serde_json to build the input so the command string is
+        // correctly JSON-escaped. The command contains a double-quote and a
+        // backslash — both must be escaped in the JSON output.
+        let cmd = "cargo build -- \"a\\nb\"";
+        let input_obj = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": cmd }
+        });
+        let json = input_obj.to_string();
+        let v_in: serde_json::Value =
+            serde_json::from_str(&json).expect("input JSON must be valid");
+        assert_eq!(
+            v_in["tool_input"]["command"].as_str().unwrap(),
+            cmd,
+            "input command must round-trip"
+        );
+        let out = handle(Ok(json)).expect("must rewrite");
+        // Must be valid, parseable JSON.
+        let v: serde_json::Value =
+            serde_json::from_str(&out).expect("hook output must be valid JSON");
+        // The rewritten command must be `oo ` prepended, with the original
+        // quotes/backslashes preserved byte-for-byte.
+        let expected = format!("oo {cmd}");
+        assert_eq!(
+            v["hookSpecificOutput"]["updatedInput"]["command"], expected,
+            "updatedInput.command must carry the exact original command with oo prefix"
+        );
+        // The raw JSON string must contain escaped sequences for the special
+        // characters (serde_json escapes " -> \", \\ -> \\\\).
+        assert!(
+            out.contains("\\\""),
+            "raw JSON output must escape embedded double-quotes, got: {out}"
+        );
+        assert!(
+            out.contains("\\\\"),
+            "raw JSON output must escape embedded backslashes, got: {out}"
+        );
+    }
+
+    #[test]
     fn handle_unreadable_stdin_returns_none() {
         let err: Result<String, std::io::Error> =
             Err(std::io::Error::new(std::io::ErrorKind::Other, "boom"));
@@ -119,7 +165,7 @@ mod tests {
         let sub = dir.path().join("a").join("b");
         std::fs::create_dir_all(&sub).unwrap();
         assert_eq!(
-            claude_settings_path(&sub, false),
+            claude_settings_path(&sub, false).expect("project path must be Ok"),
             dir.path().join(".claude").join("settings.json")
         );
     }
@@ -132,10 +178,41 @@ mod tests {
             std::env::set_var("OO_CLAUDE_DIR", override_dir.path());
         }
         assert_eq!(
-            claude_settings_path(std::path::Path::new("/tmp"), true),
+            claude_settings_path(std::path::Path::new("/tmp"), true)
+                .expect("override path must be Ok"),
             override_dir.path().join("settings.json")
         );
         unsafe { std::env::remove_var("OO_CLAUDE_DIR") };
+    }
+
+    #[test]
+    fn settings_path_global_empty_override_is_error() {
+        let _guard = env_guard();
+        unsafe {
+            std::env::set_var("OO_CLAUDE_DIR", "");
+        }
+        let err = claude_settings_path(std::path::Path::new("/tmp"), true)
+            .expect_err("empty OO_CLAUDE_DIR must error");
+        assert!(
+            format!("{err:?}").contains("OO_CLAUDE_DIR is set but empty"),
+            "message: {err:?}"
+        );
+        unsafe { std::env::remove_var("OO_CLAUDE_DIR") };
+    }
+
+    #[test]
+    fn settings_path_global_without_home_or_override_is_error() {
+        let _guard = env_guard();
+        unsafe {
+            std::env::remove_var("OO_CLAUDE_DIR");
+            std::env::remove_var("HOME");
+        }
+        let err = claude_settings_path(std::path::Path::new("/tmp"), true)
+            .expect_err("missing HOME must error");
+        assert!(
+            format!("{err:?}").contains("$HOME is unset or empty"),
+            "message: {err:?}"
+        );
     }
 
     // -------------------------------------------------------------------

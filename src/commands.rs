@@ -8,8 +8,8 @@ pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern, rewrite,
-    session, store,
+    classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern,
+    pattern_load, rewrite, session, store,
 };
 
 pub enum Action {
@@ -226,7 +226,7 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
     }
 
     // Load patterns (first match wins: project overrides user overrides builtins).
-    let all_patterns = rewrite::all_patterns();
+    let all_patterns = pattern_load::all_patterns();
 
     // Run command
     let output = match exec::run(args) {
@@ -593,16 +593,26 @@ pub fn cmd_init(mode: InitMode) -> i32 {
                 eprintln!("oo: {e}");
                 1
             }
-            Ok(cwd) => {
-                let path = crate::hook::claude_settings_path(&cwd, *global);
-                match crate::hook::install_settings_json(&path) {
-                    Ok(()) => 0,
+            Ok(cwd) => match crate::hook::claude_settings_path(&cwd, *global) {
+                Err(e) => {
+                    eprintln!("oo: {e}");
+                    1
+                }
+                Ok(path) => match crate::hook::merge_oo_hook(&path) {
+                    Ok(_) => {
+                        println!(
+                            "Installed `oo hook claude` PreToolUse hook in {}",
+                            path.display()
+                        );
+                        println!("Uninstall: remove the `oo hook claude` entry from that file.");
+                        0
+                    }
                     Err(e) => {
                         eprintln!("oo: {e}");
                         1
                     }
-                }
-            }
+                },
+            },
         },
     }
 }
@@ -619,17 +629,6 @@ pub fn cmd_hook(agent: &str) -> i32 {
             1
         }
     }
-}
-
-/// Load project-local patterns from `<git-root>/.oo/patterns/`.
-///
-/// Returns an empty vec when cwd cannot be determined or the directory
-/// does not exist (gracefully handled by `load_user_patterns`).
-pub fn load_project_patterns() -> Vec<pattern::Pattern> {
-    let Ok(cwd) = std::env::current_dir() else {
-        return Vec::new();
-    };
-    pattern::load_user_patterns(&init::project_patterns_dir(&cwd))
 }
 
 #[cfg(test)]
