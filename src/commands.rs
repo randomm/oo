@@ -39,25 +39,36 @@ pub const SUPPORTED_AGENTS: &[&str] = &["pi", "claude-code"];
 
 /// Parse the trailing args of `oo init` into an [`InitMode`].
 ///
-/// `--agent` takes precedence over `--format` (an explicit `--agent` is the
-/// most specific intent); the combination is deterministic and covered by
-/// tests. `--agent pi` installs the pi extension, with `--global` writing to
-/// the user-level extensions directory. `--agent claude-code` is not yet
-/// implemented and errors (a sibling ticket ships it). Unknown agent values
-/// error naming the supported values.
+/// `--agent` and `--format` are mutually exclusive (issue #171, operator
+/// decision 1): passing both is a parse-time error before anything is
+/// written. `--agent pi` installs the pi extension, with `--global` writing
+/// to the user-level extensions directory. `--agent claude-code` is not yet
+/// implemented and errors (a sibling ticket ships it). Unknown or missing
+/// agent values error naming the supported values. `--agent` alone selects
+/// the agent installer; `--format` alone and plain `oo init` behave exactly
+/// as before.
 fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     let mut agent: Option<&str> = None;
+    let mut agent_seen = false;
+    let mut has_format = false;
     let mut global = false;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--agent" => agent = iter.next().map(|s| s.as_str()),
+            "--agent" => {
+                agent_seen = true;
+                agent = iter.next().map(|s| s.as_str());
+            }
             "--global" => global = true,
             "--format" => {
+                has_format = true;
                 let _ = iter.next(); // value consumed by parse_init_format below
             }
             _ => {}
         }
+    }
+    if agent_seen && has_format {
+        return Err("--agent and --format cannot be used together".to_string());
     }
     let Some(agent) = agent else {
         return Ok(InitMode::Format(parse_init_format(args)));
@@ -69,8 +80,7 @@ fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
                 .to_string(),
         ),
         other => Err(format!(
-            "unknown --agent value '{}'; supported agents: pi, claude-code",
-            other
+            "unknown --agent value '{other}'; supported agents: pi, claude-code"
         )),
     }
 }

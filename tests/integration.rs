@@ -496,6 +496,36 @@ fn test_init_agent_unknown_value_errors() {
         .stderr(predicate::str::contains("pi, claude-code"));
 }
 
+/// `--agent pi` combined with `--format` is a mutual-exclusion error
+/// (issue #171, operator decision 1): stderr carries the exact message, exit
+/// is non-zero, and NOTHING is written — neither the pi extension nor the
+/// Claude hooks file.
+#[test]
+fn test_init_agent_and_format_is_error_and_writes_nothing() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "pi", "--format", "claude"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env_remove("OO_PI_EXTENSIONS_DIR")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--agent and --format cannot be used together",
+        ));
+
+    let pi_ext = dir.path().join(".pi").join("extensions").join("oo.ts");
+    let claude_hooks = dir.path().join(".claude").join("hooks.json");
+    assert!(
+        !pi_ext.exists(),
+        "--agent path must not be written on the error"
+    );
+    assert!(
+        !claude_hooks.exists(),
+        "--format path must not be written on the error"
+    );
+}
+
 /// Backward-compat: plain `oo init` still writes `.claude/hooks.json`
 /// byte-identical to the embedded constant, with a temp HOME (defensive).
 #[test]

@@ -9,7 +9,7 @@
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
+| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi [--global]`) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in + user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
@@ -276,6 +276,10 @@ oo help docker
 ## `oo init [--format <format>] [--agent <agent>] [--global]`
 
 Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
+`--agent` and `--format` are mutually exclusive — passing both is an error
+(`oo init: --agent and --format cannot be used together`, exit 1, nothing
+written). `--agent` alone selects the agent installer; `--format` alone and
+plain `oo init` behave exactly as before.
 
 ### Usage
 
@@ -301,8 +305,9 @@ oo init --agent pi --global
 | `pi` | Installs a pi (pi-coding-agent) TypeScript extension that rewrites bash tool calls via `oo rewrite` |
 | `claude-code` | Not yet supported — returns a clear error naming supported agents (delivered in a sibling ticket) |
 
-`--agent` takes precedence over `--format` when both are given. Unknown agent
-values error naming the supported values (`pi`, `claude-code`).
+`--agent` and `--format` cannot be combined (the combination errors — see
+above). Unknown agent values, and `--agent` with no value, error naming the
+supported values (`pi`, `claude-code`).
 
 ### File locations (`--agent pi`)
 

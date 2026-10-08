@@ -1,6 +1,5 @@
 use super::*;
 use crate::classify::Classification;
-use crate::commands::InitMode;
 
 fn s(s: &str) -> String {
     s.to_string()
@@ -336,10 +335,11 @@ fn test_parse_action_init_agent_pi_global_first() {
     ));
 }
 
-/// `--agent` takes precedence over `--format` (deterministic precedence,
-/// issue #171): an explicit agent wins over the legacy format flag.
+/// `--agent` and `--format` are mutually exclusive (issue #171, operator
+/// decision 1): passing both is a parse-time error — it names the conflict
+/// and nothing is written (the error is produced before any init work).
 #[test]
-fn test_parse_action_init_agent_wins_over_format() {
+fn test_parse_action_init_agent_and_format_mutually_exclusive() {
     let args = vec![
         s("init"),
         s("--agent"),
@@ -347,10 +347,13 @@ fn test_parse_action_init_agent_wins_over_format() {
         s("--format"),
         s("generic"),
     ];
-    assert!(matches!(
-        parse_action(&args),
-        Action::Init(InitMode::Pi { global: false })
-    ));
+    let err = parse_init_mode(&args[1..]).expect_err("combining --agent and --format must error");
+    assert_eq!(err, "--agent and --format cannot be used together");
+
+    // Flag order must not matter.
+    let args = vec![s("init"), s("--format"), s("claude"), s("--agent"), s("pi")];
+    let err = parse_init_mode(&args[1..]).expect_err("order must not matter");
+    assert_eq!(err, "--agent and --format cannot be used together");
 }
 
 #[test]
