@@ -291,6 +291,19 @@ fn test_delete_project_removes_all_sessions_and_null_metadata() {
             .map(|r| r.content.clone())
             .collect::<Vec<_>>()
     );
+
+    // The FTS5 shadow table must also be empty — a stale shadow row would
+    // keep the deleted content matching even though the `entries` row is
+    // gone. Query it directly to close the gap between the entries_ad
+    // trigger claim and what the row-level assertions above prove.
+    let shadow_count: i64 = store
+        .conn
+        .query_row("SELECT count(*) FROM entries_fts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        shadow_count, 0,
+        "entries_fts shadow table must be empty after delete_project"
+    );
 }
 
 #[test]

@@ -120,7 +120,55 @@ pub struct SqliteStore {
     conn: Connection,
 }
 
+/// Test-only hook: guard that points the store at an isolated data dir for
+/// the duration of one test, without mutating the process-wide `OO_DATA_DIR`
+/// environment variable (which is shared across the parallel test threads of
+/// one test binary and would leak into other tests' store opens).
+///
+/// Uses a `thread_local` so each test thread gets its own isolation without
+/// any shared lock — `db_path()` reads the thread-local on every call, so
+/// there is no re-entrant lock risk.
+#[cfg(test)]
+pub(crate) struct TestDataDirGuard;
+
+#[cfg(test)]
+impl Drop for TestDataDirGuard {
+    fn drop(&mut self) {
+        // Reset the thread-local so the isolation never leaks beyond this test.
+        test_data_dir_with(|slot| *slot = None);
+    }
+}
+
+#[cfg(test)]
+fn test_data_dir_with<F: FnOnce(&mut Option<PathBuf>)>(f: F) {
+    TEST_DATA_DIR.with(|cell| f(&mut cell.borrow_mut()))
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: std::cell::RefCell<Option<PathBuf>> = std::cell::RefCell::new(None);
+}
+
+/// Point the store at `dir` (holding the guard) for the duration of the test.
+/// Dropping the returned guard resets the thread-local to `None`.
+#[cfg(test)]
+pub(crate) fn set_test_data_dir(dir: &std::path::Path) -> TestDataDirGuard {
+    test_data_dir_with(|slot| *slot = Some(dir.to_path_buf()));
+    TestDataDirGuard
+}
+
 fn db_path() -> PathBuf {
+    // Test-only hook (set by a `TestDataDirGuard` for the duration of one
+    // test). It takes precedence so a test's isolation cannot be clobbered
+    // by a stale `OO_DATA_DIR`.
+    #[cfg(test)]
+    if let Some(dir) = {
+        let mut result = None;
+        test_data_dir_with(|slot| result = slot.clone());
+        result
+    } {
+        return dir.join("oo.db");
+    }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
     if let Some(data_dir) = std::env::var_os("OO_DATA_DIR") {
         return PathBuf::from(data_dir).join("oo.db");
@@ -324,6 +372,10 @@ impl Store for SqliteStore {
         // rows with NULL or unparseable metadata — so it removes exactly the
         // set `search` can return. The FTS5 shadow table is kept in sync by
         // the entries_ad trigger, so a plain DELETE suffices.
+        //
+        // Note: a trigger failure on the FTS5 shadow table is not surfaced
+        // through the returned row count — it is a rusqlite::Error, which is
+        // propagated, but a row-count check would not detect it.
         let count = self
             .conn
             .execute(
@@ -442,16 +494,29 @@ impl Store for VipuneStore {
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
         // Project-scoped delete: drop every entry for this project regardless
         // of metadata, so it removes exactly what `search` can return.
-        let entries = self
-            .store
-            .list(project_id, 10_000)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        //
+        // The vipune API has no bulk-delete, so we enumerate via `list` and
+        // delete one-by-one. Because `list` is capped at 10 000 entries per
+        // call, we loop until `list` returns a partial page (fewer than the
+        // limit) to guarantee every entry is deleted, not just the first
+        // 10 000.
+        const PAGE: usize = 10_000;
         let mut count = 0;
-        for entry in entries {
-            self.store
-                .delete(&entry.id)
+        loop {
+            let entries = self
+                .store
+                .list(project_id, PAGE)
                 .map_err(|e| Error::Store(e.to_string()))?;
-            count += 1;
+            for entry in &entries {
+                self.store
+                    .delete(&entry.id)
+                    .map_err(|e| Error::Store(e.to_string()))?;
+            }
+            count += entries.len();
+            // A short page means we've drained the project; stop.
+            if entries.len() < PAGE {
+                break;
+            }
         }
         Ok(count)
     }
