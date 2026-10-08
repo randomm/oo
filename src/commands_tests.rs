@@ -442,7 +442,7 @@ fn test_try_index_no_panic() {
 }
 
 #[test]
-fn test_cmd_forget_does_not_panic() {
+fn test_cmd_forget_returns_valid_exit_code() {
     // Verifies cmd_forget does not panic and returns a valid exit code.
     // OO_DATA_DIR isolates the store so the project-scoped delete (issue
     // #168) never wipes the developer's real index.

@@ -120,53 +120,18 @@ pub struct SqliteStore {
     conn: Connection,
 }
 
-/// Test-only hook: guard that points the store at an isolated data dir for
-/// the duration of one test, without mutating the process-wide `OO_DATA_DIR`
-/// environment variable (which is shared across the parallel test threads of
-/// one test binary and would leak into other tests' store opens).
-///
-/// Uses a `thread_local` so each test thread gets its own isolation without
-/// any shared lock — `db_path()` reads the thread-local on every call, so
-/// there is no re-entrant lock risk.
 #[cfg(test)]
-pub(crate) struct TestDataDirGuard;
-
+#[path = "store_test_support.rs"]
+mod store_test_support;
 #[cfg(test)]
-impl Drop for TestDataDirGuard {
-    fn drop(&mut self) {
-        // Reset the thread-local so the isolation never leaks beyond this test.
-        test_data_dir_with(|slot| *slot = None);
-    }
-}
-
-#[cfg(test)]
-fn test_data_dir_with<F: FnOnce(&mut Option<PathBuf>)>(f: F) {
-    TEST_DATA_DIR.with(|cell| f(&mut cell.borrow_mut()))
-}
-
-#[cfg(test)]
-thread_local! {
-    static TEST_DATA_DIR: std::cell::RefCell<Option<PathBuf>> = std::cell::RefCell::new(None);
-}
-
-/// Point the store at `dir` (holding the guard) for the duration of the test.
-/// Dropping the returned guard resets the thread-local to `None`.
-#[cfg(test)]
-pub(crate) fn set_test_data_dir(dir: &std::path::Path) -> TestDataDirGuard {
-    test_data_dir_with(|slot| *slot = Some(dir.to_path_buf()));
-    TestDataDirGuard
-}
+pub(crate) use store_test_support::{TestDataDirGuard, set_test_data_dir};
 
 fn db_path() -> PathBuf {
     // Test-only hook (set by a `TestDataDirGuard` for the duration of one
     // test). It takes precedence so a test's isolation cannot be clobbered
     // by a stale `OO_DATA_DIR`.
     #[cfg(test)]
-    if let Some(dir) = {
-        let mut result = None;
-        test_data_dir_with(|slot| result = slot.clone());
-        result
-    } {
+    if let Some(dir) = store_test_support::test_data_dir() {
         return dir.join("oo.db");
     }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
@@ -424,123 +389,11 @@ impl Store for SqliteStore {
 // VipuneStore — optional backend with semantic search
 // ---------------------------------------------------------------------------
 
-/// Vipune-backed store with semantic search capabilities.
-///
-/// Uses Vipune's cross-session memory with semantic embedding search.
-/// Available behind the `vipune-store` feature flag.
 #[cfg(feature = "vipune-store")]
-pub struct VipuneStore {
-    store: vipune::MemoryStore,
-}
-
+#[path = "store_vipune.rs"]
+mod store_vipune;
 #[cfg(feature = "vipune-store")]
-impl VipuneStore {
-    /// Open the Vipune store with default configuration.
-    ///
-    /// Loads Vipune configuration from its usual location and initializes
-    /// the memory store with semantic search.
-    pub fn open() -> Result<Self, Error> {
-        let config = vipune::Config::load().map_err(|e| Error::Store(e.to_string()))?;
-        let store =
-            vipune::MemoryStore::new(&config.database_path, &config.embedding_model, config)
-                .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(Self { store })
-    }
-}
-
-#[cfg(feature = "vipune-store")]
-impl Store for VipuneStore {
-    fn index(
-        &mut self,
-        project_id: &str,
-        content: &str,
-        meta: &SessionMeta,
-    ) -> Result<String, Error> {
-        let meta_json = serde_json::to_string(meta).map_err(|e| Error::Store(e.to_string()))?;
-        match self
-            .store
-            .add_with_conflict(project_id, content, Some(&meta_json), true)
-        {
-            Ok(vipune::AddResult::Added { id }) => Ok(id),
-            Ok(vipune::AddResult::Conflicts { .. }) => Ok(String::new()),
-            Err(e) => Err(Error::Store(e.to_string())),
-        }
-    }
-
-    fn search(
-        &mut self,
-        project_id: &str,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<SearchResult>, Error> {
-        let memories = self
-            .store
-            .search_hybrid(project_id, query, limit, 0.3)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(memories
-            .into_iter()
-            .map(|m| SearchResult {
-                id: m.id,
-                meta: m.metadata.as_deref().and_then(parse_meta),
-                content: m.content,
-                similarity: m.similarity,
-                // VipuneStore has no FTS5 — callers fall back to a bounded
-                // client-side prefix of `content`.
-                snippet: None,
-            })
-            .collect())
-    }
-
-    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
-        // Project-scoped delete: drop every entry for this project regardless
-        // of metadata, so it removes exactly what `search` can return.
-        //
-        // The vipune API has no bulk-delete, so we enumerate via `list` and
-        // delete one-by-one. Because `list` is capped at 10 000 entries per
-        // call, we loop until `list` returns a partial page (fewer than the
-        // limit) to guarantee every entry is deleted, not just the first
-        // 10 000.
-        const PAGE: usize = 10_000;
-        let mut count = 0;
-        loop {
-            let entries = self
-                .store
-                .list(project_id, PAGE)
-                .map_err(|e| Error::Store(e.to_string()))?;
-            for entry in &entries {
-                self.store
-                    .delete(&entry.id)
-                    .map_err(|e| Error::Store(e.to_string()))?;
-            }
-            count += entries.len();
-            // A short page means we've drained the project; stop.
-            if entries.len() < PAGE {
-                break;
-            }
-        }
-        Ok(count)
-    }
-
-    fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let now = util::now_epoch();
-        let entries = self
-            .store
-            .list(project_id, 10_000)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let mut count = 0;
-        for entry in entries {
-            if let Some(meta) = entry.metadata.as_deref().and_then(parse_meta) {
-                if meta.source == "oo" && (now - meta.timestamp) > max_age_secs {
-                    self.store
-                        .delete(&entry.id)
-                        .map_err(|e| Error::Store(e.to_string()))?;
-                    count += 1;
-                }
-            }
-        }
-        Ok(count)
-    }
-}
+pub use store_vipune::VipuneStore;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -554,7 +407,7 @@ fn parse_meta(json: &str) -> Option<SessionMeta> {
 pub fn open() -> Result<Box<dyn Store>, Error> {
     #[cfg(feature = "vipune-store")]
     {
-        return Ok(Box::new(VipuneStore::open()?));
+        Ok(Box::new(VipuneStore::open()?))
     }
     #[cfg(not(feature = "vipune-store"))]
     {
