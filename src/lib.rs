@@ -90,7 +90,6 @@ pub mod store;
 
 /// Claude Code PreToolUse hook processor + settings.json installer (issue #172).
 #[doc(hidden)]
-#[allow(missing_docs)]
 pub mod hook;
 pub mod recall_display;
 pub mod rewrite;

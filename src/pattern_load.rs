@@ -18,7 +18,7 @@ use crate::{
 /// first-match-wins (project patterns override user patterns override
 /// builtins). Shared by `oo <cmd>` (classification) and the rewriter/hook
 /// paths — loaded once per process.
-pub static REWRITE_PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
+pub static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
 
 /// Load all patterns in the canonical precedence order — project-local, then
 /// user config, then builtins — so first-match-wins gives project patterns

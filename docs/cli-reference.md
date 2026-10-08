@@ -344,6 +344,8 @@ Install is idempotent: an existing identical file is a no-op ("already installed
 - Prints a snippet to add to your project's `AGENTS.md` file (format modes)
 - The snippet instructs agents to prefix commands with `oo`
 
+`--format claude` (the legacy `.claude/hooks.json`, which only blocks `--help`/`-h` calls) and `--agent claude-code` (the rewriting hook in `.claude/settings.json`) are **independent installers** — one does not imply the other; install both for full Claude Code coverage. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
+
 ### Output format
 
 ```
@@ -472,7 +474,7 @@ Stdin-JSON processor for Claude Code PreToolUse hooks (installed by `oo init --a
 - Only `Bash` tool calls are rewritten; other tools pass through unchanged.
 - All `tool_input` fields are preserved in `updatedInput` (only `command` is replaced); JSON escaping is handled by `serde_json`.
 - Compound commands are rewritten per segment and pipes are left alone (per `oo rewrite` semantics).
-- `OO_DISABLE=1` is a hard pass-through: no rewrite, no output, exit 0.
+- `OO_DISABLE=1` disables only the hook's rewriting: the hook passes commands through untouched (no rewrite, no output, exit 0). It does **not** disable the `oo` runner itself.
 
 ---
 

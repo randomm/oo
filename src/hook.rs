@@ -11,7 +11,7 @@
 //! hook never executes the command, never touches the store, and does no
 //! work beyond what `oo rewrite` already does (in-process pattern load).
 
-use crate::rewrite::{self, REWRITE_PATTERNS};
+use crate::rewrite::{self, PATTERNS};
 use crate::{error::Error, init::find_root};
 use std::io::Read;
 use std::path::PathBuf;
@@ -57,32 +57,33 @@ pub fn claude_settings_path(cwd: &std::path::Path, global: bool) -> Result<PathB
 /// Entry point for `oo hook claude`: read the PreToolUse JSON from stdin and
 /// print the `hookSpecificOutput` JSON when a Bash command rewrites, else
 /// print nothing. Always returns 0 (fail-open); see [`handle`].
+///
+/// Any **read error** — including a partial read — aborts the pass-through
+/// before the rewrite path is reached, so a truncated buffer is never
+/// treated as a complete event. A clean read is decoded lossily: invalid
+/// UTF-8 becomes replacement characters and then fails JSON parsing, which
+/// also passes through unchanged.
 pub fn cmd_hook_claude() -> i32 {
-    // Read the raw bytes and decode lossily: a mid-stream UTF-8 error still
-    // yields the complete buffer (with replacement chars) rather than a
-    // partial one, so the input is always whole and `Ok` stays honest.
     let mut buf = Vec::new();
-    let _ = std::io::stdin().read_to_end(&mut buf);
+    if std::io::stdin().read_to_end(&mut buf).is_err() {
+        return 0; // unreadable/partial stdin -> fail open, no output
+    }
     let text = String::from_utf8_lossy(&buf).to_string();
-    if let Some(out) = handle(Ok(text)) {
+    if let Some(out) = handle(&text) {
         println!("{out}");
     }
     0
 }
 
-/// Core processor: take the raw stdin (as a `Result` of the string) and
-/// return the `hookSpecificOutput` JSON to print on stdout, or `None` to
-/// print nothing (pass-through). Isolated from stdin so tests call it
-/// directly with fixed input.
-fn handle(input: Result<String, std::io::Error>) -> Option<String> {
+/// Core processor: take the lossy-decoded stdin text and return the
+/// `hookSpecificOutput` JSON to print on stdout, or `None` to print nothing
+/// (pass-through). Isolated from stdin so tests call it directly with fixed
+/// input.
+fn handle(text: &str) -> Option<String> {
     // OO_DISABLE=1 is a hard pass-through, checked before any rewrite work.
     if std::env::var("OO_DISABLE").is_ok_and(|v| v == "1") {
         return None;
     }
-
-    let Ok(text) = input else {
-        return None; // unreadable stdin -> pass through
-    };
 
     let Ok(root) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
         return None; // invalid/empty JSON -> pass through
@@ -103,7 +104,7 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
     }
 
     // In-process rewrite — the same function and patterns as `oo rewrite`.
-    let rewritten = rewrite::rewrite(command, &REWRITE_PATTERNS)?;
+    let rewritten = rewrite::rewrite(command, &PATTERNS)?;
 
     // Copy all tool_input fields into updatedInput, replacing only `command`,
     // so description/timeout/etc. are preserved (serde_json handles escaping).
@@ -122,9 +123,10 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
 }
 
 /// Merge the `oo hook claude` entry into `hooks.PreToolUse` in
-/// `settings_path`, writing the result back to the same path (plain write —
-/// the caller never relies on the write being crash-atomic) and returning the
-/// updated JSON string.
+/// `settings_path`, writing the result back to the same path **atomically**
+/// (temp file in the same directory, then `rename` over the target — a
+/// mid-write failure leaves either the old file or the complete new file,
+/// never a truncated target).
 ///
 /// Rules:
 /// - Absent file → create with the single oo entry.
@@ -133,7 +135,7 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
 ///   existing `matcher: "Bash"` group, or a new group is pushed. Every other
 ///   key and hook is preserved.
 /// - Malformed existing JSON → error (file NOT overwritten).
-pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
+pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<(), Error> {
     let mut doc = load_or_create(settings_path)?;
     let pretooluse = pretooluse_array(settings_path, &mut doc)?;
 
@@ -183,16 +185,21 @@ pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
     ));
     std::fs::write(&tmp_path, &serialized)
         .map_err(|e| Error::Init(format!("cannot write {}: {e}", tmp_path.display())))?;
-    std::fs::rename(&tmp_path, settings_path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        Error::Init(format!(
-            "cannot rename {} to {}: {e}",
+    std::fs::rename(&tmp_path, settings_path).map_err(|rename_err| {
+        let mut msg = format!(
+            "cannot rename {} to {}: {rename_err}",
             tmp_path.display(),
             settings_path.display()
-        ))
+        );
+        if let Err(cleanup_err) = std::fs::remove_file(&tmp_path) {
+            msg.push_str(&format!(
+                "; cleanup of the temp file also failed: {cleanup_err}"
+            ));
+        }
+        Error::Init(msg)
     })?;
 
-    Ok(serialized)
+    Ok(())
 }
 
 /// Read the existing settings file (or create an empty object when absent),
@@ -236,35 +243,64 @@ fn pretooluse_array<'a>(
     settings_path: &std::path::Path,
     doc: &'a mut serde_json::Value,
 ) -> Result<&'a mut Vec<serde_json::Value>, Error> {
-    let doc_obj = doc.as_object_mut().unwrap();
-    match doc_obj.get("hooks") {
-        None => {
-            doc_obj.insert(
-                "hooks".to_string(),
-                serde_json::Value::Object(serde_json::Map::new()),
-            );
-        }
-        Some(h) if h.is_object() => {}
-        Some(_) => {
+    let doc = match doc {
+        serde_json::Value::Object(obj) => obj,
+        _ => {
             return Err(Error::Init(format!(
-                "existing {} has a non-object hooks key — refusing to modify it",
+                "existing {} is not a JSON object — refusing to modify it",
                 settings_path.display()
             )));
         }
-    }
-    let hooks_obj = doc_obj
-        .get_mut("hooks")
-        .and_then(|h| h.as_object_mut())
-        .expect("hooks is an object");
+    };
 
-    let pretooluse = hooks_obj
+    // Locate or create the `hooks` object; the object borrow comes straight
+    // out of the match so no intermediate `unwrap` is needed.
+    let hooks = if doc.get("hooks").is_none() {
+        // No `hooks` key yet: insert a fresh object first, then re-borrow.
+        doc.insert(
+            "hooks".to_string(),
+            serde_json::Value::Object(serde_json::Map::new()),
+        );
+        match doc.get_mut("hooks") {
+            Some(serde_json::Value::Object(obj)) => obj,
+            _ => {
+                return Err(Error::Init(format!(
+                    "existing {} has a non-object hooks key — refusing to modify it",
+                    settings_path.display()
+                )))
+            }
+        }
+    } else {
+        match doc.get_mut("hooks") {
+            Some(serde_json::Value::Object(obj)) => obj,
+            Some(_) => {
+                return Err(Error::Init(format!(
+                    "existing {} has a non-object hooks key — refusing to modify it",
+                    settings_path.display()
+                )));
+            }
+            None => {
+                // The `if` branch handles the absent-key case; this is
+                // unreachable.
+                return Err(Error::Init(format!(
+                    "existing {} has no hooks key — refusing to modify it",
+                    settings_path.display()
+                )));
+            }
+        }
+    };
+
+    let pretooluse = match hooks
         .entry("PreToolUse".to_string())
-        .or_insert_with(|| serde_json::Value::Array(vec![]));
-    let Some(pretooluse) = pretooluse.as_array_mut() else {
-        return Err(Error::Init(format!(
-            "existing {} has a non-array hooks.PreToolUse — refusing to modify it",
-            settings_path.display()
-        )));
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+    {
+        serde_json::Value::Array(arr) => arr,
+        _ => {
+            return Err(Error::Init(format!(
+                "existing {} has a non-array hooks.PreToolUse — refusing to modify it",
+                settings_path.display()
+            )));
+        }
     };
     Ok(pretooluse)
 }

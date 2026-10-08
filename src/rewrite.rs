@@ -10,7 +10,7 @@
 /// user config, then builtins), loaded once per process. The assembly lives
 /// in the leaf `pattern_load` module so this module stays a pure rewriter
 /// with no dependency on the dispatch layer.
-pub(crate) use crate::pattern_load::REWRITE_PATTERNS;
+pub(crate) use crate::pattern_load::PATTERNS;
 
 use crate::pattern::{self, Pattern};
 

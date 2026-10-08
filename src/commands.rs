@@ -527,7 +527,7 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
 /// print nothing and return 1 otherwise. Never executes the command.
 pub fn cmd_rewrite(command: &str) -> i32 {
-    match rewrite::rewrite(command, &rewrite::REWRITE_PATTERNS) {
+    match rewrite::rewrite(command, &rewrite::PATTERNS) {
         Some(rewritten) => {
             println!("{rewritten}");
             0

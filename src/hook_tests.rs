@@ -14,10 +14,6 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn input(json: &str) -> Result<String, std::io::Error> {
-        Ok(json.to_string())
-    }
-
     // -------------------------------------------------------------------
     // handle — the fail-open processor
     // -------------------------------------------------------------------
@@ -28,7 +24,7 @@ mod tests {
             r#"{{"tool_name":"Bash","tool_input":{{"command":"{cmd}"}}}}"#,
             cmd = "pytest tests/"
         );
-        let out = handle(input(&json)).expect("a pytest command must rewrite");
+        let out = handle(&json).expect("a pytest command must rewrite");
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreToolUse");
         assert_eq!(
@@ -41,39 +37,49 @@ mod tests {
     fn handle_no_rewrite_returns_none() {
         // `cat file.txt` has no builtin pattern → no rewrite → None (pass-through).
         let json = r#"{"tool_name":"Bash","tool_input":{"command":"cat file.txt"}}"#;
-        assert!(handle(input(json)).is_none());
+        assert!(handle(json).is_none());
     }
 
     #[test]
     fn handle_non_bash_tool_returns_none() {
         let json = r#"{"tool_name":"Read","tool_input":{"command":"pytest tests/"}}"#;
-        assert!(handle(input(json)).is_none());
+        assert!(handle(json).is_none());
     }
 
     #[test]
     fn handle_invalid_json_returns_none() {
         let invalid_json = "{\"tool_name\":\"Bash\",\""; // truncated / malformed
-        assert!(handle(input(invalid_json)).is_none());
-        assert!(handle(input("")).is_none());
-        assert!(handle(input("not json at all")).is_none());
+        assert!(handle(invalid_json).is_none());
+        assert!(handle("").is_none());
+        assert!(handle("not json at all").is_none());
+    }
+
+    #[test]
+    fn handle_invalid_utf8_passes_through() {
+        // The production path decodes lossily: an invalid byte (e.g. 0xFF)
+        // becomes a replacement character and the resulting text is not
+        // valid JSON, so `handle` must return `None` (pass-through) rather
+        // than panic or emit output.
+        let lossy = String::from_utf8_lossy(&[b'{', 0xFF, b'}']).to_string();
+        assert!(handle(&lossy).is_none());
     }
 
     #[test]
     fn handle_missing_command_field_returns_none() {
         let json = r#"{"tool_name":"Bash","tool_input":{"description":"no cmd"}}"#;
-        assert!(handle(input(json)).is_none());
+        assert!(handle(json).is_none());
     }
 
     #[test]
     fn handle_empty_command_returns_none() {
         let json = r#"{"tool_name":"Bash","tool_input":{"command":"   "}}"#;
-        assert!(handle(input(json)).is_none());
+        assert!(handle(json).is_none());
     }
 
     #[test]
     fn handle_preserves_other_tool_input_fields() {
         let json = r#"{"tool_name":"Bash","tool_input":{"command":"pytest tests/","description":"view history","timeout":12000}}"#;
-        let out = handle(input(json)).expect("must rewrite");
+        let out = handle(json).expect("must rewrite");
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let updated = &v["hookSpecificOutput"]["updatedInput"];
         assert_eq!(updated["command"], "oo pytest tests/");
@@ -86,7 +92,7 @@ mod tests {
         // A plain cargo build rewrites to the oo-prefixed form; the output
         // must be valid, parseable JSON.
         let json = r#"{"tool_name":"Bash","tool_input":{"command":"cargo build"}}"#;
-        let out = handle(input(json)).expect("must rewrite");
+        let out = handle(json).expect("must rewrite");
         // Must be valid, parseable JSON.
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(
@@ -118,7 +124,7 @@ mod tests {
             cmd,
             "input command must round-trip"
         );
-        let out = handle(Ok(json)).expect("must rewrite");
+        let out = handle(&json).expect("must rewrite");
         // Must be valid, parseable JSON.
         let v: serde_json::Value =
             serde_json::from_str(&out).expect("hook output must be valid JSON");
@@ -139,13 +145,6 @@ mod tests {
             out.contains("\\\\"),
             "raw JSON output must escape embedded backslashes, got: {out}"
         );
-    }
-
-    #[test]
-    fn handle_unreadable_stdin_returns_none() {
-        let err: Result<String, std::io::Error> =
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "boom"));
-        assert!(handle(err).is_none());
     }
 
     #[test]
@@ -242,12 +241,11 @@ mod tests {
     fn merge_creates_file_when_absent() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
-        let out = merge_oo_hook(&path).expect("install must succeed");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        merge_oo_hook(&path).expect("install must succeed");
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
         assert!(v["hooks"]["PreToolUse"].as_array().is_some());
         assert_eq!(count_oo_entries(&v), 1);
-        let on_disk = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(on_disk, out);
     }
 
     #[test]
@@ -266,8 +264,9 @@ mod tests {
             }
           }"#;
         std::fs::write(&path, existing).unwrap();
-        let out = merge_oo_hook(&path).expect("install must succeed");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        merge_oo_hook(&path).expect("install must succeed");
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
         // Other top-level keys preserved.
         assert_eq!(v["model"], "claude-3");
         // PostToolUse untouched.
@@ -289,8 +288,9 @@ mod tests {
         let path = dir.path().join("settings.json");
         let existing = r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtk hook claude"}]}]}}"#;
         std::fs::write(&path, existing).unwrap();
-        let out = merge_oo_hook(&path).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        merge_oo_hook(&path).unwrap();
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
         // A single Bash group carrying both hooks (no duplicate group).
         let groups = v["hooks"]["PreToolUse"].as_array().unwrap();
         let bash_groups: Vec<_> = groups.iter().filter(|g| g["matcher"] == "Bash").collect();
@@ -304,10 +304,10 @@ mod tests {
         let path = dir.path().join("settings.json");
         merge_oo_hook(&path).unwrap();
         let first = std::fs::read_to_string(&path).unwrap();
-        let out2 = merge_oo_hook(&path).expect("second run must succeed");
+        merge_oo_hook(&path).expect("second run must succeed");
         let second = std::fs::read_to_string(&path).unwrap();
         assert_eq!(first, second, "idempotent re-run must not change the file");
-        let v: serde_json::Value = serde_json::from_str(&out2).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&second).unwrap();
         assert_eq!(count_oo_entries(&v), 1, "exactly one oo entry after re-run");
     }
 

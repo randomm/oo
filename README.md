@@ -245,7 +245,8 @@ oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO
 - Only Bash tool calls are rewritten; other tools pass through unchanged.
 - The hook is **fail-open**: any parse error, empty/invalid input, or no
   matching pattern prints nothing and exits 0, so the original command always
-  runs. `OO_DISABLE=1` is a hard pass-through.
+  runs. `OO_DISABLE=1` disables only the hook's rewriting (the hook passes
+  commands through untouched); it does not disable the `oo` runner itself.
 - The installed hook is idempotent (re-running leaves exactly one entry) and
   never overwrites a malformed `settings.json` (it errors instead).
 - Uninstall: remove the `oo hook claude` entry from `settings.json`.
