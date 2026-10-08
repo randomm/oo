@@ -22,6 +22,7 @@ pub enum Action {
     Init(InitMode),
     Patterns,
     Rewrite(String),
+    Hook(Option<String>),
 }
 
 /// Resolved mode for `oo init`: the legacy `--format` value or the new
@@ -32,6 +33,8 @@ pub enum InitMode {
     Format(InitFormat),
     /// `--agent pi [--global]` — install the pi extension.
     Pi { global: bool },
+    /// `--agent claude-code [--global]` — install the Claude Code hook (issue #172).
+    ClaudeCode { global: bool },
 }
 
 /// Agents supported by `oo init --agent`.
@@ -101,10 +104,7 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     }
     match agent.as_str() {
         "pi" => Ok(InitMode::Pi { global }),
-        // Supported by name, implementation pending (sibling ticket).
-        "claude-code" => Err(format!(
-            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: {supported}"
-        )),
+        "claude-code" => Ok(InitMode::ClaudeCode { global }),
         _ => unreachable!("agent validated against SUPPORTED_AGENTS above"),
     }
 }
@@ -204,6 +204,10 @@ pub fn parse_action(args: &[String]) -> Action {
                 .unwrap_or_default();
             Action::Rewrite(command)
         }
+        // `oo hook claude` — stdin-JSON PreToolUse processor (issue #172).
+        // Must be recognised before the `Run` fall-through, else `hook` would
+        // be treated as a shell command to spawn.
+        Some("hook") => Action::Hook(args.get(1).cloned()),
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -532,7 +536,7 @@ fn all_patterns() -> Vec<pattern::Pattern> {
 
 /// Loaded patterns for `oo rewrite`: same set and order as `oo <cmd>`
 /// (see [`all_patterns`]). Loaded once per process.
-static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
+pub(crate) static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
 
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
@@ -598,6 +602,34 @@ pub fn cmd_init(mode: InitMode) -> i32 {
                     1
                 }
             }
+        }
+        InitMode::ClaudeCode { global } => {
+            let Ok(cwd) = std::env::current_dir() else {
+                eprintln!("oo: cannot determine working directory");
+                return 1;
+            };
+            let path = crate::hook::claude_settings_path(&cwd, *global);
+            match crate::hook::install_settings_json(&path) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("oo: {e}");
+                    1
+                }
+            }
+        }
+    }
+}
+
+/// Entry point for `oo hook <agent>`: dispatch to the agent-specific stdin
+/// processor. `claude` reads the PreToolUse JSON on stdin and rewrites Bash
+/// commands (issue #172); anything else errors. The claude processor is
+/// fail-open and returns 0.
+pub fn cmd_hook(agent: &str) -> i32 {
+    match agent {
+        "claude" => crate::hook::cmd_hook_claude(),
+        other => {
+            eprintln!("oo: unknown hook agent '{other}'; supported hook agents: claude");
+            1
         }
     }
 }

@@ -182,7 +182,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi`) |
+| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
 | `oo version` | Print version |
 
 > **Note:** `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
@@ -227,6 +227,28 @@ oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_
 
 Claude Code is also supported via `oo init` (writes `.claude/hooks.json`); see
 the [CLI reference](docs/cli-reference.md#oo-init) for the full option matrix.
+
+### Use with Claude Code
+
+`oo init --agent claude-code` installs a Claude Code PreToolUse hook for the
+Bash tool (merging `oo hook claude` into `.claude/settings.json`, or
+`~/.claude/settings.json` with `--global`). When Claude Code runs a Bash
+command, the hook pipes the PreToolUse JSON to `oo hook claude`, which
+rewrites the command to its `oo`-prefixed form via `updatedInput.command` and
+prints it back — token-efficient output with no prompt instruction required.
+
+```bash
+oo init --agent claude-code           # project: <git-root>/.claude/settings.json
+oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO_CLAUDE_DIR/settings.json)
+```
+
+- Only Bash tool calls are rewritten; other tools pass through unchanged.
+- The hook is **fail-open**: any parse error, empty/invalid input, or no
+  matching pattern prints nothing and exits 0, so the original command always
+  runs. `OO_DISABLE=1` is a hard pass-through.
+- The installed hook is idempotent (re-running leaves exactly one entry) and
+  never overwrites a malformed `settings.json` (it errors instead).
+- Uninstall: remove the `oo hook claude` entry from `settings.json`.
 
 ---
 

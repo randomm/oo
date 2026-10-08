@@ -193,12 +193,30 @@ fn agent_pi_selects_pi_installer() {
     assert_eq!(mode, InitMode::Pi { global: false });
 }
 
-/// `--agent claude-code` — supported by name, not yet implemented.
+/// `--agent claude-code` — installs the Claude Code hook (issue #172).
 #[test]
-fn agent_claude_code_not_yet_supported() {
-    let err = parse_init_mode(&args(&["--agent", "claude-code"]))
-        .expect_err("claude-code must not be implemented yet");
-    assert!(err.contains("not yet supported"), "message: {err:?}");
+fn agent_claude_code_selects_installer() {
+    let mode = parse_init_mode(&args(&["--agent", "claude-code"]))
+        .expect("--agent claude-code must parse");
+    assert_eq!(mode, InitMode::ClaudeCode { global: false });
+}
+
+/// `--agent claude-code --global` in either flag order installs the Claude
+/// Code hook at the user level.
+#[test]
+fn agent_claude_code_global_works_both_orders() {
+    for flag_order in [
+        &["--agent", "claude-code", "--global"][..],
+        &["--global", "--agent", "claude-code"][..],
+    ] {
+        let mode = parse_init_mode(&args(flag_order))
+            .expect("--agent claude-code --global must parse: {flag_order:?}");
+        assert_eq!(
+            mode,
+            InitMode::ClaudeCode { global: true },
+            "order {flag_order:?}"
+        );
+    }
 }
 
 /// Unknown agent values error naming the supported values.

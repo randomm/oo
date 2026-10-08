@@ -121,7 +121,7 @@ Orientation for agents new to the codebase:
 
 **Key rules:**
 - New commands go in `src/main.rs` dispatch, with logic in their own module
-- Reserved subcommands: `recall`, `forget`, `learn`, `help`, `init`, `version`, `rewrite` — everything else is a shell command to execute
+- Reserved subcommands: `recall`, `forget`, `learn`, `help`, `init`, `version`, `rewrite`, `hook` — everything else is a shell command to execute
 - `src/classify.rs` is the critical path — changes require corresponding tests
 
 **Open issues to be aware of:**

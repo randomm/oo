@@ -1,7 +1,7 @@
 use clap::Parser;
 use double_o::{
-    Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_init, cmd_learn, cmd_patterns,
-    cmd_recall, cmd_rewrite, cmd_run, learn, parse_action,
+    Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn,
+    cmd_patterns, cmd_recall, cmd_rewrite, cmd_run, learn, parse_action,
 };
 
 // ---------------------------------------------------------------------------
@@ -21,6 +21,7 @@ struct Cli {
     /// learn (auto-generate a compression pattern), help (cheat.sh sheet),
     /// init (set up project hooks), patterns (list compression patterns),
     /// rewrite (print oo-prefixed command for agent hooks),
+    /// hook (rewrite Bash commands for agent hook processors, e.g. `oo hook claude`),
     /// version (print oo version). Any other command runs as a shell command.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
@@ -67,6 +68,9 @@ fn main() {
             );
             println!("  patterns                   List output compression patterns");
             println!("  rewrite <command>          Print oo-prefixed form for agent hooks");
+            println!(
+                "  hook <agent>               Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin)"
+            );
             println!("  version                    Show version");
             println!();
             println!("Any other command is run in the shell, e.g. oo git log");
@@ -84,6 +88,13 @@ fn main() {
         Action::Init(mode) => cmd_init(mode),
         Action::Patterns => cmd_patterns(),
         Action::Rewrite(command) => cmd_rewrite(&command),
+        Action::Hook(agent) => match agent {
+            Some(agent) => cmd_hook(&agent),
+            None => {
+                eprintln!("oo: hook requires an agent (e.g. `oo hook claude`)");
+                1
+            }
+        },
     };
 
     std::process::exit(exit_code);
