@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-08
+
+### Bug Fixes
+
+- *(#168)* Make recall and forget project-scoped
+
+### Features
+
+- *(#170)* Add oo rewrite subcommand for agent hooks
+- *(#171)* Add oo init --agent pi
+- *(#172)* Add oo init --agent claude-code and oo hook claude
+
+
 ## [0.6.0] - 2026-09-10
 
 ### Bug Fixes
