@@ -16,6 +16,9 @@ use crate::{error::Error, init::find_root};
 use std::io::Read;
 use std::path::PathBuf;
 
+/// Maximum number of bytes `oo hook claude` will read from stdin.
+const MAX_HOOK_INPUT_BYTES: u64 = 1024 * 1024; // 1 MiB
+
 /// The installed hook command (the exact `command` string in settings.json).
 pub const HOOK_COMMAND: &str = "oo hook claude";
 
@@ -58,21 +61,40 @@ pub fn claude_settings_path(cwd: &std::path::Path, global: bool) -> Result<PathB
 /// print the `hookSpecificOutput` JSON when a Bash command rewrites, else
 /// print nothing. Always returns 0 (fail-open); see [`handle`].
 ///
-/// Any **read error** — including a partial read — aborts the pass-through
-/// before the rewrite path is reached, so a truncated buffer is never
-/// treated as a complete event. A clean read is decoded lossily: invalid
-/// UTF-8 becomes replacement characters and then fails JSON parsing, which
-/// also passes through unchanged.
+/// **Stdin contract:** Claude Code writes the whole event and closes the
+/// pipe, and the host enforces its own hook timeout — so reading to EOF is
+/// the documented protocol; [`MAX_HOOK_INPUT_BYTES`] only bounds memory.
+/// Input larger than the cap, or any read error, fails open: no output,
+/// exit 0, no processing.
+///
+/// A clean read is decoded lossily: invalid UTF-8 becomes replacement
+/// characters and then fails JSON parsing, which also passes through
+/// unchanged.
 pub fn cmd_hook_claude() -> i32 {
-    let mut buf = Vec::new();
-    if std::io::stdin().read_to_end(&mut buf).is_err() {
-        return 0; // unreadable/partial stdin -> fail open, no output
-    }
-    let text = String::from_utf8_lossy(&buf).to_string();
+    let Some(text) = read_hook_input_bounded(std::io::stdin()) else {
+        return 0; // oversize or unreadable stdin -> fail open, no output
+    };
     if let Some(out) = handle(&text) {
         println!("{out}");
     }
     0
+}
+
+/// Read the hook's stdin with a bounded buffer.
+///
+/// Reads at most [`MAX_HOOK_INPUT_BYTES`] + 1 bytes: the extra byte lets us
+/// tell "exactly at the cap" from "oversize". Returns `None` — meaning the
+/// caller must fail open — when more than the cap was read or when the read
+/// hits any I/O error. Returns `Some` with the lossily-decoded text on a
+/// clean read within the cap. Takes `impl Read` so tests can feed an
+/// oversize reader or an erroring reader directly.
+fn read_hook_input_bounded<R: Read>(reader: R) -> Option<String> {
+    let mut buf = Vec::new();
+    let read = reader.take(MAX_HOOK_INPUT_BYTES + 1).read_to_end(&mut buf);
+    if read.is_err() || buf.len() > MAX_HOOK_INPUT_BYTES as usize {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf).to_string())
 }
 
 /// Core processor: take the lossy-decoded stdin text and return the
@@ -154,14 +176,31 @@ pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<(), Error> {
     });
 
     if !already_present {
-        // Reuse an existing `matcher: "Bash"` group whose `hooks` array we can
-        // extend; otherwise push a fresh group.
-        let reuse = pretooluse
+        // An existing `matcher: "Bash"` group may be extended only when its
+        // `hooks` field is an array of JSON objects; any other shape is
+        // malformed and must be left untouched.
+        let bash_group_valid = pretooluse.iter().any(|g| {
+            g.get("matcher").and_then(|m| m.as_str()) == Some("Bash")
+                && g.get("hooks")
+                    .and_then(|h| h.as_array())
+                    .is_some_and(|cmds| cmds.iter().all(|c| c.is_object()))
+        });
+        match pretooluse
             .iter_mut()
             .find(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Bash"))
-            .and_then(|g| g.get_mut("hooks").and_then(|h| h.as_array_mut()));
-        match reuse {
-            Some(cmds) => cmds.push(command_entry),
+        {
+            Some(group) if bash_group_valid => {
+                if let Some(cmds) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) {
+                    cmds.push(command_entry);
+                }
+            }
+            Some(_) => {
+                return Err(Error::Init(format!(
+                    "existing {} has a malformed `matcher: \"Bash\"` group \
+                     (its `hooks` is not an array of objects) — refusing to modify it",
+                    settings_path.display()
+                )));
+            }
             None => pretooluse.push(new_group),
         }
     }
@@ -253,40 +292,34 @@ fn pretooluse_array<'a>(
         }
     };
 
-    // Locate or create the `hooks` object; the object borrow comes straight
-    // out of the match so no intermediate `unwrap` is needed.
-    let hooks = if doc.get("hooks").is_none() {
-        // No `hooks` key yet: insert a fresh object first, then re-borrow.
+    // Locate or create the `hooks` object, with absent and present as
+    // explicit separate cases (absent: insert a fresh object; present:
+    // validate it is an object rather than clobbering a garbage value).
+    let present = doc.get_mut("hooks").is_some();
+    if !present {
+        // No `hooks` key yet: insert a fresh object before taking the
+        // borrow.
         doc.insert(
             "hooks".to_string(),
             serde_json::Value::Object(serde_json::Map::new()),
         );
-        match doc.get_mut("hooks") {
-            Some(serde_json::Value::Object(obj)) => obj,
-            _ => {
-                return Err(Error::Init(format!(
-                    "existing {} has a non-object hooks key — refusing to modify it",
-                    settings_path.display()
-                )))
-            }
+    }
+    let hooks = match doc.get_mut("hooks") {
+        Some(serde_json::Value::Object(obj)) => obj,
+        Some(_) => {
+            return Err(Error::Init(format!(
+                "existing {} has a non-object hooks key — refusing to modify it",
+                settings_path.display()
+            )));
         }
-    } else {
-        match doc.get_mut("hooks") {
-            Some(serde_json::Value::Object(obj)) => obj,
-            Some(_) => {
-                return Err(Error::Init(format!(
-                    "existing {} has a non-object hooks key — refusing to modify it",
-                    settings_path.display()
-                )));
-            }
-            None => {
-                // The `if` branch handles the absent-key case; this is
-                // unreachable.
-                return Err(Error::Init(format!(
-                    "existing {} has no hooks key — refusing to modify it",
-                    settings_path.display()
-                )));
-            }
+        None => {
+            // Present in the `!present` branch but missing here would mean
+            // the key was removed mid-function, which cannot happen; treat
+            // it as a non-object hooks key rather than panicking.
+            return Err(Error::Init(format!(
+                "existing {} has a non-object hooks key — refusing to modify it",
+                settings_path.display()
+            )));
         }
     };
 

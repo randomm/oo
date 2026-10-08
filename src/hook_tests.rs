@@ -147,6 +147,54 @@ mod tests {
         );
     }
 
+    // -------------------------------------------------------------------
+    // read_hook_input_bounded — capped stdin reader
+    // -------------------------------------------------------------------
+
+    /// A reader that immediately fails with a simulated I/O error.
+    struct FailingReader;
+
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "simulated stdin failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn bounded_read_oversize_input_returns_none() {
+        // A payload 1 MiB + 1 byte is larger than MAX_HOOK_INPUT_BYTES, so
+        // the reader must reject it (fail open) rather than buffer the
+        // whole thing.
+        let oversize = vec![b'a'; 1024 * 1024 + 1];
+        assert!(read_hook_input_bounded(oversize.as_slice()).is_none());
+    }
+
+    #[test]
+    fn bounded_read_within_cap_returns_string() {
+        let input = b"{\"tool_name\":\"Bash\"}".to_vec();
+        let text =
+            read_hook_input_bounded(input.as_slice()).expect("an input within the cap must read");
+        assert_eq!(text, "{\"tool_name\":\"Bash\"}");
+    }
+
+    #[test]
+    fn bounded_read_exactly_at_cap_returns_string() {
+        // Exactly MAX_HOOK_INPUT_BYTES is allowed (the +1 byte distinguishes
+        // "at the cap" from "over the cap").
+        let at_cap = vec![b'x'; 1024 * 1024];
+        let text =
+            read_hook_input_bounded(at_cap.as_slice()).expect("input at exactly the cap must read");
+        assert_eq!(text.len(), 1024 * 1024);
+    }
+
+    #[test]
+    fn bounded_read_error_returns_none() {
+        assert!(read_hook_input_bounded(FailingReader).is_none());
+    }
+
     #[test]
     fn builtin_patterns_nonempty() {
         // Guard: the in-process rewrite set is non-empty so the rewrite path is real.
@@ -324,6 +372,43 @@ mod tests {
         );
         // File must be unchanged.
         assert_eq!(std::fs::read_to_string(&path).unwrap(), existing);
+    }
+
+    /// Write `existing`, expect `merge_oo_hook` to error, and assert the
+    /// file is byte-identical afterwards.
+    fn merge_rejects_malformed_bash_group(existing: &str) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, existing).unwrap();
+        let err = merge_oo_hook(&path).expect_err("malformed Bash group must error");
+        assert!(
+            format!("{err:?}").contains("malformed") && format!("{err:?}").contains("Bash"),
+            "message: {err:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            existing,
+            "file must be left untouched"
+        );
+    }
+
+    #[test]
+    fn merge_bash_group_hooks_with_string_entries_is_error() {
+        merge_rejects_malformed_bash_group(
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["some-string"]}]}}"#,
+        );
+    }
+
+    #[test]
+    fn merge_bash_group_hooks_non_array_is_error() {
+        merge_rejects_malformed_bash_group(
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":"oops"}]}}"#,
+        );
+    }
+
+    #[test]
+    fn merge_bash_group_missing_hooks_is_error() {
+        merge_rejects_malformed_bash_group(r#"{"hooks":{"PreToolUse":[{"matcher":"Bash"}]}}"#);
     }
 
     #[test]
