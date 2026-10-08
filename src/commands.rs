@@ -61,18 +61,13 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--agent" => {
-                let Some(value) = iter.next() else {
+                let Some(value) = iter.next().filter(|v| !v.starts_with("--")) else {
+                    // No value, or the next token is itself a flag (e.g.
+                    // `--agent --global`) — report it as missing.
                     return Err(format!(
                         "--agent requires a value; supported agents: {supported}"
                     ));
                 };
-                if value.starts_with("--") {
-                    // The next token is itself a flag (e.g. `--agent
-                    // --global`), not a value — report it as missing.
-                    return Err(format!(
-                        "--agent requires a value; supported agents: {supported}"
-                    ));
-                }
                 agent = Some(value.clone());
             }
             "--global" => global = true,

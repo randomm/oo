@@ -425,9 +425,10 @@ refused constructs.
 Matching is **unanchored and per segment**: a segment is rewritten when any
 pattern's `command_match` regex matches anywhere in the segment text (the
 same patterns and matching as `oo <command>`; quoted text is not excluded).
-Exit 1 also covers a pattern file that failed to load, and the rewritten
-output is only guaranteed to re-parse identically under POSIX shell quoting
-rules.
+The rewritten output preserves the original text byte-for-byte except for
+the inserted `oo ` prefix(es) and canonical separator spacing. Exit 1 also
+covers a pattern file that failed to load, an unquoted newline inside a
+segment, and an env value containing a quote or backslash.
 
 ---
 
