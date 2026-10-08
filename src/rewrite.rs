@@ -35,8 +35,8 @@ pub fn rewrite(command: &str, patterns: &[Pattern]) -> Option<String> {
     }
 
     // One quote-aware pass over the command: it both rejects refused
-    // constructs and splits on `&&`/`||`/;` separators (outside quotes), so
-    // the input is decoded to `Vec<char>` exactly once per call.
+    // constructs and splits on `&&`/`||`/`;` separators (outside quotes), so
+    // the input is scanned exactly once per call.
     let split = split_segments(trimmed)?;
     let mut out = String::with_capacity(trimmed.len());
     let mut changed = false;
@@ -83,6 +83,8 @@ fn rewrite_segment(segment: &str, patterns: &[Pattern]) -> Option<String> {
         return None;
     }
     let rest = words[env_count..].join(" ");
+    // The `regex` crate guarantees linear-time matching, so unanchored
+    // pattern matching over user-supplied input is not a ReDoS vector.
     pattern::find_matching(&rest, patterns)?;
     let env_prefix = words[..env_count].join(" ");
     if env_prefix.is_empty() {
@@ -105,41 +107,43 @@ fn is_valid_var_name(name: &str) -> bool {
 ///
 /// The separator is the canonical form with a single leading space:
 /// `" && "`, `" || "`, or `" ; "`. The last segment has an empty separator.
+///
+/// The scan works over byte offsets (from `char_indices`), so every slice of
+/// `command` lands on a valid UTF-8 boundary regardless of multi-byte
+/// characters in the input — the function cannot panic for any UTF-8 string.
 fn split_segments(command: &str) -> Option<Vec<(String, &'static str)>> {
-    let chars: Vec<char> = command.chars().collect();
-    let n = chars.len();
+    let indices: Vec<(usize, char)> = command.char_indices().collect();
+    let n = indices.len();
     let mut result: Vec<(String, &'static str)> = Vec::new();
-    let mut start = 0;
+    let mut start = 0usize;
     let mut i = 0;
     let mut quote: Option<char> = None;
 
     while i < n {
-        let c = chars[i];
+        let (byte_idx, c) = indices[i];
         match quote {
             Some(q) if c == q => quote = None,
             None if c == '\'' || c == '"' => quote = Some(c),
             None => {
                 // Separator checks first: `&&`/`||` are split points, not
                 // refused constructs (a lone `|` or `&` is refused below).
-                if c == '&' && i + 1 < n && chars[i + 1] == '&' {
-                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
-                    result.push((seg, " && "));
+                if c == '&' && i + 1 < n && indices[i + 1].1 == '&' {
+                    result.push((command[start..byte_idx].trim().to_string(), " && "));
+                    // The next segment starts after both separator bytes.
+                    start = indices[i + 1].0 + indices[i + 1].1.len_utf8();
                     i += 2;
-                    start = i;
                     continue;
                 }
-                if c == '|' && i + 1 < n && chars[i + 1] == '|' {
-                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
-                    result.push((seg, " || "));
+                if c == '|' && i + 1 < n && indices[i + 1].1 == '|' {
+                    result.push((command[start..byte_idx].trim().to_string(), " || "));
+                    start = indices[i + 1].0 + indices[i + 1].1.len_utf8();
                     i += 2;
-                    start = i;
                     continue;
                 }
                 if c == ';' {
-                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
-                    result.push((seg, " ; "));
+                    result.push((command[start..byte_idx].trim().to_string(), " ; "));
+                    start = byte_idx + c.len_utf8();
                     i += 1;
-                    start = i;
                     continue;
                 }
                 // Anything else is a refused construct: the command cannot be
@@ -147,7 +151,7 @@ fn split_segments(command: &str) -> Option<Vec<(String, &'static str)>> {
                 if c == '|' || c == '<' || c == '>' || c == '&' {
                     return None;
                 }
-                if (c == '$' && i + 1 < n && chars[i + 1] == '(') || c == '`' {
+                if (c == '$' && i + 1 < n && indices[i + 1].1 == '(') || c == '`' {
                     return None;
                 }
             }
@@ -155,21 +159,8 @@ fn split_segments(command: &str) -> Option<Vec<(String, &'static str)>> {
         }
         i += 1;
     }
-    let last: String = command[byte_offset(&chars, start)..].trim().to_string();
-    result.push((last, ""));
+    result.push((command[start..].trim().to_string(), ""));
     Some(result)
-}
-
-/// Byte offset in the original string of char-index `i` (i.e. the length of
-/// the first `i` chars), so `command[..byte_offset(&chars, i)]` always slices
-/// on a char boundary.
-fn byte_offset(chars: &[char], i: usize) -> usize {
-    chars
-        .get(..i.min(chars.len()))
-        .unwrap_or(&[])
-        .iter()
-        .map(|c| c.len_utf8())
-        .sum()
 }
 
 #[cfg(test)]
@@ -280,6 +271,61 @@ mod tests {
     fn overlong_input_is_refused_not_panicked() {
         let long = format!("{} pytest -q", "a".repeat(MAX_REWRITE_INPUT_BYTES));
         assert!(rewrite(&long, &patterns()).is_none());
+    }
+
+    #[test]
+    fn multibyte_after_separator_does_not_panic() {
+        // Multi-byte content in the *following* segment: the end offset of
+        // the next segment must also slice on a char boundary.
+        let out = rewrite("git log && éé pytest -q", &patterns()).expect("must rewrite");
+        assert_eq!(out, "git log && oo éé pytest -q");
+    }
+
+    #[test]
+    fn emoji_and_multibyte_inside_quotes_do_not_panic() {
+        let out = rewrite("pytest -q \"😂 && 🎉\"", &patterns()).expect("must rewrite");
+        assert_eq!(out, "oo pytest -q \"😂 && 🎉\"");
+        let out = rewrite("pytest -q 'café ; test'", &patterns()).expect("must rewrite");
+        assert_eq!(out, "oo pytest -q 'café ; test'");
+    }
+
+    #[test]
+    fn multibyte_input_never_panics_any_input() {
+        // Property-style sweep: rewrite() must not panic on any UTF-8 input,
+        // in particular multi-byte chars immediately before/after separators.
+        // Each string is also fed to `rewrite_segment` directly so the env-
+        // prefix walk is exercised on multi-byte words too.
+        let strings: Vec<String> = vec![
+            "é".to_string(),
+            "&&".to_string(),
+            "é &&".to_string(),
+            "&& é".to_string(),
+            "é && pytest -q".to_string(),
+            "éé; pytest -q".to_string(),
+            "pytest -q; éé".to_string(),
+            "héllo && wörld || pytest".to_string(),
+            "🚀 && cargo test".to_string(),
+            "& & &".to_string(),
+            ";; ;".to_string(),
+            "é=1 pytest -q".to_string(),
+            "A=é && B=ü; cargo build".to_string(),
+            "'é && é' pytest -q".to_string(),
+            "\"é||é\" pytest".to_string(),
+            "\t\n é && \t".to_string(),
+            "café && naïve ; résumé || pytest -q".to_string(),
+            "\u{1F680}\u{1F319}\u{00E9}".to_string(),
+            "ééééé && pytest".to_string(),
+            "\x7f && pytest -q".to_string(),
+            "&&&&&& pytest".to_string(),
+        ];
+        for s in strings {
+            // Any Option (Some or None) is fine — the point is no panic.
+            let _ = rewrite(&s, &patterns());
+            let _ = split_segments(&s);
+            for seg in split_segments(&s).unwrap_or_default() {
+                let _ = rewrite_segment(seg.0.trim(), &patterns());
+            }
+        }
     }
 
     #[test]
