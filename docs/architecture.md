@@ -112,10 +112,10 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 **Operations**:
 - `index()` — Store output with metadata
 - `search()` — Full-text search across indexed outputs
-- `clear_session()` — Delete all outputs for current session
+- `delete_project()` — Delete all indexed outputs for the current project
 
-**Session tracking**:
-- [`src/session.rs`](../src/session.rs) — Session ID (parent PID) and project ID (git remote or directory name)
+**Project identification**:
+- [`src/session.rs`](../src/session.rs) — Project ID (git remote or directory name)
 
 ### 6. LLM Learning
 
@@ -174,9 +174,9 @@ SQLite requires no setup, is portable, and provides sufficient full-text search 
 
 Pattern learning runs in the background after the command completes. This doesn't block the user; results appear on the next `oo` invocation.
 
-### 6. Session-scoped storage
+### 6. Project-scoped storage
 
-Indexed outputs are scoped to a session (parent PID). `oo forget` clears the current session, so agents start fresh without leftover data.
+Indexed outputs are scoped to the project (git remote or directory name). `oo recall` searches all output indexed for the current project, and `oo forget` clears all of it — output from other projects is never visible.
 
 ## Reserved Subcommands
 
@@ -185,7 +185,7 @@ These are built-in commands (not shell commands):
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `recall` | `cmd_recall()` | Search indexed outputs via full-text query |
-| `forget` | `cmd_forget()` | Clear all indexed outputs for current session |
+| `forget` | `cmd_forget()` | Clear all indexed outputs for the current project |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Generate `.claude/hooks.json` and AGENTS.md snippet |
@@ -218,7 +218,7 @@ Everything else is treated as a shell command to execute.
 
 - **Output size**: Only outputs >4 KiB are considered for compression/indexing. Small outputs pass through immediately.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
-- **Storage**: SQLite indexes on `project_id` and `session` for fast queries.
+- **Storage**: SQLite indexes on `project_id` for fast queries.
 - **LLM learning**: Runs in background; doesn't block command execution.
 
 ## Security Considerations

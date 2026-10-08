@@ -18,7 +18,8 @@ pub struct SessionMeta {
     /// Source system (typically "oo").
     pub source: String,
 
-    /// Session identifier (parent process ID).
+    /// Session identifier (stamped parent process ID). Informational only —
+    /// not used for recall/forget scoping.
     pub session: String,
 
     /// The command that generated this output.
@@ -93,10 +94,14 @@ pub trait Store {
         limit: usize,
     ) -> Result<Vec<SearchResult>, Error>;
 
-    /// Delete all entries for a specific session.
+    /// Delete all entries for a project.
+    ///
+    /// Removes every entry stored for `project_id`, regardless of the session
+    /// that indexed it, and including entries with NULL or unparseable
+    /// metadata — exactly the set `search` can return.
     ///
     /// Returns the number of entries deleted.
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error>;
+    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
 
     /// Delete entries older than `max_age_secs` seconds.
     ///
@@ -116,7 +121,20 @@ pub struct SqliteStore {
     conn: Connection,
 }
 
+#[cfg(test)]
+#[path = "store_test_support.rs"]
+mod store_test_support;
+#[cfg(test)]
+pub(crate) use store_test_support::{TestDataDirGuard, set_test_data_dir};
+
 fn db_path() -> PathBuf {
+    // Test-only hook (set by a `TestDataDirGuard` for the duration of one
+    // test). It takes precedence so a test's isolation cannot be clobbered
+    // by a stale `OO_DATA_DIR`.
+    #[cfg(test)]
+    if let Some(dir) = store_test_support::test_data_dir() {
+        return dir.join("oo.db");
+    }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
     if let Some(data_dir) = std::env::var_os("OO_DATA_DIR") {
         return PathBuf::from(data_dir).join("oo.db");
@@ -315,36 +333,22 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
-        // Find entries matching this session
-        let ids: Vec<String> = {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT id, metadata FROM entries WHERE project = ?1")
-                .map_err(map_err)?;
-            stmt.query_map(rusqlite::params![project_id], |row| {
-                let id: String = row.get(0)?;
-                let meta_json: Option<String> = row.get(1)?;
-                Ok((id, meta_json))
-            })
-            .map_err(map_err)?
-            .filter_map(|r| r.ok())
-            .filter(|(_, meta_json)| {
-                meta_json
-                    .as_deref()
-                    .and_then(parse_meta)
-                    .is_some_and(|m| m.source == "oo" && m.session == session_id)
-            })
-            .map(|(id, _)| id)
-            .collect()
-        };
-
-        let count = ids.len();
-        for id in &ids {
-            self.conn
-                .execute("DELETE FROM entries WHERE id = ?1", rusqlite::params![id])
-                .map_err(map_err)?;
-        }
+    fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
+        // Project-scoped delete: drop every row for this project — including
+        // rows with NULL or unparseable metadata — so it removes exactly the
+        // set `search` can return. The FTS5 shadow table is kept in sync by
+        // the entries_ad trigger, so a plain DELETE suffices.
+        //
+        // Note: a trigger failure on the FTS5 shadow table is not surfaced
+        // through the returned row count — it is a rusqlite::Error, which is
+        // propagated, but a row-count check would not detect it.
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM entries WHERE project = ?1",
+                rusqlite::params![project_id],
+            )
+            .map_err(map_err)?;
         Ok(count)
     }
 
@@ -386,112 +390,11 @@ impl Store for SqliteStore {
 // VipuneStore — optional backend with semantic search
 // ---------------------------------------------------------------------------
 
-/// Vipune-backed store with semantic search capabilities.
-///
-/// Uses Vipune's cross-session memory with semantic embedding search.
-/// Available behind the `vipune-store` feature flag.
 #[cfg(feature = "vipune-store")]
-pub struct VipuneStore {
-    store: vipune::MemoryStore,
-}
-
+#[path = "store_vipune.rs"]
+mod store_vipune;
 #[cfg(feature = "vipune-store")]
-impl VipuneStore {
-    /// Open the Vipune store with default configuration.
-    ///
-    /// Loads Vipune configuration from its usual location and initializes
-    /// the memory store with semantic search.
-    pub fn open() -> Result<Self, Error> {
-        let config = vipune::Config::load().map_err(|e| Error::Store(e.to_string()))?;
-        let store =
-            vipune::MemoryStore::new(&config.database_path, &config.embedding_model, config)
-                .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(Self { store })
-    }
-}
-
-#[cfg(feature = "vipune-store")]
-impl Store for VipuneStore {
-    fn index(
-        &mut self,
-        project_id: &str,
-        content: &str,
-        meta: &SessionMeta,
-    ) -> Result<String, Error> {
-        let meta_json = serde_json::to_string(meta).map_err(|e| Error::Store(e.to_string()))?;
-        match self
-            .store
-            .add_with_conflict(project_id, content, Some(&meta_json), true)
-        {
-            Ok(vipune::AddResult::Added { id }) => Ok(id),
-            Ok(vipune::AddResult::Conflicts { .. }) => Ok(String::new()),
-            Err(e) => Err(Error::Store(e.to_string())),
-        }
-    }
-
-    fn search(
-        &mut self,
-        project_id: &str,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<SearchResult>, Error> {
-        let memories = self
-            .store
-            .search_hybrid(project_id, query, limit, 0.3)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(memories
-            .into_iter()
-            .map(|m| SearchResult {
-                id: m.id,
-                meta: m.metadata.as_deref().and_then(parse_meta),
-                content: m.content,
-                similarity: m.similarity,
-                // VipuneStore has no FTS5 — callers fall back to a bounded
-                // client-side prefix of `content`.
-                snippet: None,
-            })
-            .collect())
-    }
-
-    fn delete_by_session(&mut self, project_id: &str, session_id: &str) -> Result<usize, Error> {
-        let entries = self
-            .store
-            .list(project_id, 10_000)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let mut count = 0;
-        for entry in entries {
-            if let Some(meta) = entry.metadata.as_deref().and_then(parse_meta) {
-                if meta.source == "oo" && meta.session == session_id {
-                    self.store
-                        .delete(&entry.id)
-                        .map_err(|e| Error::Store(e.to_string()))?;
-                    count += 1;
-                }
-            }
-        }
-        Ok(count)
-    }
-
-    fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let now = util::now_epoch();
-        let entries = self
-            .store
-            .list(project_id, 10_000)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let mut count = 0;
-        for entry in entries {
-            if let Some(meta) = entry.metadata.as_deref().and_then(parse_meta) {
-                if meta.source == "oo" && (now - meta.timestamp) > max_age_secs {
-                    self.store
-                        .delete(&entry.id)
-                        .map_err(|e| Error::Store(e.to_string()))?;
-                    count += 1;
-                }
-            }
-        }
-        Ok(count)
-    }
-}
+pub use store_vipune::VipuneStore;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -505,7 +408,7 @@ fn parse_meta(json: &str) -> Option<SessionMeta> {
 pub fn open() -> Result<Box<dyn Store>, Error> {
     #[cfg(feature = "vipune-store")]
     {
-        return Ok(Box::new(VipuneStore::open()?));
+        Ok(Box::new(VipuneStore::open()?))
     }
     #[cfg(not(feature = "vipune-store"))]
     {

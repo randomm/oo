@@ -99,10 +99,14 @@ fn test_stderr_included_in_failure() {
 
 #[test]
 fn test_forget_runs() {
+    // OO_DATA_DIR isolates the store so the project-scoped delete (issue
+    // #168) never wipes the developer's real index.
+    let dir = TempDir::new().unwrap();
     oo().arg("forget")
+        .env("OO_DATA_DIR", dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Cleared session data"));
+        .stdout(predicate::str::contains("Cleared project data"));
 }
 
 #[test]
@@ -128,8 +132,8 @@ fn assert_full_subcommand_list(
 ) -> assert_cmd::assert::Assert {
     let mut assertion = assertion.success();
     for (name, description) in [
-        ("recall", "Search session output"),
-        ("forget", "Clear session data"),
+        ("recall", "Search indexed output"),
+        ("forget", "Clear indexed output for this project"),
         ("learn", "Learn output compression patterns"),
         ("help [cmd]", "cheat-sheet for cmd via cheat.sh"),
         ("init", "Set up hooks for agent frameworks"),
@@ -614,11 +618,15 @@ fn test_dispatch_version() {
 
 #[test]
 fn test_dispatch_forget() {
-    // `oo forget` must exit 0 and clear session data
+    // `oo forget` must exit 0 and clear project data.
+    // OO_DATA_DIR isolates the store so the project-scoped delete (issue
+    // #168) never wipes the developer's real index.
+    let dir = TempDir::new().unwrap();
     oo().arg("forget")
+        .env("OO_DATA_DIR", dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Cleared session data"));
+        .stdout(predicate::str::contains("Cleared project data"));
 }
 
 #[test]
@@ -865,6 +873,37 @@ fn test_unknown_arm_large_output_bounded_and_recallable() {
     .stdout(predicate::str::contains(RECALL_MARKER));
 
     assert_recall_contains(&data_dir, RECALL_MARKER);
+}
+
+#[test]
+fn test_forget_removes_everything_recallable() {
+    // Issue #168: `oo forget` must remove exactly what `oo recall` can
+    // return for the project. Seed a marker via a real invocation, run
+    // `oo forget`, then `oo recall` must find nothing.
+    let file = TempDir::new().unwrap();
+    let big = write_repro_file(file.path());
+
+    let (_guard, data_dir) = isolated_store();
+    oo().args(["cat", big.to_str().unwrap()])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success();
+
+    // Sanity: the marker is recallable before forget.
+    assert_recall_contains(&data_dir, RECALL_MARKER);
+
+    oo().arg("forget")
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cleared project data"));
+
+    // After forget, recall must return nothing.
+    oo().args(["recall", RECALL_MARKER])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No results found"));
 }
 
 // ---------------------------------------------------------------------------

@@ -120,17 +120,20 @@ fn test_search_no_results() {
 }
 
 #[test]
-fn test_delete_session() {
+fn test_delete_project() {
     let mut store = temp_store();
     store.index("proj", "a", &test_meta("s1")).unwrap();
     store.index("proj", "b", &test_meta("s2")).unwrap();
     store.index("proj", "c", &test_meta("s1")).unwrap();
 
-    let deleted = store.delete_by_session("proj", "s1").unwrap();
-    assert_eq!(deleted, 2);
+    let deleted = store.delete_project("proj").unwrap();
+    assert_eq!(deleted, 3);
 
-    let remaining = store.search("proj", "b", 10).unwrap();
-    assert_eq!(remaining.len(), 1);
+    let remaining = store.search("proj", "a", 10).unwrap();
+    assert!(
+        remaining.is_empty(),
+        "delete_project must remove every entry for the project, including other sessions'"
+    );
 }
 
 #[test]
@@ -251,21 +254,56 @@ fn test_index_returns_unique_ids() {
 }
 
 #[test]
-fn test_delete_by_session_leaves_other_session() {
-    // delete_by_session must not remove entries from other sessions
+fn test_delete_project_removes_all_sessions_and_null_metadata() {
+    // Regression (issue #168): forget must remove exactly what recall can
+    // return — rows from other sessions and rows with NULL/unparseable
+    // metadata included. The old session-scoped delete left those behind.
     let mut store = temp_store();
     store
-        .index("proj", "keep this", &test_meta("keep"))
+        .index("proj", "entry one alpha", &test_meta("s1"))
         .unwrap();
     store
-        .index("proj", "delete this", &test_meta("remove"))
+        .index("proj", "entry two beta", &test_meta("s2"))
+        .unwrap();
+    // A row with NULL metadata cannot be produced via the public index path
+    // (which always serializes a non-NULL SessionMeta) — insert it directly.
+    let id = uuid::Uuid::new_v4().to_string();
+    store
+        .conn
+        .execute(
+            "INSERT INTO entries (id, project, content, metadata, created)
+             VALUES (?1, 'proj', 'entry three gamma', NULL, ?2)",
+            rusqlite::params![id, now_epoch()],
+        )
         .unwrap();
 
-    let deleted = store.delete_by_session("proj", "remove").unwrap();
-    assert_eq!(deleted, 1);
+    // The delete count must equal the total number of rows for the project —
+    // any leftover row is still recallable, which is the observable bug.
+    let deleted = store.delete_project("proj").unwrap();
+    assert_eq!(deleted, 3);
 
-    let remaining = store.search("proj", "keep", 10).unwrap();
-    assert_eq!(remaining.len(), 1, "entry from kept session must survive");
+    let remaining = store.search("proj", "entry", 10).unwrap();
+    assert!(
+        remaining.is_empty(),
+        "delete_project must leave no recallable row, got: {:?}",
+        remaining
+            .iter()
+            .map(|r| r.content.clone())
+            .collect::<Vec<_>>()
+    );
+
+    // The FTS5 shadow table must also be empty — a stale shadow row would
+    // keep the deleted content matching even though the `entries` row is
+    // gone. Query it directly to close the gap between the entries_ad
+    // trigger claim and what the row-level assertions above prove.
+    let shadow_count: i64 = store
+        .conn
+        .query_row("SELECT count(*) FROM entries_fts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        shadow_count, 0,
+        "entries_fts shadow table must be empty after delete_project"
+    );
 }
 
 #[test]

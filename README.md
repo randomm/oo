@@ -178,8 +178,8 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall <query>` | Search indexed output from this session |
-| `oo forget` | Clear all indexed output for this session |
+| `oo recall <query>` | Search indexed output for this project |
+| `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |

@@ -5,8 +5,8 @@
 | Command | Description |
 |---------|-------------|
 | `oo <cmd> [args...]` | Run a command with context-efficient output |
-| `oo recall [--full] <query>` | Search indexed output from this session |
-| `oo forget` | Clear all indexed output for this session |
+| `oo recall [--full] <query>` | Search indexed output for this project |
+| `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
@@ -104,7 +104,7 @@ Returns the exit code of the wrapped command.
 
 ## `oo recall [--full] <query>`
 
-Search indexed output from the current session.
+Search indexed output for the current project.
 
 ### Usage
 
@@ -130,7 +130,7 @@ word `--full` cannot be searched — the flag is stripped wherever it appears.
 - **Search**: Full-text search across all indexed outputs
 - **Minimum length**: Queries of 2+ characters use FTS5 (full-text search); single characters use LIKE pattern matching
 - **Limit**: Returns up to 5 most relevant results
-- **Scope**: Only searches outputs from the current session (project and process)
+- **Scope**: Searches all indexed output for the current project (across all sessions)
 
 ### Output format
 
@@ -138,7 +138,7 @@ word `--full` cannot be searched — the flag is stripped wherever it appears.
 (indented per line; the same indent applies to `--full` output):
 
 ```
-[session] cargo test (2m ago):
+[oo] cargo test (2m ago):
   test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
   running 47 tests [oo: truncated]
 ```
@@ -154,7 +154,7 @@ the stored content or with FTS5's own `…` omission markers.
 isn't enough — it can flood an agent's context, so prefer the bounded default):
 
 ```
-[session] cargo test (2m ago):
+[oo] cargo test (2m ago):
   test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
   
   running 47 tests
@@ -162,7 +162,7 @@ isn't enough — it can flood an agent's context, so prefer the bounded default)
   ...
 ```
 
-"project memory" indicates entries from Vipune (when `vipune-store` feature is enabled) without session metadata.
+"project memory" indicates entries from Vipune (when `vipune-store` feature is enabled) without oo metadata.
 
 ### Exit codes
 
@@ -175,7 +175,7 @@ isn't enough — it can flood an agent's context, so prefer the bounded default)
 
 ## `oo forget`
 
-Clear all indexed output for the current session.
+Clear all indexed output for the current project.
 
 ### Usage
 
@@ -185,12 +185,12 @@ oo forget
 
 ### Behavior
 
-Deletes all outputs indexed in the current session identified by project ID and process ID. This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
+Deletes all outputs indexed for the current project, regardless of which session stored them. This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
 
 ### Output format
 
 ```
-Cleared session data (12 entries)
+Cleared project data (12 entries)
 ```
 
 ### Exit codes
