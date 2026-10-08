@@ -11,11 +11,9 @@
 //! hook never executes the command, never touches the store, and does no
 //! work beyond what `oo rewrite` already does (in-process pattern load).
 
-use crate::commands::REWRITE_PATTERNS;
-use crate::rewrite;
+use crate::rewrite::{self, REWRITE_PATTERNS};
 use crate::{error::Error, init::find_root};
 use std::io::Read;
-use std::io::Write;
 use std::path::PathBuf;
 
 /// The installed hook command (the exact `command` string in settings.json).
@@ -130,7 +128,8 @@ fn handle(input: Result<String, std::io::Error>) -> Option<String> {
 }
 
 /// Merge the `oo hook claude` entry into `hooks.PreToolUse` in
-/// `settings_path`, writing atomically (temp file + rename) and returning the
+/// `settings_path`, writing the result back to the same path (plain write —
+/// the caller never relies on the write being crash-atomic) and returning the
 /// updated JSON string. See [`install_settings_json`].
 ///
 /// Rules:
@@ -169,13 +168,24 @@ pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
         )));
     }
 
-    // Ensure `hooks` is an object.
+    // `hooks` must be absent or an object — a garbage-typed `hooks` key (e.g.
+    // a string) is refused rather than silently clobbered, mirroring the
+    // `PreToolUse` non-array refusal below.
     let doc_obj = doc.as_object_mut().unwrap();
-    if !doc_obj.get("hooks").and_then(|h| h.as_object()).is_some() {
-        doc_obj.insert(
-            "hooks".to_string(),
-            serde_json::Value::Object(serde_json::Map::new()),
-        );
+    match doc_obj.get("hooks") {
+        None => {
+            doc_obj.insert(
+                "hooks".to_string(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
+        }
+        Some(h) if h.is_object() => {}
+        Some(_) => {
+            return Err(Error::Init(format!(
+                "existing {} has a non-object hooks key — refusing to modify it",
+                settings_path.display()
+            )));
+        }
     }
     let hooks_obj = doc_obj
         .get_mut("hooks")
@@ -223,321 +233,20 @@ pub fn merge_oo_hook(settings_path: &std::path::Path) -> Result<String, Error> {
     let serialized = serde_json::to_string_pretty(&doc)
         .map_err(|e| Error::Init(format!("JSON serialize failed: {e}")))?;
 
-    // Atomic write: temp file in the same directory, then rename.
-    write_atomic(settings_path, &serialized)?;
+    // Plain write, matching the pi installer (`init_pi`); a malformed
+    // existing file was already refused above, and the caller never relies
+    // on the write being crash-atomic. `create_dir_all` first: plain
+    // `fs::write` cannot create the parent, and both sibling installers do.
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::Init(format!("cannot create {}: {e}", parent.display())))?;
+    }
+    std::fs::write(settings_path, &serialized)
+        .map_err(|e| Error::Init(format!("cannot write {}: {e}", settings_path.display())))?;
 
     Ok(serialized)
 }
 
-/// Write `contents` to `path` atomically: write to a temp file in the same
-/// directory, then rename over `path`. On any failure the original file (if
-/// any) is left untouched.
-fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), Error> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| Error::Init(format!("cannot create {}: {e}", parent.display())))?;
-        }
-    }
-
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let parent_prefix = path
-        .parent()
-        .map(|p| p.as_os_str().to_os_string())
-        .filter(|p| !p.as_os_str().is_empty());
-    let tmp = match parent_prefix {
-        Some(prefix) => PathBuf::from(prefix).join(format!(".{file_name}.tmp")),
-        None => PathBuf::from(format!(".{file_name}.tmp")),
-    };
-
-    let result = (|| -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(contents.as_bytes())?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, path)
-    })();
-
-    if let Err(e) = result {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(Error::Init(format!(
-            "atomic write to {} failed: {e}",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::pattern::builtins;
-
-    // set_var/remove_var are process-global and tests run on parallel threads
-    // — every env-mutating test takes this lock first.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn input(json: &str) -> Result<String, std::io::Error> {
-        Ok(json.to_string())
-    }
-
-    // -------------------------------------------------------------------
-    // handle — the fail-open processor
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn handle_rewrites_bash_command() {
-        let json = format!(
-            r#"{{"tool_name":"Bash","tool_input":{{"command":"{cmd}"}}}}"#,
-            cmd = "pytest tests/"
-        );
-        let out = handle(input(&json)).expect("a pytest command must rewrite");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreToolUse");
-        assert_eq!(
-            v["hookSpecificOutput"]["updatedInput"]["command"],
-            "oo pytest tests/"
-        );
-    }
-
-    #[test]
-    fn handle_no_rewrite_returns_none() {
-        // `cat file.txt` has no builtin pattern → no rewrite → None (pass-through).
-        let json = r#"{"tool_name":"Bash","tool_input":{"command":"cat file.txt"}}"#;
-        assert!(handle(input(json)).is_none());
-    }
-
-    #[test]
-    fn handle_non_bash_tool_returns_none() {
-        let json = r#"{"tool_name":"Read","tool_input":{"command":"pytest tests/"}}"#;
-        assert!(handle(input(json)).is_none());
-    }
-
-    #[test]
-    fn handle_invalid_json_returns_none() {
-        let invalid_json = "{\"tool_name\":\"Bash\",\""; // truncated / malformed
-        assert!(handle(input(invalid_json)).is_none());
-        assert!(handle(input("")).is_none());
-        assert!(handle(input("not json at all")).is_none());
-    }
-
-    #[test]
-    fn handle_missing_command_field_returns_none() {
-        let json = r#"{"tool_name":"Bash","tool_input":{"description":"no cmd"}}"#;
-        assert!(handle(input(json)).is_none());
-    }
-
-    #[test]
-    fn handle_empty_command_returns_none() {
-        let json = r#"{"tool_name":"Bash","tool_input":{"command":"   "}}"#;
-        assert!(handle(input(json)).is_none());
-    }
-
-    #[test]
-    fn handle_preserves_other_tool_input_fields() {
-        let json = r#"{"tool_name":"Bash","tool_input":{"command":"pytest tests/","description":"view history","timeout":12000}}"#;
-        let out = handle(input(json)).expect("must rewrite");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        let updated = &v["hookSpecificOutput"]["updatedInput"];
-        assert_eq!(updated["command"], "oo pytest tests/");
-        assert_eq!(updated["description"], "view history");
-        assert_eq!(updated["timeout"], 12000);
-    }
-
-    #[test]
-    fn handle_output_is_valid_json_with_escaped_command() {
-        // A plain cargo build rewrites to the oo-prefixed form; the output
-        // must be valid, parseable JSON.
-        let json = r#"{"tool_name":"Bash","tool_input":{"command":"cargo build"}}"#;
-        let out = handle(input(json)).expect("must rewrite");
-        // Must be valid, parseable JSON.
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(
-            v["hookSpecificOutput"]["updatedInput"]["command"],
-            "oo cargo build"
-        );
-    }
-
-    #[test]
-    fn handle_unreadable_stdin_returns_none() {
-        let err: Result<String, std::io::Error> =
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "boom"));
-        assert!(handle(err).is_none());
-    }
-
-    #[test]
-    fn builtin_patterns_nonempty() {
-        // Guard: the in-process rewrite set is non-empty so the rewrite path is real.
-        assert!(!builtins().is_empty());
-    }
-
-    // -------------------------------------------------------------------
-    // claude_settings_path
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn settings_path_project_under_git_root() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-        let sub = dir.path().join("a").join("b");
-        std::fs::create_dir_all(&sub).unwrap();
-        assert_eq!(
-            claude_settings_path(&sub, false),
-            dir.path().join(".claude").join("settings.json")
-        );
-    }
-
-    #[test]
-    fn settings_path_global_uses_claude_dir_override() {
-        let override_dir = tempfile::TempDir::new().unwrap();
-        let _guard = env_guard();
-        unsafe {
-            std::env::set_var("OO_CLAUDE_DIR", override_dir.path());
-        }
-        assert_eq!(
-            claude_settings_path(std::path::Path::new("/tmp"), true),
-            override_dir.path().join("settings.json")
-        );
-        unsafe { std::env::remove_var("OO_CLAUDE_DIR") };
-    }
-
-    // -------------------------------------------------------------------
-    // merge_oo_hook — installer
-    // -------------------------------------------------------------------
-
-    fn count_oo_entries(v: &serde_json::Value) -> usize {
-        v["hooks"]["PreToolUse"]
-            .as_array()
-            .map(|groups| {
-                groups
-                    .iter()
-                    .filter_map(|g| g.get("hooks").and_then(|h| h.as_array()))
-                    .map(|cmds| {
-                        cmds.iter()
-                            .filter(|c| {
-                                c.get("command").and_then(|v| v.as_str()) == Some(HOOK_COMMAND)
-                            })
-                            .count()
-                    })
-                    .sum::<usize>()
-            })
-            .unwrap_or(0)
-    }
-
-    #[test]
-    fn merge_creates_file_when_absent() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        let out = merge_oo_hook(&path).expect("install must succeed");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert!(v["hooks"]["PreToolUse"].as_array().is_some());
-        assert_eq!(count_oo_entries(&v), 1);
-        let on_disk = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(on_disk, out);
-    }
-
-    #[test]
-    fn merge_preserves_other_keys_and_hooks() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        let existing = r#"{
-            "model": "claude-3",
-            "hooks": {
-              "PreToolUse": [
-                {"matcher": "Bash", "hooks": [{"type":"command","command":"rtk hook claude"}]}
-              ],
-              "PostToolUse": [
-                {"matcher": "*", "hooks": [{"type":"command","command":"other"}]}
-              ]
-            }
-          }"#;
-        std::fs::write(&path, existing).unwrap();
-        let out = merge_oo_hook(&path).expect("install must succeed");
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        // Other top-level keys preserved.
-        assert_eq!(v["model"], "claude-3");
-        // PostToolUse untouched.
-        assert_eq!(v["hooks"]["PostToolUse"][0]["matcher"], "*");
-        // Existing rtk Bash hook preserved (not deduped).
-        let groups = v["hooks"]["PreToolUse"].as_array().unwrap();
-        let all_commands: Vec<&str> = groups
-            .iter()
-            .filter_map(|g| g["hooks"].as_array())
-            .flat_map(|cmds| cmds.iter().filter_map(|c| c["command"].as_str()))
-            .collect();
-        assert!(all_commands.contains(&"rtk hook claude"));
-        assert_eq!(count_oo_entries(&v), 1);
-    }
-
-    #[test]
-    fn merge_appends_to_existing_bash_group() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        let existing = r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtk hook claude"}]}]}}"#;
-        std::fs::write(&path, existing).unwrap();
-        let out = merge_oo_hook(&path).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        // A single Bash group carrying both hooks (no duplicate group).
-        let groups = v["hooks"]["PreToolUse"].as_array().unwrap();
-        let bash_groups: Vec<_> = groups.iter().filter(|g| g["matcher"] == "Bash").collect();
-        assert_eq!(bash_groups.len(), 1);
-        assert_eq!(count_oo_entries(&v), 1);
-    }
-
-    #[test]
-    fn merge_is_idempotent() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        merge_oo_hook(&path).unwrap();
-        let first = std::fs::read_to_string(&path).unwrap();
-        let out2 = merge_oo_hook(&path).expect("second run must succeed");
-        let second = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(first, second, "idempotent re-run must not change the file");
-        let v: serde_json::Value = serde_json::from_str(&out2).unwrap();
-        assert_eq!(count_oo_entries(&v), 1, "exactly one oo entry after re-run");
-    }
-
-    #[test]
-    fn merge_malformed_existing_is_error_and_not_overwritten() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        let corrupt = "{\"hooks\": {"; // invalid JSON
-        std::fs::write(&path, corrupt).unwrap();
-        let err = merge_oo_hook(&path).expect_err("malformed JSON must error");
-        assert!(format!("{err:?}").contains("not valid JSON"));
-        // File must be unchanged.
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), corrupt);
-    }
-
-    #[test]
-    fn write_atomic_leaves_original_on_failure() {
-        // A read-only parent directory makes create_dir_all/File::create fail
-        // on the temp file; the original must survive.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("sub").join("settings.json");
-        std::fs::create_dir_all(&path.parent().unwrap()).unwrap();
-        std::fs::write(&path, r#"{"original":true} "#).unwrap();
-        // Make the parent read-only so the temp file cannot be created.
-        use std::os::unix::fs::PermissionsExt;
-        let ro = std::fs::Permissions::from_mode(0o555);
-        std::fs::set_permissions(path.parent().unwrap(), ro).unwrap();
-        let err = write_atomic(&path, r#"{"new":true}"#);
-        // Restore permissions for cleanup.
-        let rw = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(path.parent().unwrap(), rw).unwrap();
-        assert!(err.is_err(), "write must fail in a read-only dir");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            r#"{"original":true} "#,
-            "original must be untouched after a failed atomic write"
-        );
-    }
-}
+#[path = "hook_tests.rs"]
+mod tests;

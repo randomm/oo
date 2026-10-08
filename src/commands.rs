@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::LazyLock;
 
 use humansize::{BINARY, format_size};
 use std::io::Write;
@@ -9,7 +8,8 @@ pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, init, init_pi, learn, pattern, rewrite, session, store,
+    classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern, rewrite,
+    session, store,
 };
 
 pub enum Action {
@@ -226,7 +226,7 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
     }
 
     // Load patterns (first match wins: project overrides user overrides builtins).
-    let all_patterns = all_patterns();
+    let all_patterns = rewrite::all_patterns();
 
     // Run command
     let output = match exec::run(args) {
@@ -523,26 +523,11 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// Load all patterns in the canonical precedence order — project-local,
-/// then user config, then builtins — so first-match-wins gives project
-/// patterns priority over user patterns over builtins. Single source of the
-/// ordering for both `oo <cmd>` and `oo rewrite`.
-fn all_patterns() -> Vec<pattern::Pattern> {
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-    all_patterns
-}
-
-/// Loaded patterns for `oo rewrite`: same set and order as `oo <cmd>`
-/// (see [`all_patterns`]). Loaded once per process.
-pub(crate) static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
-
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
 /// print nothing and return 1 otherwise. Never executes the command.
 pub fn cmd_rewrite(command: &str) -> i32 {
-    match rewrite::rewrite(command, &REWRITE_PATTERNS) {
+    match rewrite::rewrite(command, &rewrite::REWRITE_PATTERNS) {
         Some(rewritten) => {
             println!("{rewritten}");
             0
@@ -603,20 +588,22 @@ pub fn cmd_init(mode: InitMode) -> i32 {
                 }
             }
         }
-        InitMode::ClaudeCode { global } => {
-            let Ok(cwd) = std::env::current_dir() else {
-                eprintln!("oo: cannot determine working directory");
-                return 1;
-            };
-            let path = crate::hook::claude_settings_path(&cwd, *global);
-            match crate::hook::install_settings_json(&path) {
-                Ok(()) => 0,
-                Err(e) => {
-                    eprintln!("oo: {e}");
-                    1
+        InitMode::ClaudeCode { global } => match std::env::current_dir().map_err(Error::from) {
+            Err(e) => {
+                eprintln!("oo: {e}");
+                1
+            }
+            Ok(cwd) => {
+                let path = crate::hook::claude_settings_path(&cwd, *global);
+                match crate::hook::install_settings_json(&path) {
+                    Ok(()) => 0,
+                    Err(e) => {
+                        eprintln!("oo: {e}");
+                        1
+                    }
                 }
             }
-        }
+        },
     }
 }
 

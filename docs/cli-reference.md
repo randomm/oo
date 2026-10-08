@@ -324,7 +324,7 @@ supported values (`pi`, `claude-code`).
 | project (default) | `<git-root>/.claude/settings.json` (cwd when not in a git repo) |
 | global (`--global`) | `$OO_CLAUDE_DIR/settings.json` when `OO_CLAUDE_DIR` is set (the variable is the final config directory — no path suffix is appended); otherwise `~/.claude/settings.json`. Never consults the git root |
 
-`OO_PI_EXTENSIONS_DIR` is a trusted path: when set, its value is used as-is — the file is written directly into it, with no sanitisation or additional path components. A set-but-empty `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
+`OO_PI_EXTENSIONS_DIR` and `OO_CLAUDE_DIR` are trusted paths: when set, their values are used as-is — the file is written directly into the named directory, with no sanitisation or additional path components. A set-but-empty variable is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
 
 ### Pi extension behaviour
 
