@@ -148,6 +148,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
 | [`src/commands.rs`](../src/commands.rs) | CLI command handlers (private) | `cmd_run()`, `cmd_recall()`, etc. |
+| [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |
 | [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation | Hook file creation |
 | [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
@@ -190,6 +191,7 @@ These are built-in commands (not shell commands):
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Generate `.claude/hooks.json` and AGENTS.md snippet |
 | `version` | Built-in to clap | Print version |
+| `rewrite` | `cmd_rewrite()` | Print `oo`-prefixed form of a command for agent hooks (never executes) |
 | `_learn_bg` | `run_background()` | Internal command for background learning |
 
 Everything else is treated as a shell command to execute.

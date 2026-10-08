@@ -130,11 +130,8 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
         return (1, None);
     }
 
-    // Load patterns: project-local first, then user config, then builtins.
-    // First match wins, so project patterns override user patterns override builtins.
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
+    // Load patterns (first match wins: project overrides user overrides builtins).
+    let all_patterns = all_patterns();
 
     // Run command
     let output = match exec::run(args) {
@@ -431,16 +428,20 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
-/// Loaded patterns for `oo rewrite`: project + user + builtins, first match
-/// wins (same order as `oo <cmd>`). Cached once per process — `oo rewrite`
-/// runs once per shell command from hook handlers, so re-reading and
-/// re-compiling the TOML patterns every invocation would be pure churn.
-static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(|| {
+/// Load all patterns in the canonical precedence order — project-local,
+/// then user config, then builtins — so first-match-wins gives project
+/// patterns priority over user patterns over builtins. Single source of the
+/// ordering for both `oo <cmd>` and `oo rewrite`.
+fn all_patterns() -> Vec<pattern::Pattern> {
     let mut all_patterns = load_project_patterns();
     all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
     all_patterns.extend_from_slice(pattern::builtins());
     all_patterns
-});
+}
+
+/// Loaded patterns for `oo rewrite`: same set and order as `oo <cmd>`
+/// (see [`all_patterns`]). Loaded once per process.
+static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
 
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or

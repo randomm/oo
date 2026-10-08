@@ -1015,6 +1015,16 @@ fn test_rewrite_multi_segment_only_matching_segment_rewritten() {
 }
 
 #[test]
+fn test_rewrite_multibyte_before_separator_does_not_panic() {
+    // A multi-byte char before a separator: char-index byte slicing would
+    // land mid-codepoint and panic.
+    oo().args(["rewrite", "é && pytest -q"])
+        .assert()
+        .success()
+        .stdout("é && oo pytest -q\n");
+}
+
+#[test]
 fn test_rewrite_no_pattern_exits_one_no_output() {
     oo().args(["rewrite", "git log --stat"])
         .assert()

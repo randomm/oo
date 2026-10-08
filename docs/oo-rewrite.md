@@ -40,3 +40,5 @@ exit 1
 - **`&&`, `||`, `;`** inside quotes are not segment separators.
 - **`VAR=value`** environment prefixes are preserved in front of `oo`.
 - Already-`oo`-prefixed segments are left as-is (no double-wrap).
+- Commands longer than 16 KiB are refused (exit 1, no output) — the bound
+  caps worst-case regex work over the command string.

@@ -7,35 +7,41 @@
 
 use crate::pattern::{self, Pattern};
 
+/// Maximum command length (bytes) accepted by [`rewrite`]. Realistic shell
+/// commands stay well below this; the bound caps the worst-case regex work
+/// done over attacker-influenced input.
+const MAX_REWRITE_INPUT_BYTES: usize = 16 * 1024;
+
 /// Rewrite `command` if at least one of its shell segments has an oo pattern.
 ///
-/// Returns `None` (→ exit 1, no output) when the command is empty/blank or
-/// contains a construct we refuse to reason about: pipes, redirections,
-/// heredocs, command substitution, or background `&`.
+/// Returns `None` (→ exit 1, no output) when the command is empty/blank,
+/// longer than [`MAX_REWRITE_INPUT_BYTES`], or contains a construct we refuse
+/// to reason about: pipes, redirections, heredocs, command substitution, or
+/// background `&`.
 ///
 /// The input is a **raw shell string**, and the printed output is meant to be
-/// shell-executed by the hook. Quote content is opaque to
-/// [`contains_unsafe_construct`] (a quoted `|`/`&&`/`$(...)` does not trigger
-/// the refusal), but the shell re-parses the output: metacharacters inside
-/// quotes become live there. Rewriting therefore never *introduces* a new
-/// unquoted token, but it preserves whatever the caller already placed
-/// inside quotes — a hook that shell-executes the output inherits shell
-/// semantics of that quoted content, exactly as the original command would
-/// have. The rewrite is a safe passthrough only under that contract.
+/// shell-executed by the hook. Quote content is opaque to the refused-
+/// construct scan (a quoted `|`/`&&`/`$()` does not trigger the refusal),
+/// but the shell re-parses the output: metacharacters inside quotes become
+/// live there. Rewriting therefore never *introduces* a new unquoted token,
+/// but it preserves whatever the caller already placed inside quotes — a hook
+/// that shell-executes the output inherits shell semantics of that quoted
+/// content, exactly as the original command would have. The rewrite is a safe
+/// passthrough only under that contract.
 pub fn rewrite(command: &str, patterns: &[Pattern]) -> Option<String> {
     let trimmed = command.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if contains_unsafe_construct(trimmed) {
+    if trimmed.is_empty() || trimmed.len() > MAX_REWRITE_INPUT_BYTES {
         return None;
     }
 
-    let segments = split_segments(trimmed);
+    // One quote-aware pass over the command: it both rejects refused
+    // constructs and splits on `&&`/`||`/;` separators (outside quotes), so
+    // the input is decoded to `Vec<char>` exactly once per call.
+    let split = split_segments(trimmed)?;
     let mut out = String::with_capacity(trimmed.len());
     let mut changed = false;
 
-    for (seg_text, sep_after) in segments.iter() {
+    for (seg_text, sep_after) in split.iter() {
         let rewritten = rewrite_segment(seg_text, patterns);
         match &rewritten {
             Some(r) => {
@@ -56,42 +62,34 @@ pub fn rewrite(command: &str, patterns: &[Pattern]) -> Option<String> {
 /// Rewrite a single (trimmed) shell segment, preserving a leading `VAR=value`
 /// environment prefix, or `None` when the segment needs no rewriting.
 fn rewrite_segment(segment: &str, patterns: &[Pattern]) -> Option<String> {
-    if segment.is_empty() {
+    let words: Vec<&str> = segment.split_whitespace().collect();
+    let first = words.first().copied().unwrap_or("");
+    if first == "oo" || first.is_empty() {
         return None;
     }
-    let first = segment.split_whitespace().next().unwrap_or("");
-    if first == "oo" {
-        return None;
-    }
-    // Walk the leading `NAME=value` tokens, consuming each token plus the
-    // separator whitespace that follows it. `consumed` tracks how many bytes
-    // of `segment` have been consumed so far — always a real char boundary
-    // because it is built up from `next.len()` (a &str byte length) plus the
-    // separator bytes, never a hand-computed byte offset.
-    let mut consumed = 0usize;
-    let mut rest = segment;
-    while let Some(next) = rest.split_whitespace().next() {
-        let is_env = next
+    // Count the leading `NAME=value` tokens; the env prefix is those words
+    // re-joined with single spaces.
+    let mut env_count = 0;
+    for word in words.iter() {
+        let is_env = word
             .split_once('=')
             .is_some_and(|(name, _)| is_valid_var_name(name));
         if !is_env {
             break;
         }
-        // After the token comes one or more separator bytes (spaces/tabs).
-        // `after` is the remainder of `rest` once the token is dropped; the
-        // separator bytes are the gap between `next`'s end and `after`'s
-        // first non-whitespace byte.
-        let after = &rest[next.len()..];
-        let sep = after.len() - after.trim_start().len();
-        consumed = consumed + next.len() + sep;
-        rest = after.trim_start();
+        env_count += 1;
     }
-    let env_prefix = &segment[..consumed];
-    if rest.is_empty() {
+    if env_count == words.len() {
         return None;
     }
-    pattern::find_matching(rest, patterns)?;
-    Some(format!("{env_prefix}oo {rest}"))
+    let rest = words[env_count..].join(" ");
+    pattern::find_matching(&rest, patterns)?;
+    let env_prefix = words[..env_count].join(" ");
+    if env_prefix.is_empty() {
+        Some(format!("oo {rest}"))
+    } else {
+        Some(format!("{env_prefix} oo {rest}"))
+    }
 }
 
 /// True when `name` is a valid shell variable name: non-empty and made up
@@ -100,12 +98,14 @@ fn is_valid_var_name(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Split a command into (trimmed_segment, separator_after) pairs on `&&`,
-/// `||`, and `;` outside single or double quotes.
+/// Split `command` into (trimmed_segment, separator_after) pairs on `&&`,
+/// `||`, and `;` outside single or double quotes, refusing (returning `None`)
+/// when the command contains any construct [`rewrite`] won't reason about:
+/// pipes, redirections, heredocs, command substitution, or background `&`.
 ///
 /// The separator is the canonical form with a single leading space:
 /// `" && "`, `" || "`, or `" ; "`. The last segment has an empty separator.
-fn split_segments(command: &str) -> Vec<(String, &'static str)> {
+fn split_segments(command: &str) -> Option<Vec<(String, &'static str)>> {
     let chars: Vec<char> = command.chars().collect();
     let n = chars.len();
     let mut result: Vec<(String, &'static str)> = Vec::new();
@@ -118,76 +118,58 @@ fn split_segments(command: &str) -> Vec<(String, &'static str)> {
         match quote {
             Some(q) if c == q => quote = None,
             None if c == '\'' || c == '"' => quote = Some(c),
-            None if c == '&' && i + 1 < n && chars[i + 1] == '&' => {
-                let seg: String = command[start..i].trim().to_string();
-                result.push((seg, " && "));
-                i += 2;
-                start = i;
-                continue;
-            }
-            None if c == '|' && i + 1 < n && chars[i + 1] == '|' => {
-                let seg: String = command[start..i].trim().to_string();
-                result.push((seg, " || "));
-                i += 2;
-                start = i;
-                continue;
-            }
-            None if c == ';' => {
-                let seg: String = command[start..i].trim().to_string();
-                result.push((seg, " ; "));
-                i += 1;
-                start = i;
-                continue;
+            None => {
+                // Separator checks first: `&&`/`||` are split points, not
+                // refused constructs (a lone `|` or `&` is refused below).
+                if c == '&' && i + 1 < n && chars[i + 1] == '&' {
+                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
+                    result.push((seg, " && "));
+                    i += 2;
+                    start = i;
+                    continue;
+                }
+                if c == '|' && i + 1 < n && chars[i + 1] == '|' {
+                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
+                    result.push((seg, " || "));
+                    i += 2;
+                    start = i;
+                    continue;
+                }
+                if c == ';' {
+                    let seg: String = command[start..byte_offset(&chars, i)].trim().to_string();
+                    result.push((seg, " ; "));
+                    i += 1;
+                    start = i;
+                    continue;
+                }
+                // Anything else is a refused construct: the command cannot be
+                // rewritten safely.
+                if c == '|' || c == '<' || c == '>' || c == '&' {
+                    return None;
+                }
+                if (c == '$' && i + 1 < n && chars[i + 1] == '(') || c == '`' {
+                    return None;
+                }
             }
             _ => {}
         }
         i += 1;
     }
-    let last: String = command[start..].trim().to_string();
+    let last: String = command[byte_offset(&chars, start)..].trim().to_string();
     result.push((last, ""));
-    result
+    Some(result)
 }
 
-/// True when `command` contains a pipe, redirection, heredoc, command
-/// substitution, or background `&` outside of quotes.
-fn contains_unsafe_construct(command: &str) -> bool {
-    let chars: Vec<char> = command.chars().collect();
-    let n = chars.len();
-    let mut i = 0;
-    let mut quote: Option<char> = None;
-
-    while i < n {
-        let c = chars[i];
-        match quote {
-            Some(q) if c == q => quote = None,
-            None if c == '\'' || c == '"' => quote = Some(c),
-            None => {
-                if c == '|' && i + 1 < n && chars[i + 1] == '|' {
-                    i += 2;
-                    continue;
-                }
-                if c == '|' || c == '<' || c == '>' {
-                    return true;
-                }
-                if c == '&' && i + 1 < n && chars[i + 1] == '&' {
-                    i += 2;
-                    continue;
-                }
-                if c == '&' {
-                    return true;
-                }
-                if c == '$' && i + 1 < n && chars[i + 1] == '(' {
-                    return true;
-                }
-                if c == '`' {
-                    return true;
-                }
-            }
-            Some(_) => {}
-        }
-        i += 1;
-    }
-    false
+/// Byte offset in the original string of char-index `i` (i.e. the length of
+/// the first `i` chars), so `command[..byte_offset(&chars, i)]` always slices
+/// on a char boundary.
+fn byte_offset(chars: &[char], i: usize) -> usize {
+    chars
+        .get(..i.min(chars.len()))
+        .unwrap_or(&[])
+        .iter()
+        .map(|c| c.len_utf8())
+        .sum()
 }
 
 #[cfg(test)]
@@ -282,6 +264,22 @@ mod tests {
         // panicked. The new code must preserve the multi-byte prefix intact.
         let out = rewrite("A=é pytest -q", &patterns()).expect("must rewrite");
         assert_eq!(out, "A=é oo pytest -q");
+    }
+
+    #[test]
+    fn non_ascii_before_separator_does_not_panic() {
+        // A multi-byte char before a separator: slicing on the char index
+        // would land mid-codepoint and panic; byte-offset slicing must not.
+        let out = rewrite("é && pytest -q", &patterns()).expect("must rewrite");
+        assert_eq!(out, "é && oo pytest -q");
+        let out = rewrite("héllo ; cargo build", &patterns()).expect("must rewrite");
+        assert_eq!(out, "héllo ; oo cargo build");
+    }
+
+    #[test]
+    fn overlong_input_is_refused_not_panicked() {
+        let long = format!("{} pytest -q", "a".repeat(MAX_REWRITE_INPUT_BYTES));
+        assert!(rewrite(&long, &patterns()).is_none());
     }
 
     #[test]
