@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use humansize::{BINARY, format_size};
 use std::io::Write;
@@ -7,7 +8,9 @@ use crate::classify::Classification;
 pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
-use crate::{classify, commands_patterns, exec, help, init, learn, pattern, session, store};
+use crate::{
+    classify, commands_patterns, exec, help, init, learn, pattern, rewrite, session, store,
+};
 
 pub enum Action {
     Run(Vec<String>),
@@ -18,6 +21,7 @@ pub enum Action {
     Help(Option<String>),
     Init(InitFormat),
     Patterns,
+    Rewrite(String),
 }
 
 /// Parse `--format <value>` from the remaining init args.
@@ -101,6 +105,14 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("help") => Action::Help(args.get(1).cloned()),
         Some("init") => Action::Init(parse_init_format(&args[1..])),
         Some("patterns") => Action::Patterns,
+        Some("rewrite") => {
+            let command: String = args
+                .get(1..)
+                .map(|rest| rest.join(" "))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_default();
+            Action::Rewrite(command)
+        }
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -118,11 +130,8 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
         return (1, None);
     }
 
-    // Load patterns: project-local first, then user config, then builtins.
-    // First match wins, so project patterns override user patterns override builtins.
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
+    // Load patterns (first match wins: project overrides user overrides builtins).
+    let all_patterns = all_patterns();
 
     // Run command
     let output = match exec::run(args) {
@@ -416,6 +425,34 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
             }
         }
         let _ = std::fs::remove_file(status_path);
+    }
+}
+
+/// Load all patterns in the canonical precedence order — project-local,
+/// then user config, then builtins — so first-match-wins gives project
+/// patterns priority over user patterns over builtins. Single source of the
+/// ordering for both `oo <cmd>` and `oo rewrite`.
+fn all_patterns() -> Vec<pattern::Pattern> {
+    let mut all_patterns = load_project_patterns();
+    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
+    all_patterns.extend_from_slice(pattern::builtins());
+    all_patterns
+}
+
+/// Loaded patterns for `oo rewrite`: same set and order as `oo <cmd>`
+/// (see [`all_patterns`]). Loaded once per process.
+static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(all_patterns);
+
+/// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
+/// form on stdout (exit 0) when at least one segment has an oo pattern, or
+/// print nothing and return 1 otherwise. Never executes the command.
+pub fn cmd_rewrite(command: &str) -> i32 {
+    match rewrite::rewrite(command, &REWRITE_PATTERNS) {
+        Some(rewritten) => {
+            println!("{rewritten}");
+            0
+        }
+        None => 1,
     }
 }
 

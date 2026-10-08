@@ -14,6 +14,35 @@ fn test_parse_action_patterns() {
     assert!(matches!(parse_action(&[s("patterns")]), Action::Patterns));
 }
 
+#[test]
+fn test_parse_action_rewrite_with_command() {
+    let args = vec![s("rewrite"), s("cargo test")];
+    assert!(matches!(parse_action(&args), Action::Rewrite(c) if c == "cargo test"));
+}
+
+#[test]
+fn test_parse_action_rewrite_multi_word_joins() {
+    let args = vec![s("rewrite"), s("cd src"), s("&&"), s("cargo build")];
+    assert!(matches!(parse_action(&args), Action::Rewrite(c) if c == "cd src && cargo build"));
+}
+
+#[test]
+fn test_parse_action_rewrite_no_arg_is_empty() {
+    assert!(matches!(parse_action(&[s("rewrite")]), Action::Rewrite(c) if c.is_empty()));
+}
+
+#[test]
+fn test_cmd_rewrite_no_pattern_returns_1() {
+    assert_eq!(cmd_rewrite("git log --stat"), 1);
+    assert_eq!(cmd_rewrite("ls -la"), 1);
+}
+
+#[test]
+fn test_cmd_rewrite_empty_and_blank_returns_1() {
+    assert_eq!(cmd_rewrite(""), 1);
+    assert_eq!(cmd_rewrite("   "), 1);
+}
+
 // ---------------------------------------------------------------------------
 // cmd_patterns (Part 3)
 // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@
 | `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in + user) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
 
 ---
 
@@ -374,6 +375,23 @@ Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` he
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
+
+---
+
+## `oo rewrite <command...>`
+
+Print an `oo`-prefixed version of a shell command for agent hooks. It never
+executes the command and never reads from or writes to the output index store.
+This is a reserved subcommand — see [`oo-rewrite.md`](oo-rewrite.md) for the
+full reference: behavior, exit code contract, examples, and the list of
+refused constructs.
+
+Matching is **unanchored and per segment**: a segment is rewritten when any
+pattern's `command_match` regex matches anywhere in the segment text (the
+same patterns and matching as `oo <command>`; quoted text is not excluded).
+Exit 1 also covers a pattern file that failed to load, and the rewritten
+output is only guaranteed to re-parse identically under POSIX shell quoting
+rules.
 
 ---
 
