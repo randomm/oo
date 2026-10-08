@@ -386,6 +386,13 @@ This is a reserved subcommand — see [`oo-rewrite.md`](oo-rewrite.md) for the
 full reference: behavior, exit code contract, examples, and the list of
 refused constructs.
 
+Matching is **unanchored and per segment**: a segment is rewritten when any
+pattern's `command_match` regex matches anywhere in the segment text (the
+same patterns and matching as `oo <command>`; quoted text is not excluded).
+Exit 1 also covers a pattern file that failed to load, and the rewritten
+output is only guaranteed to re-parse identically under POSIX shell quoting
+rules.
+
 ---
 
 ## Exit Codes for Automation
