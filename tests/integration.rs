@@ -537,16 +537,29 @@ fn test_init_agent_claude_code_creates_settings_json_at_git_root() {
     );
     let v: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
-    let groups = v["hooks"]["PreToolUse"]
+    assert!(
+        count_oo_hook_entries(&v) >= 1,
+        "settings.json must register `oo hook claude`"
+    );
+}
+
+/// Count the `oo hook claude` entries under `hooks.PreToolUse` (summed across
+/// all matcher groups) — the shared check for the init-claude-code tests.
+fn count_oo_hook_entries(v: &serde_json::Value) -> usize {
+    v["hooks"]["PreToolUse"]
         .as_array()
-        .expect("PreToolUse array");
-    let has_oo = groups.iter().any(|g| {
-        g["hooks"]
-            .as_array()
-            .map(|cmds| cmds.iter().any(|c| c["command"] == "oo hook claude"))
-            .unwrap_or(false)
-    });
-    assert!(has_oo, "settings.json must register `oo hook claude`");
+        .map(|groups| {
+            groups
+                .iter()
+                .filter_map(|g| g["hooks"].as_array())
+                .map(|cmds| {
+                    cmds.iter()
+                        .filter(|c| c["command"] == "oo hook claude")
+                        .count()
+                })
+                .sum::<usize>()
+        })
+        .unwrap_or(0)
 }
 
 /// Re-running `oo init --agent claude-code` is idempotent — exactly one oo
@@ -572,18 +585,11 @@ fn test_init_agent_claude_code_idempotent() {
     let after = std::fs::read_to_string(&settings).unwrap();
     assert_eq!(before, after, "idempotent re-run must not change the file");
     let v: serde_json::Value = serde_json::from_str(&after).unwrap();
-    let count: usize = v["hooks"]["PreToolUse"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|g| g["hooks"].as_array())
-        .map(|cmds| {
-            cmds.iter()
-                .filter(|c| c["command"] == "oo hook claude")
-                .count()
-        })
-        .sum();
-    assert_eq!(count, 1, "exactly one oo hook entry after re-run");
+    assert_eq!(
+        count_oo_hook_entries(&v),
+        1,
+        "exactly one oo hook entry after re-run"
+    );
 }
 
 /// `oo init --agent claude-code --global` writes under the env-overridden
