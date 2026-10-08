@@ -39,49 +39,78 @@ pub const SUPPORTED_AGENTS: &[&str] = &["pi", "claude-code"];
 
 /// Parse the trailing args of `oo init` into an [`InitMode`].
 ///
-/// `--agent` and `--format` are mutually exclusive (issue #171, operator
-/// decision 1): passing both is a parse-time error before anything is
-/// written. `--agent pi` installs the pi extension, with `--global` writing
-/// to the user-level extensions directory. `--agent claude-code` is not yet
-/// implemented and errors (a sibling ticket ships it). Unknown or missing
-/// agent values error naming the supported values. `--agent` alone selects
-/// the agent installer; `--format` alone and plain `oo init` behave exactly
-/// as before.
-fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
-    let mut agent: Option<&str> = None;
-    let mut agent_seen = false;
-    let mut has_format = false;
+/// Single pass over the args; each recognised flag is handled inline and no
+/// value is silently discarded. `--agent` and `--format` are mutually
+/// exclusive (issue #171, operator decision 1): passing both is a
+/// parse-time error before anything is written. `--agent pi` installs the pi
+/// extension, with `--global` writing to the user-level extensions directory
+/// (`--global` without `--agent` is an error — there is no legacy global
+/// install). `--agent`'s value is validated against [`SUPPORTED_AGENTS`]:
+/// `pi` works, `claude-code` is supported by name but not yet implemented
+/// (a sibling ticket ships it), and anything else errors. On the pure
+/// `--format` path (no `--agent` at all), the original args are handed to
+/// [`parse_init_format`], so `oo init`, `oo init --format generic` and
+/// `oo init --format bogus` (warn, fall back to claude) behave exactly as
+/// before. Unknown extra flags are ignored (today's behavior).
+pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
+    let supported = SUPPORTED_AGENTS.join(", ");
+    let mut agent: Option<String> = None;
     let mut global = false;
+    let mut has_format = false;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--agent" => {
-                agent_seen = true;
-                agent = iter.next().map(|s| s.as_str());
+                let Some(value) = iter.next() else {
+                    return Err(format!(
+                        "--agent requires a value; supported agents: {supported}"
+                    ));
+                };
+                if value.starts_with("--") {
+                    // The next token is itself a flag (e.g. `--agent
+                    // --global`), not a value — report it as missing.
+                    return Err(format!(
+                        "--agent requires a value; supported agents: {supported}"
+                    ));
+                }
+                agent = Some(value.clone());
             }
             "--global" => global = true,
-            "--format" => {
-                has_format = true;
-                let _ = iter.next(); // value consumed by parse_init_format below
-            }
+            // `--format` alone: the original args are re-scanned by
+            // parse_init_format below (no value consumed here, so its warn
+            // and fall-back-to-claude behavior is preserved).
+            "--format" => has_format = true,
             _ => {}
         }
     }
-    if agent_seen && has_format {
+    let Some(agent) = agent else {
+        // `--global` without `--agent` is always an error, regardless of
+        // whether `--format` is also present — there is no legacy global
+        // install, so `--global` only makes sense with `--agent`.
+        if global {
+            return Err("--global requires --agent".to_string());
+        }
+        if has_format {
+            return Ok(InitMode::Format(parse_init_format(args)));
+        }
+        return Ok(InitMode::Format(InitFormat::Claude));
+    };
+    if has_format {
+        // Mutual exclusion regardless of flag order or value.
         return Err("--agent and --format cannot be used together".to_string());
     }
-    let Some(agent) = agent else {
-        return Ok(InitMode::Format(parse_init_format(args)));
-    };
-    match agent {
+    if !SUPPORTED_AGENTS.contains(&agent.as_str()) {
+        return Err(format!(
+            "unknown --agent value '{agent}'; supported agents: {supported}"
+        ));
+    }
+    match agent.as_str() {
         "pi" => Ok(InitMode::Pi { global }),
-        "claude-code" => Err(
-            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: pi, claude-code"
-                .to_string(),
-        ),
-        other => Err(format!(
-            "unknown --agent value '{other}'; supported agents: pi, claude-code"
+        // Supported by name, implementation pending (sibling ticket).
+        "claude-code" => Err(format!(
+            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: {supported}"
         )),
+        _ => unreachable!("agent validated against SUPPORTED_AGENTS above"),
     }
 }
 

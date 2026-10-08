@@ -88,6 +88,9 @@ pub mod recall_display;
 pub mod rewrite;
 
 pub mod commands_patterns;
+#[cfg(test)]
+#[path = "init_args_tests.rs"]
+mod init_args_tests;
 pub mod learn_prompt;
 pub mod learn_utils;
 

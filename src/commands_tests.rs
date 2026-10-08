@@ -348,12 +348,18 @@ fn test_parse_action_init_agent_and_format_mutually_exclusive() {
         s("generic"),
     ];
     let err = parse_init_mode(&args[1..]).expect_err("combining --agent and --format must error");
-    assert_eq!(err, "--agent and --format cannot be used together");
+    assert!(
+        err.contains("--agent and --format"),
+        "error must name the conflicting flags: {err:?}"
+    );
 
     // Flag order must not matter.
     let args = vec![s("init"), s("--format"), s("claude"), s("--agent"), s("pi")];
     let err = parse_init_mode(&args[1..]).expect_err("order must not matter");
-    assert_eq!(err, "--agent and --format cannot be used together");
+    assert!(
+        err.contains("--agent and --format"),
+        "error must name the conflicting flags: {err:?}"
+    );
 }
 
 #[test]

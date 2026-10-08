@@ -316,6 +316,8 @@ supported values (`pi`, `claude-code`).
 | project (default) | `<git-root>/.pi/extensions/oo.ts` (cwd when not in a git repo) |
 | global (`--global`) | `$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set (the variable is the final extensions directory — no path suffix is appended); otherwise `~/.pi/agent/extensions/oo.ts`. Never consults the git root |
 
+`OO_PI_EXTENSIONS_DIR` is a trusted path: when set, its value is used as-is — the file is written directly into it, with no sanitisation or additional path components. A set-but-empty `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
+
 ### Pi extension behaviour
 
 - At load, probes `oo --version` and updates its `ooAvailable` flag (initially true) so that a missing or erroring `oo` (non-zero exit, timeout, exception) hard-disables the handler: it returns undefined for every tool call without invoking `oo rewrite` (status note only).

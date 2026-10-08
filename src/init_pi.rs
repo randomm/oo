@@ -65,18 +65,12 @@ let ooAvailable = true;
 // type guard: that helper is a value export, so importing it would pull in the
 // whole pi barrel at extension load. The type-only imports below are erased at
 // compile time and carry none of that cost.
-function isBashToolCallEvent(
-  event: ToolCallEvent
-): event is BashToolCallEvent {
+function isBashToolCallEvent(event) {
   return event.toolName === "bash";
 }
 
 // Calls `oo rewrite`; returns the rewritten command or null (pass through).
-async function rewriteCommand(
-  pi: ExtensionAPI,
-  cmd: string,
-  signal?: AbortSignal
-): Promise<string | null> {
+async function rewriteCommand(pi, cmd, signal) {
   const result = await pi.exec("oo", ["rewrite", cmd], {
     timeout: REWRITE_TIMEOUT_MS,
     signal,
@@ -87,17 +81,11 @@ async function rewriteCommand(
   return rewritten === "" ? null : rewritten;
 }
 
-type StatusContext = {
-  ui?: {
-    setStatus?: (key: string, text: string) => void;
-  };
-};
-
 // Retain the session_start context so a status note can be applied as soon as
 // the load-time probe resolves, without blocking extension load itself.
-function registerOoUnavailableNotice(pi: ExtensionAPI): (reason: string) => void {
-  let reason: string | undefined;
-  let sessionContext: StatusContext | undefined;
+function registerOoUnavailableNotice(pi) {
+  let reason = undefined;
+  let sessionContext = undefined;
 
   const applyStatus = () => {
     if (!reason || !sessionContext) return;
@@ -109,22 +97,22 @@ function registerOoUnavailableNotice(pi: ExtensionAPI): (reason: string) => void
   };
 
   try {
-    pi.on("session_start", (_event: unknown, ctx: unknown) => {
-      sessionContext = ctx as StatusContext;
+    pi.on("session_start", (_event, ctx) => {
+      sessionContext = ctx;
       applyStatus();
     });
   } catch {
     // Runtimes without a session_start event: nothing to report.
-    return (_reason: string) => {};
+    return (_reason) => {};
   }
 
-  return (nextReason: string) => {
+  return (nextReason) => {
     reason = nextReason;
     applyStatus();
   };
 }
 
-export default async function (pi: ExtensionAPI) {
+export default async function (pi) {
   const reportOoUnavailable = registerOoUnavailableNotice(pi);
 
   // Register the handler first (same ordering as rtk's extension): a slow
@@ -177,22 +165,31 @@ export default async function (pi: ExtensionAPI) {
     } else {
       ooAvailable = true;
     }
-  } catch {
+  } catch (err) {
     ooAvailable = false;
     reportOoUnavailable("oo version probe failed");
-    console.warn("[oo] could not probe oo — extension disabled");
+    console.warn("[oo] could not probe oo — extension disabled", err);
   }
 }
 "#;
 
 /// Resolve the directory the extension file is written into.
 ///
-/// - global: `$OO_PI_EXTENSIONS_DIR` when set — it IS the extensions
-///   directory itself (the file lands at `$OO_PI_EXTENSIONS_DIR/oo.ts`),
-///   otherwise `<home>/.pi/agent/extensions`; never consults
-///   `find_root`/git root;
+/// Environment dependencies (global mode only):
+///
+/// - `OO_PI_EXTENSIONS_DIR`: when set (and non-empty) it IS the extensions
+///   directory itself — the file lands at `$OO_PI_EXTENSIONS_DIR/oo.ts` and
+///   the value is a trusted path used as-is (no sanitisation, no suffix
+///   appended). A set-but-empty value is an error.
+/// - `HOME`: consulted only when `OO_PI_EXTENSIONS_DIR` is not set; the
+///   directory is `<home>/.pi/agent/extensions`. Unset or empty `HOME` is an
+///   error.
+///
 /// - project: `<git-root>/.pi/extensions` — `find_root` walks up to `.git`
-///   and falls back to cwd outside a repo.
+///   and falls back to cwd outside a repo. No environment variables are
+///   consulted.
+///
+/// The global path never consults `find_root`/git root.
 fn target_dir(cwd: &Path, global: bool) -> Result<PathBuf, Error> {
     if global {
         if let Some(override_dir) = std::env::var_os("OO_PI_EXTENSIONS_DIR") {
@@ -393,6 +390,104 @@ mod tests {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
+    }
+
+    /// Node-gated runtime test for the probe-failure path (issue #171
+    /// lens-review fix 5). Skips cleanly when no `node` binary is available.
+    ///
+    /// The generated extension is loaded under plain node with a stub `pi`
+    /// whose `exec` always rejects (simulating a missing `oo` binary). After
+    /// the default export settles, a bash `tool_call` event is fired; the
+    /// expected behavior is that the handler returns without calling
+    /// `pi.exec("oo", ["rewrite", ...])` because the failed probe set
+    /// `ooAvailable = false`.
+    ///
+    /// The harness is a tiny `.mjs` file that stubs `pi.exec` and `pi.on`,
+    /// imports the extension (after stripping type annotations so plain
+    /// node can load it), and prints a JSON verdict. The test asserts the
+    /// verdict shows no rewrite call was made.
+    #[test]
+    fn extension_probe_failure_disables_handler() {
+        // Skip cleanly when no node binary is available.
+        if !which("node") {
+            eprintln!("skipping probe-failure runtime test: no node binary found");
+            return;
+        }
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let ext_path = dir.path().join("oo_ext.mjs");
+        let runner_path = dir.path().join("runner.mjs");
+
+        // The extension source is written to be node-compatible (no type
+        // annotations that plain node cannot parse), so the stripping only
+        // needs to remove the `import type { … } from "…";` statement.
+        let stripped = OO_TS_EXTENSION.replace(
+            "import type {\n  BashToolCallEvent,\n  ExtensionAPI,\n  ToolCallEvent,\n} from \"@earendil-works/pi-coding-agent\";\n\n",
+            "",
+        );
+
+        std::fs::write(&ext_path, &stripped).unwrap();
+
+        // The runner stubs `pi` (on + exec always rejecting, simulating a
+        // missing `oo` binary), imports the extension, fires a bash
+        // tool_call event, and prints a JSON verdict.
+        let runner = r#"
+import { readFileSync } from "node:fs";
+
+const calls = [];
+const handlerRegistry = {};
+const pi = {
+  on(name, cb) { handlerRegistry[name] = cb; },
+  exec: async (bin, args) => {
+    calls.push({ bin, args });
+    throw new Error("command not found: " + bin);
+  },
+};
+
+const mod = await import("./oo_ext.mjs");
+await mod.default(pi);
+
+// Wait a tick for the probe's rejection to settle.
+await new Promise((r) => setTimeout(r, 50));
+
+const event = { toolName: "bash", input: { command: "ls" } };
+const result = await handlerRegistry["tool_call"](event, { signal: undefined });
+
+console.log(JSON.stringify({
+  handlerReturned: result === undefined,
+  rewriteCalled: calls.some((c) => c.bin === "oo" && c.args[0] === "rewrite"),
+  totalExecCalls: calls.length,
+}));
+"#;
+        std::fs::write(&runner_path, runner).unwrap();
+
+        let out = std::process::Command::new("node")
+            .arg(&runner_path)
+            .current_dir(dir.path())
+            .output()
+            .expect("failed to spawn node");
+
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "harness failed: stdout={stdout} stderr={stderr}"
+        );
+
+        let verdict: serde_json::Value = serde_json::from_str(stdout.trim())
+            .expect("harness must print a JSON verdict: stdout={stdout} stderr={stderr}");
+
+        // The handler must return undefined (fail-open) and must NOT have
+        // called pi.exec for a rewrite — the failed probe disabled the
+        // handler via `ooAvailable = false`.
+        assert_eq!(
+            verdict["handlerReturned"], true,
+            "handler must return undefined when the probe failed"
+        );
+        assert_eq!(
+            verdict["rewriteCalled"], false,
+            "no rewrite pi.exec call should be made when ooAvailable is false"
+        );
     }
 
     // -----------------------------------------------------------------------
