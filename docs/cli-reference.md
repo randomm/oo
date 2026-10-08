@@ -273,9 +273,9 @@ oo help docker
 
 ---
 
-## `oo init [--format <format>]`
+## `oo init [--format <format>] [--agent <agent>] [--global]`
 
-Generate Claude-specific hook configuration and print AGENTS.md integration snippet.
+Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
 
 ### Usage
 
@@ -283,19 +283,48 @@ Generate Claude-specific hook configuration and print AGENTS.md integration snip
 oo init
 oo init --format claude
 oo init --format generic
+oo init --agent pi
+oo init --agent pi --global
 ```
 
-### Formats
+### Formats (`--format`)
 
 | Format | Description |
 |--------|-------------|
 | `claude` (default) | Generates `.claude/hooks.json` and Claude-specific AGENTS.md instructions |
 | `generic` | Prints AGENTS.md instructions only (no hooks file) |
 
+### Agents (`--agent`)
+
+| Agent | Description |
+|-------|-------------|
+| `pi` | Installs a pi (pi-coding-agent) TypeScript extension that rewrites bash tool calls via `oo rewrite` |
+| `claude-code` | Not yet supported — returns a clear error naming supported agents (delivered in a sibling ticket) |
+
+`--agent` takes precedence over `--format` when both are given. Unknown agent
+values error naming the supported values (`pi`, `claude-code`).
+
+### File locations (`--agent pi`)
+
+| Scope | Path |
+|-------|------|
+| project (default) | `<git-root>/.pi/extensions/oo.ts` (cwd when not in a git repo) |
+| global (`--global`) | `~/.pi/agent/extensions/oo.ts` (home-based; never consults the git root; override with `OO_PI_EXTENSIONS_DIR`) |
+
+### Pi extension behaviour
+
+- At load, probes `oo --version` and silently disables itself (status note only) if `oo` is missing or errors.
+- On bash `tool_call`: skips empty commands, commands already starting with `oo ` (including `oo rewrite` itself), and nested calls (`parentToolCallId` set — codemode scripts see raw output).
+- Honors the `OO_DISABLE=1` environment opt-out.
+- Calls `oo rewrite <cmd>` (2000 ms timeout) and swaps in the rewritten command only when it is exit 0, non-empty, and different.
+- Fails open: any handler error passes the command through unmodified.
+
+Install is idempotent: an existing identical file is a no-op ("already installed"); an existing different file is not overwritten and the command explains how to proceed. Uninstall by deleting the installed `oo.ts` file.
+
 ### Behavior
 
-- Creates `.claude/hooks.json` if it doesn't exist (for Claude format)
-- Prints a snippet to add to your project's `AGENTS.md` file
+- Creates `.claude/hooks.json` if it doesn't exist (for Claude format), or `.pi/extensions/oo.ts` for `--agent pi`
+- Prints a snippet to add to your project's `AGENTS.md` file (format modes)
 - The snippet instructs agents to prefix commands with `oo`
 
 ### Output format

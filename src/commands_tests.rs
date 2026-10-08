@@ -1,5 +1,6 @@
 use super::*;
 use crate::classify::Classification;
+use crate::commands::InitMode;
 
 fn s(s: &str) -> String {
     s.to_string()
@@ -286,7 +287,7 @@ fn test_parse_action_help_with_cmd() {
 fn test_parse_action_init() {
     assert!(matches!(
         parse_action(&[s("init")]),
-        Action::Init(InitFormat::Claude)
+        Action::Init(InitMode::Format(InitFormat::Claude))
     ));
 }
 
@@ -295,7 +296,7 @@ fn test_parse_action_init_format_claude() {
     let args = vec![s("init"), s("--format"), s("claude")];
     assert!(matches!(
         parse_action(&args),
-        Action::Init(InitFormat::Claude)
+        Action::Init(InitMode::Format(InitFormat::Claude))
     ));
 }
 
@@ -304,7 +305,51 @@ fn test_parse_action_init_format_generic() {
     let args = vec![s("init"), s("--format"), s("generic")];
     assert!(matches!(
         parse_action(&args),
-        Action::Init(InitFormat::Generic)
+        Action::Init(InitMode::Format(InitFormat::Generic))
+    ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi() {
+    let args = vec![s("init"), s("--agent"), s("pi")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: false })
+    ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi_global() {
+    let args = vec![s("init"), s("--agent"), s("pi"), s("--global")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: true })
+    ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi_global_first() {
+    let args = vec![s("init"), s("--global"), s("--agent"), s("pi")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: true })
+    ));
+}
+
+/// `--agent` takes precedence over `--format` (deterministic precedence,
+/// issue #171): an explicit agent wins over the legacy format flag.
+#[test]
+fn test_parse_action_init_agent_wins_over_format() {
+    let args = vec![
+        s("init"),
+        s("--agent"),
+        s("pi"),
+        s("--format"),
+        s("generic"),
+    ];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: false })
     ));
 }
 

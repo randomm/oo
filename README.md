@@ -182,7 +182,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
+| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi`) |
 | `oo version` | Print version |
 
 > **Note:** `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
@@ -199,6 +199,30 @@ Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large o
 
 That's it. The agent runs `oo cargo test`, gets `✓ cargo test (47 passed, 2.1s)`,
 and moves on.
+
+### Use with pi
+
+`oo init --agent pi` installs a pi extension (`.pi/extensions/oo.ts` at the git
+root, or `~/.pi/agent/extensions/oo.ts` with `--global`) that hooks pi's bash
+tool calls and rewrites bare shell commands to their `oo`-prefixed form via
+`oo rewrite`. pi agents then get token-efficient output automatically — no
+prompt instruction required.
+
+```bash
+oo init --agent pi           # project: <git-root>/.pi/extensions/oo.ts
+oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts
+```
+
+- The extension probes `oo` at load and silently disables itself (status note
+  only) if the binary is missing.
+- It leaves nested (codemode) tool calls untouched, skips commands already
+  starting with `oo `, and fails open on any error — a failing handler never
+  blocks your shell commands.
+- Disable for a session: `OO_DISABLE=1`.
+- Uninstall: delete the installed `oo.ts` file.
+
+Claude Code is also supported via `oo init` (writes `.claude/hooks.json`); see
+the [CLI reference](docs/cli-reference.md#oo-init) for the full option matrix.
 
 ---
 

@@ -9,7 +9,7 @@ pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, init, learn, pattern, rewrite, session, store,
+    classify, commands_patterns, exec, help, init, init_pi, learn, pattern, rewrite, session, store,
 };
 
 pub enum Action {
@@ -19,9 +19,60 @@ pub enum Action {
     Learn(Vec<String>, Option<String>),
     Version,
     Help(Option<String>),
-    Init(InitFormat),
+    Init(InitMode),
     Patterns,
     Rewrite(String),
+}
+
+/// Resolved mode for `oo init`: the legacy `--format` value or the new
+/// `--agent` target (issue #171).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InitMode {
+    /// `--format claude`/`generic` (or plain `oo init`) — behaviour unchanged.
+    Format(InitFormat),
+    /// `--agent pi [--global]` — install the pi extension.
+    Pi { global: bool },
+}
+
+/// Agents supported by `oo init --agent`.
+pub const SUPPORTED_AGENTS: &[&str] = &["pi", "claude-code"];
+
+/// Parse the trailing args of `oo init` into an [`InitMode`].
+///
+/// `--agent` takes precedence over `--format` (an explicit `--agent` is the
+/// most specific intent); the combination is deterministic and covered by
+/// tests. `--agent pi` installs the pi extension, with `--global` writing to
+/// the user-level extensions directory. `--agent claude-code` is not yet
+/// implemented and errors (a sibling ticket ships it). Unknown agent values
+/// error naming the supported values.
+fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
+    let mut agent: Option<&str> = None;
+    let mut global = false;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--agent" => agent = iter.next().map(|s| s.as_str()),
+            "--global" => global = true,
+            "--format" => {
+                let _ = iter.next(); // value consumed by parse_init_format below
+            }
+            _ => {}
+        }
+    }
+    let Some(agent) = agent else {
+        return Ok(InitMode::Format(parse_init_format(args)));
+    };
+    match agent {
+        "pi" => Ok(InitMode::Pi { global }),
+        "claude-code" => Err(
+            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: pi, claude-code"
+                .to_string(),
+        ),
+        other => Err(format!(
+            "unknown --agent value '{}'; supported agents: pi, claude-code",
+            other
+        )),
+    }
 }
 
 /// Parse `--format <value>` from the remaining init args.
@@ -103,7 +154,13 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
-        Some("init") => Action::Init(parse_init_format(&args[1..])),
+        Some("init") => match parse_init_mode(&args[1..]) {
+            Ok(mode) => Action::Init(mode),
+            Err(e) => {
+                eprintln!("oo: {e}");
+                std::process::exit(1);
+            }
+        },
         Some("patterns") => Action::Patterns,
         Some("rewrite") => {
             let command: String = args
@@ -486,12 +543,27 @@ pub fn cmd_help(cmd: &str) -> i32 {
     }
 }
 
-pub fn cmd_init(format: InitFormat) -> i32 {
-    match init::run(format) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("oo: {e}");
-            1
+pub fn cmd_init(mode: InitMode) -> i32 {
+    match &mode {
+        InitMode::Format(format) => match init::run(*format) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("oo: {e}");
+                1
+            }
+        },
+        InitMode::Pi { global } => {
+            let Ok(cwd) = std::env::current_dir() else {
+                eprintln!("oo: cannot determine working directory");
+                return 1;
+            };
+            match init_pi::run(&cwd, *global) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("oo: {e}");
+                    1
+                }
+            }
         }
     }
 }

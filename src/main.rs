@@ -62,7 +62,9 @@ fn main() {
             println!(
                 "  help [cmd]                 Show help (or cheat-sheet for cmd via cheat.sh)"
             );
-            println!("  init [format]              Set up hooks for agent frameworks");
+            println!(
+                "  init [format|--agent <agent>]   Set up hooks for agent frameworks (pi: --agent pi [--global])"
+            );
             println!("  patterns                   List output compression patterns");
             println!("  rewrite <command>          Print oo-prefixed form for agent hooks");
             println!("  version                    Show version");
@@ -79,7 +81,7 @@ fn main() {
         Action::Recall { query, full } => cmd_recall(&query, full),
         Action::Forget => cmd_forget(),
         Action::Learn(args, hint) => cmd_learn(&args, hint.as_deref()),
-        Action::Init(format) => cmd_init(format),
+        Action::Init(mode) => cmd_init(mode),
         Action::Patterns => cmd_patterns(),
         Action::Rewrite(command) => cmd_rewrite(&command),
     };

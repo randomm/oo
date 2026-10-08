@@ -72,6 +72,9 @@ pub mod help;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod init;
+#[doc(hidden)]
+#[allow(missing_docs)]
+pub mod init_pi;
 /// LLM-powered pattern learning.
 pub mod learn;
 /// Pattern matching and output compression.
@@ -103,9 +106,9 @@ pub use store::{SessionMeta, Store};
 // CLI internals - re-exported for binary crate but hidden from documentation
 #[doc(hidden)]
 pub use commands::{
-    Action, InitFormat, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_init, cmd_learn,
-    cmd_patterns, cmd_patterns_in, cmd_recall, cmd_rewrite, cmd_run, load_project_patterns,
-    parse_action, render_classification, try_index, write_learn_status,
+    Action, InitFormat, InitMode, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_init,
+    cmd_learn, cmd_patterns, cmd_patterns_in, cmd_recall, cmd_rewrite, cmd_run,
+    load_project_patterns, parse_action, render_classification, try_index, write_learn_status,
 };
 
 // Internal type re-exported for learn module

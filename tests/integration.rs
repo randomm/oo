@@ -337,6 +337,201 @@ fn test_init_format_claude_prints_agents_snippet() {
 }
 
 // ---------------------------------------------------------------------------
+// oo init --agent pi
+// ---------------------------------------------------------------------------
+
+/// `oo init --agent pi` in a temp git repo writes the extension at the git
+/// root and prints the written path. HOME is overridden (defensive pattern)
+/// so the child never touches the real home.
+#[test]
+fn test_init_agent_pi_creates_extension_at_git_root() {
+    let dir = TempDir::new().unwrap();
+    // Create a .git dir so find_root resolves the git root (not cwd fallback).
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "pi"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .env_remove("OO_PI_EXTENSIONS_DIR")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created"))
+        .stdout(predicate::str::contains(".pi/extensions/oo.ts"));
+
+    let ext = dir.path().join(".pi").join("extensions").join("oo.ts");
+    assert!(
+        ext.exists(),
+        "oo.ts must exist at the git root after oo init --agent pi"
+    );
+}
+
+/// Re-running `oo init --agent pi` with an identical existing file is a
+/// no-op ("already installed") and still exits 0.
+#[test]
+fn test_init_agent_pi_idempotent_identical_file() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "pi"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .success();
+
+    let ext = dir.path().join(".pi").join("extensions").join("oo.ts");
+    let before = std::fs::read_to_string(&ext).unwrap();
+
+    oo().args(["init", "--agent", "pi"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already installed"));
+
+    let after = std::fs::read_to_string(&ext).unwrap();
+    assert_eq!(
+        after, before,
+        "identical file must be a no-op (byte-identical after re-run)"
+    );
+}
+
+/// An existing DIFFERENT file is not overwritten — the command explains how
+/// to proceed and still exits 0 (mirrors the Claude path warn-and-skip).
+#[test]
+fn test_init_agent_pi_does_not_overwrite_different_file() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let ext_dir = dir.path().join(".pi").join("extensions");
+    std::fs::create_dir_all(&ext_dir).unwrap();
+    let ext = ext_dir.join("oo.ts");
+    let custom = "// user-edited extension\nexport default function () {}\n";
+    std::fs::write(&ext, custom).unwrap();
+
+    oo().args(["init", "--agent", "pi"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("not overwritten"));
+
+    assert_eq!(
+        std::fs::read_to_string(&ext).unwrap(),
+        custom,
+        "existing different file must not be overwritten"
+    );
+}
+
+/// `--agent pi` outside a git repo writes under cwd (find_root fallback).
+#[test]
+fn test_init_agent_pi_outside_repo_writes_under_cwd() {
+    let dir = TempDir::new().unwrap();
+    // No .git dir — find_root falls back to cwd.
+    oo().args(["init", "--agent", "pi"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .success();
+
+    let ext = dir.path().join(".pi").join("extensions").join("oo.ts");
+    assert!(
+        ext.exists(),
+        "oo.ts must be created under cwd outside a git repo"
+    );
+}
+
+/// `oo init --agent pi --global` writes under the env-overridden HOME
+/// (`$TEMPHOME/.pi/agent/extensions/oo.ts`), never under the git root.
+#[test]
+fn test_init_agent_pi_global_writes_under_home() {
+    let home = TempDir::new().unwrap();
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    oo().args(["init", "--agent", "pi", "--global"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("OO_PI_EXTENSIONS_DIR")
+        .assert()
+        .success();
+
+    let ext = home
+        .path()
+        .join(".pi")
+        .join("agent")
+        .join("extensions")
+        .join("oo.ts");
+    assert!(
+        ext.exists(),
+        "global oo.ts must land under $TEMPHOME/.pi/agent/extensions"
+    );
+    // The project (git) root must NOT have received the file — global is
+    // home-based and never consults find_root.
+    let project_ext = repo.path().join(".pi").join("extensions").join("oo.ts");
+    assert!(
+        !project_ext.exists(),
+        "global install must not write under the git root"
+    );
+}
+
+/// `oo init --agent claude-code` is not yet supported — clear error, exit 1.
+#[test]
+fn test_init_agent_claude_code_not_yet_supported() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--agent", "claude-code"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not yet supported"))
+        .stderr(predicate::str::contains("claude-code"));
+}
+
+/// Unknown agent values error naming the supported values.
+#[test]
+fn test_init_agent_unknown_value_errors() {
+    let dir = TempDir::new().unwrap();
+    oo().args(["init", "--agent", "cursor"])
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown --agent value 'cursor'"))
+        .stderr(predicate::str::contains("pi, claude-code"));
+}
+
+/// Backward-compat: plain `oo init` still writes `.claude/hooks.json`
+/// byte-identical to the embedded constant, with a temp HOME (defensive).
+#[test]
+fn test_init_plain_still_writes_claude_hooks_json() {
+    let dir = TempDir::new().unwrap();
+    oo().arg("init")
+        .current_dir(dir.path())
+        .env("HOME", dir.path())
+        .assert()
+        .success();
+
+    let hooks_path = dir.path().join(".claude").join("hooks.json");
+    assert!(
+        hooks_path.exists(),
+        "plain oo init must still create .claude/hooks.json"
+    );
+    let content = std::fs::read_to_string(&hooks_path).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).expect("hooks.json must be valid JSON");
+    assert!(parsed.get("hooks").is_some());
+}
+
+/// The no-args help surface still lists `init` (the description changed to
+/// mention --agent; assert on the stable tokens).
+#[test]
+fn test_help_lists_init_with_agent_option() {
+    oo().assert()
+        .success()
+        .stdout(predicate::str::contains("init"))
+        .stdout(predicate::str::contains("--agent"))
+        .stdout(predicate::str::contains(
+            "Set up hooks for agent frameworks",
+        ));
+}
+
+// ---------------------------------------------------------------------------
 // recall command
 // ---------------------------------------------------------------------------
 
