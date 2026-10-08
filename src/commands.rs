@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use humansize::{BINARY, format_size};
 use std::io::Write;
@@ -430,17 +431,22 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
     }
 }
 
+/// Loaded patterns for `oo rewrite`: project + user + builtins, first match
+/// wins (same order as `oo <cmd>`). Cached once per process — `oo rewrite`
+/// runs once per shell command from hook handlers, so re-reading and
+/// re-compiling the TOML patterns every invocation would be pure churn.
+static REWRITE_PATTERNS: LazyLock<Vec<pattern::Pattern>> = LazyLock::new(|| {
+    let mut all_patterns = load_project_patterns();
+    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
+    all_patterns.extend_from_slice(pattern::builtins());
+    all_patterns
+});
+
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
 /// print nothing and return 1 otherwise. Never executes the command.
 pub fn cmd_rewrite(command: &str) -> i32 {
-    // Same load order as `oo <cmd>` (run_command_args): project patterns,
-    // then user patterns, then builtins — first match wins.
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-
-    match rewrite::rewrite(command, &all_patterns) {
+    match rewrite::rewrite(command, &REWRITE_PATTERNS) {
         Some(rewritten) => {
             println!("{rewritten}");
             0

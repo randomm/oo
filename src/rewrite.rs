@@ -12,6 +12,16 @@ use crate::pattern::{self, Pattern};
 /// Returns `None` (→ exit 1, no output) when the command is empty/blank or
 /// contains a construct we refuse to reason about: pipes, redirections,
 /// heredocs, command substitution, or background `&`.
+///
+/// The input is a **raw shell string**, and the printed output is meant to be
+/// shell-executed by the hook. Quote content is opaque to
+/// [`contains_unsafe_construct`] (a quoted `|`/`&&`/`$(...)` does not trigger
+/// the refusal), but the shell re-parses the output: metacharacters inside
+/// quotes become live there. Rewriting therefore never *introduces* a new
+/// unquoted token, but it preserves whatever the caller already placed
+/// inside quotes — a hook that shell-executes the output inherits shell
+/// semantics of that quoted content, exactly as the original command would
+/// have. The rewrite is a safe passthrough only under that contract.
 pub fn rewrite(command: &str, patterns: &[Pattern]) -> Option<String> {
     let trimmed = command.trim();
     if trimmed.is_empty() {
@@ -53,9 +63,30 @@ fn rewrite_segment(segment: &str, patterns: &[Pattern]) -> Option<String> {
     if first == "oo" {
         return None;
     }
-    let env_len = env_prefix_len(segment);
-    let env_prefix = &segment[..env_len];
-    let rest = segment[env_len..].trim_start();
+    // Walk the leading `NAME=value` tokens, consuming each token plus the
+    // separator whitespace that follows it. `consumed` tracks how many bytes
+    // of `segment` have been consumed so far — always a real char boundary
+    // because it is built up from `next.len()` (a &str byte length) plus the
+    // separator bytes, never a hand-computed byte offset.
+    let mut consumed = 0usize;
+    let mut rest = segment;
+    while let Some(next) = rest.split_whitespace().next() {
+        let is_env = next
+            .split_once('=')
+            .is_some_and(|(name, _)| is_valid_var_name(name));
+        if !is_env {
+            break;
+        }
+        // After the token comes one or more separator bytes (spaces/tabs).
+        // `after` is the remainder of `rest` once the token is dropped; the
+        // separator bytes are the gap between `next`'s end and `after`'s
+        // first non-whitespace byte.
+        let after = &rest[next.len()..];
+        let sep = after.len() - after.trim_start().len();
+        consumed = consumed + next.len() + sep;
+        rest = after.trim_start();
+    }
+    let env_prefix = &segment[..consumed];
     if rest.is_empty() {
         return None;
     }
@@ -63,23 +94,8 @@ fn rewrite_segment(segment: &str, patterns: &[Pattern]) -> Option<String> {
     Some(format!("{env_prefix}oo {rest}"))
 }
 
-/// Length of the leading run of `NAME=value` tokens (including the
-/// separator space after each); 0 when there is no env prefix.
-fn env_prefix_len(segment: &str) -> usize {
-    let mut i: usize = 0;
-    for tok in segment.split_whitespace() {
-        let is_env = tok
-            .split_once('=')
-            .map(|(name, _)| is_valid_var_name(name))
-            .unwrap_or(false);
-        if !is_env {
-            break;
-        }
-        i = i.saturating_add(tok.len()).saturating_add(1);
-    }
-    i
-}
-
+/// True when `name` is a valid shell variable name: non-empty and made up
+/// solely of ASCII alphanumerics and underscores.
 fn is_valid_var_name(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
@@ -251,6 +267,21 @@ mod tests {
     fn multiple_env_prefixes_preserved() {
         let out = rewrite("FOO=1 BAR=2 cargo test", &patterns()).expect("must rewrite");
         assert_eq!(out, "FOO=1 BAR=2 oo cargo test");
+    }
+
+    #[test]
+    fn non_ascii_env_prefix_does_not_panic() {
+        // A multi-byte separator context must not panic on a byte-boundary
+        // split. A non-ASCII *name* (`Ü`) is not a valid env-var name, so
+        // `Ü=1` is treated as the command word and no prefix is applied —
+        // but the scan must still run without a mid-codepoint panic.
+        let out = rewrite("Ü=1 pytest -q", &patterns()).expect("must rewrite");
+        assert_eq!(out, "oo Ü=1 pytest -q");
+        // A genuine multi-byte env prefix: the value `é` is non-ASCII (2
+        // bytes), so the old index-based code sliced mid-codepoint here and
+        // panicked. The new code must preserve the multi-byte prefix intact.
+        let out = rewrite("A=é pytest -q", &patterns()).expect("must rewrite");
+        assert_eq!(out, "A=é oo pytest -q");
     }
 
     #[test]
