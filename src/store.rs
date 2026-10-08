@@ -18,7 +18,8 @@ pub struct SessionMeta {
     /// Source system (typically "oo").
     pub source: String,
 
-    /// Session identifier (parent process ID).
+    /// Session identifier (stamped parent process ID). Informational only —
+    /// not used for recall/forget scoping.
     pub session: String,
 
     /// The command that generated this output.

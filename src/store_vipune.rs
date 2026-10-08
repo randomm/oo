@@ -94,12 +94,17 @@ impl Store for VipuneStore {
                 .list(project_id, PAGE)
                 .map_err(|e| Error::Store(e.to_string()))?;
             total += entries.len();
+            let mut page_deletions = 0usize;
             for entry in &entries {
                 match self.store.delete(&entry.id) {
                     // `delete` returns `Ok(true)` on success and `Ok(false)`
-                    // when the id did not match any entry; both are acceptable
-                    // outcomes for our purposes (the target set is the same).
-                    Ok(_) => deleted += 1,
+                    // when the id did not match any entry. Only `Ok(true)` is
+                    // a real deletion; `Ok(false)` is skipped, not counted.
+                    Ok(true) => {
+                        deleted += 1;
+                        page_deletions += 1;
+                    }
+                    Ok(false) => {}
                     Err(e) => {
                         // Keep going so one bad entry does not leave the rest
                         // of the project behind; report partial progress at the end.
@@ -110,6 +115,12 @@ impl Store for VipuneStore {
             }
             // A short page means we've drained the project; stop.
             if entries.len() < PAGE {
+                break;
+            }
+            // Guard against an infinite loop: if a full page produced no
+            // real deletions, re-listing would return the same page forever
+            // (e.g. ids that consistently fail or return `Ok(false)`).
+            if page_deletions == 0 {
                 break;
             }
         }

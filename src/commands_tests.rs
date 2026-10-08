@@ -365,8 +365,8 @@ fn test_cmd_recall_empty_query_returns_1() {
 }
 
 #[test]
-fn test_cmd_recall_does_not_panic() {
-    // Verifies cmd_recall does not panic and returns a valid exit code.
+fn test_cmd_recall_returns_valid_exit_code() {
+    // Verifies cmd_recall returns a valid exit code (0 or 1).
     // OO_DATA_DIR isolates the store so this never reads the developer's
     // real index.
     let dir = tempfile::tempdir().unwrap();
@@ -443,7 +443,7 @@ fn test_try_index_no_panic() {
 
 #[test]
 fn test_cmd_forget_returns_valid_exit_code() {
-    // Verifies cmd_forget does not panic and returns a valid exit code.
+    // Verifies cmd_forget returns a valid exit code (0 or 1).
     // OO_DATA_DIR isolates the store so the project-scoped delete (issue
     // #168) never wipes the developer's real index.
     let dir = tempfile::tempdir().unwrap();
