@@ -286,7 +286,7 @@ fn test_parse_action_help_with_cmd() {
 fn test_parse_action_init() {
     assert!(matches!(
         parse_action(&[s("init")]),
-        Action::Init(InitFormat::Claude)
+        Action::Init(InitMode::Format(InitFormat::Claude))
     ));
 }
 
@@ -295,7 +295,7 @@ fn test_parse_action_init_format_claude() {
     let args = vec![s("init"), s("--format"), s("claude")];
     assert!(matches!(
         parse_action(&args),
-        Action::Init(InitFormat::Claude)
+        Action::Init(InitMode::Format(InitFormat::Claude))
     ));
 }
 
@@ -304,8 +304,62 @@ fn test_parse_action_init_format_generic() {
     let args = vec![s("init"), s("--format"), s("generic")];
     assert!(matches!(
         parse_action(&args),
-        Action::Init(InitFormat::Generic)
+        Action::Init(InitMode::Format(InitFormat::Generic))
     ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi() {
+    let args = vec![s("init"), s("--agent"), s("pi")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: false })
+    ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi_global() {
+    let args = vec![s("init"), s("--agent"), s("pi"), s("--global")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: true })
+    ));
+}
+
+#[test]
+fn test_parse_action_init_agent_pi_global_first() {
+    let args = vec![s("init"), s("--global"), s("--agent"), s("pi")];
+    assert!(matches!(
+        parse_action(&args),
+        Action::Init(InitMode::Pi { global: true })
+    ));
+}
+
+/// `--agent` and `--format` are mutually exclusive (issue #171, operator
+/// decision 1): passing both is a parse-time error — it names the conflict
+/// and nothing is written (the error is produced before any init work).
+#[test]
+fn test_parse_action_init_agent_and_format_mutually_exclusive() {
+    let args = vec![
+        s("init"),
+        s("--agent"),
+        s("pi"),
+        s("--format"),
+        s("generic"),
+    ];
+    let err = parse_init_mode(&args[1..]).expect_err("combining --agent and --format must error");
+    assert!(
+        err.contains("--agent and --format"),
+        "error must name the conflicting flags: {err:?}"
+    );
+
+    // Flag order must not matter.
+    let args = vec![s("init"), s("--format"), s("claude"), s("--agent"), s("pi")];
+    let err = parse_init_mode(&args[1..]).expect_err("order must not matter");
+    assert!(
+        err.contains("--agent and --format"),
+        "error must name the conflicting flags: {err:?}"
+    );
 }
 
 #[test]

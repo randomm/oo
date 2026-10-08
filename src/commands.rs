@@ -9,7 +9,7 @@ pub use crate::init::InitFormat;
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, init, learn, pattern, rewrite, session, store,
+    classify, commands_patterns, exec, help, init, init_pi, learn, pattern, rewrite, session, store,
 };
 
 pub enum Action {
@@ -19,9 +19,94 @@ pub enum Action {
     Learn(Vec<String>, Option<String>),
     Version,
     Help(Option<String>),
-    Init(InitFormat),
+    Init(InitMode),
     Patterns,
     Rewrite(String),
+}
+
+/// Resolved mode for `oo init`: the legacy `--format` value or the new
+/// `--agent` target (issue #171).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InitMode {
+    /// `--format claude`/`generic` (or plain `oo init`) — behaviour unchanged.
+    Format(InitFormat),
+    /// `--agent pi [--global]` — install the pi extension.
+    Pi { global: bool },
+}
+
+/// Agents supported by `oo init --agent`.
+pub const SUPPORTED_AGENTS: &[&str] = &["pi", "claude-code"];
+
+/// Parse the trailing args of `oo init` into an [`InitMode`].
+///
+/// Single pass over the args; each recognised flag is handled inline and no
+/// value is silently discarded. `--agent` and `--format` are mutually
+/// exclusive (issue #171, operator decision 1): passing both is a
+/// parse-time error before anything is written. `--agent pi` installs the pi
+/// extension, with `--global` writing to the user-level extensions directory
+/// (`--global` without `--agent` is an error — there is no legacy global
+/// install). `--agent`'s value is validated against [`SUPPORTED_AGENTS`]:
+/// `pi` works, `claude-code` is supported by name but not yet implemented
+/// (a sibling ticket ships it), and anything else errors. On the pure
+/// `--format` path (no `--agent` at all), the original args are handed to
+/// [`parse_init_format`], so `oo init`, `oo init --format generic` and
+/// `oo init --format bogus` (warn, fall back to claude) behave exactly as
+/// before. Unknown extra flags are ignored (today's behavior).
+pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
+    let supported = SUPPORTED_AGENTS.join(", ");
+    let mut agent: Option<String> = None;
+    let mut global = false;
+    let mut has_format = false;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--agent" => {
+                let Some(value) = iter.next().filter(|v| !v.starts_with("--")) else {
+                    // No value, or the next token is itself a flag (e.g.
+                    // `--agent --global`) — report it as missing.
+                    return Err(format!(
+                        "--agent requires a value; supported agents: {supported}"
+                    ));
+                };
+                agent = Some(value.clone());
+            }
+            "--global" => global = true,
+            // `--format` alone: the original args are re-scanned by
+            // parse_init_format below (no value consumed here, so its warn
+            // and fall-back-to-claude behavior is preserved).
+            "--format" => has_format = true,
+            _ => {}
+        }
+    }
+    let Some(agent) = agent else {
+        // `--global` without `--agent` is always an error, regardless of
+        // whether `--format` is also present — there is no legacy global
+        // install, so `--global` only makes sense with `--agent`.
+        if global {
+            return Err("--global requires --agent".to_string());
+        }
+        if has_format {
+            return Ok(InitMode::Format(parse_init_format(args)));
+        }
+        return Ok(InitMode::Format(InitFormat::Claude));
+    };
+    if has_format {
+        // Mutual exclusion regardless of flag order or value.
+        return Err("--agent and --format cannot be used together".to_string());
+    }
+    if !SUPPORTED_AGENTS.contains(&agent.as_str()) {
+        return Err(format!(
+            "unknown --agent value '{agent}'; supported agents: {supported}"
+        ));
+    }
+    match agent.as_str() {
+        "pi" => Ok(InitMode::Pi { global }),
+        // Supported by name, implementation pending (sibling ticket).
+        "claude-code" => Err(format!(
+            "agent 'claude-code' is not yet supported (coming in a future release); supported agents: {supported}"
+        )),
+        _ => unreachable!("agent validated against SUPPORTED_AGENTS above"),
+    }
 }
 
 /// Parse `--format <value>` from the remaining init args.
@@ -103,7 +188,13 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
         Some("help") => Action::Help(args.get(1).cloned()),
-        Some("init") => Action::Init(parse_init_format(&args[1..])),
+        Some("init") => match parse_init_mode(&args[1..]) {
+            Ok(mode) => Action::Init(mode),
+            Err(e) => {
+                eprintln!("oo: {e}");
+                std::process::exit(1);
+            }
+        },
         Some("patterns") => Action::Patterns,
         Some("rewrite") => {
             let command: String = args
@@ -486,12 +577,27 @@ pub fn cmd_help(cmd: &str) -> i32 {
     }
 }
 
-pub fn cmd_init(format: InitFormat) -> i32 {
-    match init::run(format) {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("oo: {e}");
-            1
+pub fn cmd_init(mode: InitMode) -> i32 {
+    match &mode {
+        InitMode::Format(format) => match init::run(*format) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("oo: {e}");
+                1
+            }
+        },
+        InitMode::Pi { global } => {
+            let Ok(cwd) = std::env::current_dir() else {
+                eprintln!("oo: cannot determine working directory");
+                return 1;
+            };
+            match init_pi::run(&cwd, *global) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("oo: {e}");
+                    1
+                }
+            }
         }
     }
 }

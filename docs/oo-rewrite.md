@@ -25,11 +25,15 @@ not excluded from matching. This is the same matching semantics as
 `oo nope pytest -q`. Exit code 1 also covers the case where a pattern file
 failed to load (patterns are loaded project, user, then builtin).
 
-The rewritten output is only guaranteed to re-parse identically under POSIX
-shell quoting rules: backslashes outside single quotes escape the next
-character (an escaped `"` does not toggle quoting, `\&\&` is not a
-separator), inside single quotes a backslash is literal, and the exact
-original text — backslashes included — is preserved byte-for-byte.
+The rewritten output preserves the original text **byte-for-byte** except for
+the inserted `oo ` prefix(es) and the canonical separator spacing. Internal
+whitespace (double spaces, tabs), newlines inside quotes, and all other
+characters are kept exactly as written. A segment is refused (exit 1) when
+it contains an unquoted newline (a newline outside quotes is not a command
+separator and joining lines would change semantics), or when a leading
+`VAR=value` env token's value contains a quote or backslash (such a value
+would need a full shell tokenizer to re-emit safely — the conservative
+option is chosen).
 
 ## Examples
 
@@ -57,6 +61,13 @@ exit 1
   backslash is literal. A trailing lone backslash or an unterminated quote
   yields no rewrite (exit 1), since neither re-parses identically.
 - **`VAR=value`** environment prefixes are preserved in front of `oo`.
+  An env value containing a quote or backslash is refused (exit 1) —
+  such a value would need a full shell tokenizer to re-emit safely, so
+  the conservative option is chosen.
+- An **unquoted newline** inside a segment is refused (exit 1): a newline
+  outside quotes is not a command separator (only `&&`/`||`/`;` are), so
+  the segment spans multiple lines and joining them would change semantics.
+  Newlines inside quotes are preserved verbatim.
 - Already-`oo`-prefixed segments are left as-is (no double-wrap).
 - Commands longer than 16 KiB are refused (exit 1, no output) — the bound
   caps worst-case regex work over the command string.

@@ -9,7 +9,7 @@
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Generate `.claude/hooks.json` and print AGENTS.md snippet |
+| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi [--global]`) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in + user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
@@ -273,9 +273,13 @@ oo help docker
 
 ---
 
-## `oo init [--format <format>]`
+## `oo init [--format <format>] [--agent <agent>] [--global]`
 
-Generate Claude-specific hook configuration and print AGENTS.md integration snippet.
+Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
+`--agent` and `--format` are mutually exclusive — passing both is an error
+(`oo init: --agent and --format cannot be used together`, exit 1, nothing
+written). `--agent` alone selects the agent installer; `--format` alone and
+plain `oo init` behave exactly as before.
 
 ### Usage
 
@@ -283,19 +287,51 @@ Generate Claude-specific hook configuration and print AGENTS.md integration snip
 oo init
 oo init --format claude
 oo init --format generic
+oo init --agent pi
+oo init --agent pi --global
 ```
 
-### Formats
+### Formats (`--format`)
 
 | Format | Description |
 |--------|-------------|
 | `claude` (default) | Generates `.claude/hooks.json` and Claude-specific AGENTS.md instructions |
 | `generic` | Prints AGENTS.md instructions only (no hooks file) |
 
+### Agents (`--agent`)
+
+| Agent | Description |
+|-------|-------------|
+| `pi` | Installs a pi (pi-coding-agent) TypeScript extension that rewrites bash tool calls via `oo rewrite` |
+| `claude-code` | Not yet supported — returns a clear error naming supported agents (delivered in a sibling ticket) |
+
+`--agent` and `--format` cannot be combined (the combination errors — see
+above). Unknown agent values, and `--agent` with no value, error naming the
+supported values (`pi`, `claude-code`).
+
+### File locations (`--agent pi`)
+
+| Scope | Path |
+|-------|------|
+| project (default) | `<git-root>/.pi/extensions/oo.ts` (cwd when not in a git repo) |
+| global (`--global`) | `$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set (the variable is the final extensions directory — no path suffix is appended); otherwise `~/.pi/agent/extensions/oo.ts`. Never consults the git root |
+
+`OO_PI_EXTENSIONS_DIR` is a trusted path: when set, its value is used as-is — the file is written directly into it, with no sanitisation or additional path components. A set-but-empty `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
+
+### Pi extension behaviour
+
+- At load, probes `oo --version` and updates its `ooAvailable` flag (initially true) so that a missing or erroring `oo` (non-zero exit, timeout, exception) hard-disables the handler: it returns undefined for every tool call without invoking `oo rewrite` (status note only).
+- On bash `tool_call`: skips empty commands, commands already starting with `oo ` (including `oo rewrite` itself), and nested calls (`parentToolCallId` set — codemode scripts see raw output).
+- Honors the `OO_DISABLE=1` environment opt-out.
+- Calls `oo rewrite <cmd>` (2000 ms timeout) and swaps in the rewritten command only when it is exit 0, non-empty, and different.
+- Fails open: any handler error passes the command through unmodified.
+
+Install is idempotent: an existing identical file is a no-op ("already installed"); an existing different file is not overwritten and the command explains how to proceed. Uninstall by deleting the installed `oo.ts` file.
+
 ### Behavior
 
-- Creates `.claude/hooks.json` if it doesn't exist (for Claude format)
-- Prints a snippet to add to your project's `AGENTS.md` file
+- Creates `.claude/hooks.json` if it doesn't exist (for Claude format), or `.pi/extensions/oo.ts` for `--agent pi`
+- Prints a snippet to add to your project's `AGENTS.md` file (format modes)
 - The snippet instructs agents to prefix commands with `oo`
 
 ### Output format
@@ -389,9 +425,10 @@ refused constructs.
 Matching is **unanchored and per segment**: a segment is rewritten when any
 pattern's `command_match` regex matches anywhere in the segment text (the
 same patterns and matching as `oo <command>`; quoted text is not excluded).
-Exit 1 also covers a pattern file that failed to load, and the rewritten
-output is only guaranteed to re-parse identically under POSIX shell quoting
-rules.
+The rewritten output preserves the original text byte-for-byte except for
+the inserted `oo ` prefix(es) and canonical separator spacing. Exit 1 also
+covers a pattern file that failed to load, an unquoted newline inside a
+segment, and an env value containing a quote or backslash.
 
 ---
 

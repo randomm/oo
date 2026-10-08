@@ -150,7 +150,8 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/commands.rs`](../src/commands.rs) | CLI command handlers (private) | `cmd_run()`, `cmd_recall()`, etc. |
 | [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |
 | [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
-| [`src/init.rs`](../src/init.rs) | `oo init` hook generation | Hook file creation |
+| [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
+| [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
 | [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
 
 ## Key Design Decisions
@@ -189,7 +190,7 @@ These are built-in commands (not shell commands):
 | `forget` | `cmd_forget()` | Clear all indexed outputs for the current project |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
-| `init` | `cmd_init()` | Generate `.claude/hooks.json` and AGENTS.md snippet |
+| `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats) or the pi extension (`--agent pi`) |
 | `version` | Built-in to clap | Print version |
 | `rewrite` | `cmd_rewrite()` | Print `oo`-prefixed form of a command for agent hooks (never executes) |
 | `_learn_bg` | `run_background()` | Internal command for background learning |
