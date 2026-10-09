@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-09
+
+### Bug Fixes
+
+- *(#178)* Handle --help on reserved subcommands and make oo init strict
+
+
 ## [0.7.0] - 2026-10-08
 
 ### Bug Fixes
