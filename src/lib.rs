@@ -98,6 +98,7 @@ pub mod commands_patterns;
 #[cfg(test)]
 #[path = "init_args_tests.rs"]
 mod init_args_tests;
+pub mod init_cmd;
 pub mod learn_prompt;
 pub mod learn_utils;
 /// Static usage text for reserved subcommands (`--help` and `oo help <sub>`).

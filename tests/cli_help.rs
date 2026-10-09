@@ -5,12 +5,13 @@
 //! at temp dirs, so nothing touches the real repo, HOME, or the data store.
 
 use assert_cmd::Command;
+use double_o::usage::reserved_names;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
 /// A hermetic `oo` invocation rooted in `repo` (a temp dir with `.git`).
 fn oo_in(repo: &TempDir, data: &TempDir, home: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("oo").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("oo");
     cmd.current_dir(repo.path())
         .env("OO_DATA_DIR", data.path())
         .env("HOME", home.path())
@@ -28,10 +29,9 @@ fn fixture() -> (TempDir, TempDir, TempDir) {
 
 /// Count entries in a directory tree (files and dirs), excluding `.git`.
 fn entries(dir: &std::path::Path) -> usize {
-    let Ok(read) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    read.flatten()
+    std::fs::read_dir(dir)
+        .expect("read test dir")
+        .map(|e| e.expect("read test dir entry"))
         .filter(|e| e.file_name() != ".git")
         .map(|e| {
             1 + if e.path().is_dir() {
@@ -43,13 +43,9 @@ fn entries(dir: &std::path::Path) -> usize {
         .sum()
 }
 
-const RESERVED: &[&str] = &[
-    "recall", "forget", "learn", "init", "patterns", "rewrite", "hook", "version",
-];
-
 #[test]
 fn reserved_help_flags_print_usage_with_no_side_effects() {
-    for sub in RESERVED {
+    for sub in reserved_names() {
         for flag in ["--help", "-h"] {
             let (repo, data, home) = fixture();
             std::fs::write(data.path().join("sentinel"), "keep").unwrap();
@@ -66,17 +62,6 @@ fn reserved_help_flags_print_usage_with_no_side_effects() {
             );
         }
     }
-}
-
-#[test]
-fn forget_help_keeps_indexed_data() {
-    let (repo, data, home) = fixture();
-    std::fs::write(data.path().join("sentinel"), "keep").unwrap();
-    oo_in(&repo, &data, &home)
-        .args(["forget", "--help"])
-        .assert()
-        .success();
-    assert!(data.path().join("sentinel").exists());
 }
 
 #[test]
@@ -102,6 +87,7 @@ fn init_rejects_unknown_options_and_writes_nothing() {
         vec!["init", "--format"],
         vec!["init", "--format", "--global"],
         vec!["init", "stray"],
+        vec!["init", "--format", "bogus"],
     ] {
         let (repo, data, home) = fixture();
         oo_in(&repo, &data, &home)
@@ -140,5 +126,7 @@ fn non_reserved_command_with_help_flag_still_executes() {
     oo_in(&repo, &data, &home)
         .args(["echo", "--help"])
         .assert()
+        .success()
+        .stdout(predicate::str::diff("--help\n"))
         .stdout(predicate::str::contains("Usage: oo").not());
 }

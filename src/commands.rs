@@ -5,11 +5,13 @@ use std::io::Write;
 
 use crate::classify::Classification;
 pub use crate::init::InitFormat;
+pub(crate) use crate::init_cmd::parse_init_mode;
+pub use crate::init_cmd::{InitMode, SUPPORTED_AGENTS, cmd_init};
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern,
-    pattern_load, rewrite, session, store, usage,
+    classify, commands_patterns, exec, help, learn, pattern, pattern_load, rewrite, session, store,
+    usage,
 };
 
 pub enum Action {
@@ -28,130 +30,6 @@ pub enum Action {
     Patterns,
     Rewrite(String),
     Hook(Option<String>),
-}
-
-/// Resolved mode for `oo init`: the legacy `--format` value or the new
-/// `--agent` target (issue #171).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InitMode {
-    /// `--format claude`/`generic` (or plain `oo init`) — behaviour unchanged.
-    Format(InitFormat),
-    /// `--agent pi [--global]` — install the pi extension.
-    Pi { global: bool },
-    /// `--agent claude-code [--global]` — install the Claude Code hook (issue #172).
-    ClaudeCode { global: bool },
-}
-
-/// Agents supported by `oo init --agent`.
-pub const SUPPORTED_AGENTS: &[&str] = &["pi", "claude-code"];
-
-/// Parse the trailing args of `oo init` into an [`InitMode`].
-///
-/// Single pass over the args; each recognised flag is handled inline and no
-/// value is silently discarded. `--agent` and `--format` are mutually
-/// exclusive (issue #171, operator decision 1): passing both is a
-/// parse-time error before anything is written. `--agent pi` installs the pi
-/// extension, with `--global` writing to the user-level extensions directory
-/// (`--global` without `--agent` is an error — there is no legacy global
-/// install). `--agent`'s value is validated against [`SUPPORTED_AGENTS`]:
-/// `pi` works, `claude-code` is supported by name but not yet implemented
-/// (a sibling ticket ships it), and anything else errors. On the pure
-/// `--format` path (no `--agent` at all), the original args are handed to
-/// [`parse_init_format`], so `oo init`, `oo init --format generic` and
-/// `oo init --format bogus` (warn, fall back to claude) behave exactly as
-/// before. Unknown extra flags are ignored (today's behavior).
-pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
-    let supported = SUPPORTED_AGENTS.join(", ");
-    let mut agent: Option<String> = None;
-    let mut global = false;
-    let mut has_format = false;
-    let mut format_value: Option<String> = None;
-    let mut format_missing = false;
-    let mut iter = args.iter().peekable();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--agent" => {
-                let Some(value) = iter.next().filter(|v| !v.starts_with("--")) else {
-                    // No value, or the next token is itself a flag (e.g.
-                    // `--agent --global`) — report it as missing.
-                    return Err(format!(
-                        "--agent requires a value; supported agents: {supported}"
-                    ));
-                };
-                agent = Some(value.clone());
-            }
-            "--global" => global = true,
-            // A value is required; a following flag-like token is not consumed.
-            "--format" => {
-                has_format = true;
-                match iter.peek() {
-                    Some(v) if !v.starts_with('-') => {
-                        format_value = Some((*v).clone());
-                        iter.next();
-                    }
-                    _ => format_missing = true,
-                }
-            }
-            other if other.starts_with('-') => {
-                return Err(format!(
-                    "init: unknown option '{other}' (try: oo init --help)"
-                ));
-            }
-            other => {
-                return Err(format!(
-                    "init: unexpected argument '{other}' (try: oo init --help)"
-                ));
-            }
-        }
-    }
-    let Some(agent) = agent else {
-        // `--global` without `--agent` is always an error, regardless of
-        // whether `--format` is also present — there is no legacy global
-        // install, so `--global` only makes sense with `--agent`.
-        if global {
-            return Err("--global requires --agent".to_string());
-        }
-        if has_format {
-            if format_missing {
-                return Err(
-                    "--format requires a value; supported formats: claude, generic".to_string(),
-                );
-            }
-            return Ok(InitMode::Format(parse_init_format(
-                format_value.as_deref().unwrap_or("claude"),
-            )));
-        }
-        return Ok(InitMode::Format(InitFormat::Claude));
-    };
-    if has_format {
-        // Mutual exclusion regardless of flag order or value.
-        return Err("--agent and --format cannot be used together".to_string());
-    }
-    if !SUPPORTED_AGENTS.contains(&agent.as_str()) {
-        return Err(format!(
-            "unknown --agent value '{agent}'; supported agents: {supported}"
-        ));
-    }
-    match agent.as_str() {
-        "pi" => Ok(InitMode::Pi { global }),
-        "claude-code" => Ok(InitMode::ClaudeCode { global }),
-        _ => unreachable!("agent validated against SUPPORTED_AGENTS above"),
-    }
-}
-
-/// Map a `--format <value>` to an [`InitFormat`].
-///
-/// Recognised values: `claude`, `generic`. Unknown values emit a warning to
-/// stderr and fall back to Claude (pinned by an integration test).
-fn parse_init_format(value: &str) -> InitFormat {
-    match value {
-        "generic" => InitFormat::Generic,
-        "claude" => InitFormat::Claude,
-        other => {
-            eprintln!("oo: unknown --format value '{other}', defaulting to claude");
-            InitFormat::Claude
-        }
-    }
 }
 
 /// Parse `oo recall` arguments, extracting optional `--full` flag.
@@ -203,13 +81,10 @@ fn parse_learn_action(args: &[String]) -> Action {
 pub fn parse_action(args: &[String]) -> Action {
     // `oo <reserved> --help|-h`: the flag must be the first argument after the
     // subcommand. Intercepted before any side-effecting arm runs.
-    let help_flag = args.get(1).is_some_and(|a| a == "--help" || a == "-h");
-    if let Some(text) = args
-        .first()
-        .filter(|_| help_flag)
-        .and_then(|s| usage::for_subcommand(s))
-    {
-        return Action::Usage(text);
+    if args.get(1).is_some_and(|a| a == "--help" || a == "-h") {
+        if let Some(text) = args.first().and_then(|s| usage::for_subcommand(s)) {
+            return Action::Usage(text);
+        }
     }
     match args.first().map(|s| s.as_str()) {
         None => Action::Help(None),
@@ -598,57 +473,6 @@ pub fn cmd_help(cmd: &str) -> i32 {
             eprintln!("oo: {e}");
             1
         }
-    }
-}
-
-pub fn cmd_init(mode: InitMode) -> i32 {
-    match &mode {
-        InitMode::Format(format) => match init::run(*format) {
-            Ok(()) => 0,
-            Err(e) => {
-                eprintln!("oo: {e}");
-                1
-            }
-        },
-        InitMode::Pi { global } => {
-            let Ok(cwd) = std::env::current_dir() else {
-                eprintln!("oo: cannot determine working directory");
-                return 1;
-            };
-            match init_pi::run(&cwd, *global) {
-                Ok(()) => 0,
-                Err(e) => {
-                    eprintln!("oo: {e}");
-                    1
-                }
-            }
-        }
-        InitMode::ClaudeCode { global } => match std::env::current_dir().map_err(Error::from) {
-            Err(e) => {
-                eprintln!("oo: {e}");
-                1
-            }
-            Ok(cwd) => match crate::hook::claude_settings_path(&cwd, *global) {
-                Err(e) => {
-                    eprintln!("oo: {e}");
-                    1
-                }
-                Ok(path) => match crate::hook::merge_oo_hook(&path) {
-                    Ok(_) => {
-                        println!(
-                            "Installed `oo hook claude` PreToolUse hook in {}",
-                            path.display()
-                        );
-                        println!("Uninstall: remove the `oo hook claude` entry from that file.");
-                        0
-                    }
-                    Err(e) => {
-                        eprintln!("oo: {e}");
-                        1
-                    }
-                },
-            },
-        },
     }
 }
 

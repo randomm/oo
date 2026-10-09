@@ -185,7 +185,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
 | `oo version` | Print version |
 
-> **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`). See the [CLI reference](docs/cli-reference.md).
+> **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`).
 >
 > `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
 

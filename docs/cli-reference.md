@@ -291,10 +291,9 @@ Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
 written). `--agent` alone selects the agent installer; `--format` alone and
 plain `oo init` behave exactly as before.
 
-Unknown options (`--bogus`), a bare or flag-like `--format` with no value, and
-stray positional arguments are errors (`oo: init: unknown option '--bogus' (try:
-oo init --help)`, exit 1, nothing written). `oo init --help` prints the full
-usage with no side effects.
+Unknown options (`--bogus`), an unknown `--format` value, a bare or flag-like
+`--format` with no value, and stray positional arguments are errors (`oo: init:
+unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 
 ### Usage
 

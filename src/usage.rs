@@ -86,6 +86,11 @@ const USAGE: &[(&str, &str)] = &[
     ),
 ];
 
+/// Names of every reserved subcommand with usage text, in help order.
+pub fn reserved_names() -> impl Iterator<Item = &'static str> {
+    USAGE.iter().map(|(name, _)| *name)
+}
+
 /// Return the usage text for a reserved subcommand, or `None` for any other name.
 pub fn for_subcommand(sub: &str) -> Option<&'static str> {
     USAGE

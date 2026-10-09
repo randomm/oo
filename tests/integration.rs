@@ -145,7 +145,7 @@ fn assert_full_subcommand_list(
         assertion = assertion.stdout(predicate::str::contains(description));
     }
     assertion = assertion.stdout(predicate::str::contains(
-        "init [--format claude|generic] [--agent pi|claude-code] [--global]",
+        "init [--format claude|generic | --agent pi|claude-code [--global]]",
     ));
     assertion = assertion.stdout(predicate::str::contains(
         "Context-efficient command runner for AI coding agents",
@@ -834,17 +834,17 @@ fn test_init_plain_still_writes_claude_hooks_json() {
     assert!(parsed.get("hooks").is_some());
 }
 
-/// The no-args help surface still lists `init` (the description changed to
-/// mention --agent; assert on the stable tokens).
+/// The no-args help surface still lists `init` and points at its full usage
+/// (the flag matrix lives in `oo init --help`, not in the top-level help).
 #[test]
 fn test_help_lists_init_with_agent_option() {
     oo().assert()
         .success()
         .stdout(predicate::str::contains("init"))
-        .stdout(predicate::str::contains("--agent"))
         .stdout(predicate::str::contains(
-            "Set up hooks for agent frameworks",
-        ));
+            "--agent pi|claude-code [--global]",
+        ))
+        .stdout(predicate::str::contains("oo init --help"));
 }
 
 // ---------------------------------------------------------------------------

@@ -5,11 +5,8 @@
 //! on `Init` failure, so these tests call `parse_init_mode` directly: the
 //! parse-time error is the contract (nothing is written before it).
 //!
-//! Note on stdout capture: `oo init --format bogus` prints its warn through
-//! the process's stderr — these unit tests exercise the parse result (and
-//! the exact error strings) without capturing output; the behavioral
-//! warn-and-fall-back-to-claude case is additionally pinned by
-//! `test_init_format_bogus_falls_back_to_claude` in `tests/integration.rs`.
+//! The behavioural side (nothing written on a parse error) is pinned by
+//! `init_rejects_unknown_options_and_writes_nothing` in `tests/cli_help.rs`.
 
 use crate::commands::InitMode;
 use crate::commands::parse_init_mode;
@@ -193,15 +190,23 @@ fn format_claude_unchanged() {
     assert_eq!(mode, InitMode::Format(InitFormat::Claude));
 }
 
-/// `--format bogus` alone — unchanged: warn (stderr) and fall back to claude.
+/// `--format bogus` is a parse error naming the value and the supported set.
 #[test]
-fn format_bogus_alone_falls_back_to_claude() {
-    let mode = parse_init_mode(&args(&["--format", "bogus"])).expect("bogus format must parse");
-    assert_eq!(
-        mode,
-        InitMode::Format(InitFormat::Claude),
-        "unknown --format value must fall back to claude"
+fn format_bogus_is_error() {
+    let err = parse_init_mode(&args(&["--format", "bogus"])).expect_err("bogus format must error");
+    assert!(
+        err.contains("unknown --format value 'bogus'"),
+        "message: {err:?}"
     );
+    assert!(err.contains("claude, generic"), "message: {err:?}");
+}
+
+/// A repeated `--format` keeps the last value.
+#[test]
+fn format_repeated_keeps_last_value() {
+    let mode =
+        parse_init_mode(&args(&["--format", "claude", "--format", "generic"])).expect("must parse");
+    assert_eq!(mode, InitMode::Format(InitFormat::Generic));
 }
 
 /// `--agent pi` — unchanged: selects the pi installer, project scope.

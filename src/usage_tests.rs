@@ -1,19 +1,15 @@
 //! Unit tests for the reserved-subcommand usage table and its dispatch.
 
 use crate::commands::{Action, parse_action};
-use crate::usage::for_subcommand;
+use crate::usage::{for_subcommand, reserved_names};
 
 fn args(t: &[&str]) -> Vec<String> {
     t.iter().map(|s| s.to_string()).collect()
 }
 
-const RESERVED: &[&str] = &[
-    "recall", "forget", "learn", "init", "patterns", "rewrite", "hook", "version",
-];
-
 #[test]
 fn every_reserved_subcommand_has_usage() {
-    for sub in RESERVED {
+    for sub in reserved_names() {
         let text = for_subcommand(sub).unwrap_or_else(|| panic!("no usage for {sub}"));
         assert!(
             text.contains(&format!("oo {sub}")),
@@ -30,7 +26,7 @@ fn non_reserved_name_has_no_usage() {
 
 #[test]
 fn help_flag_after_reserved_subcommand_yields_usage() {
-    for sub in RESERVED {
+    for sub in reserved_names() {
         for flag in ["--help", "-h"] {
             match parse_action(&args(&[sub, flag])) {
                 Action::Usage(text) => assert_eq!(Some(text), for_subcommand(sub)),
