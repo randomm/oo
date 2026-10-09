@@ -63,8 +63,12 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
             }
             "--global" => global = true,
             // A value is required; a following flag-like token is not consumed.
-            // A repeated `--format` keeps the last value.
+            // A repeated `--format` is rejected: last-wins would silently drop
+            // an earlier value (possibly invalid) without validating it.
             "--format" => {
+                if format.is_some() {
+                    return Err("--format given more than once".to_string());
+                }
                 format = Some(match iter.peek() {
                     Some(v) if !v.starts_with('-') => {
                         let value = (*v).clone();

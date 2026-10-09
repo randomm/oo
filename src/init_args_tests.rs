@@ -201,12 +201,21 @@ fn format_bogus_is_error() {
     assert!(err.contains("claude, generic"), "message: {err:?}");
 }
 
-/// A repeated `--format` keeps the last value.
+/// A repeated `--format` is rejected, whatever the values are.
 #[test]
-fn format_repeated_keeps_last_value() {
-    let mode =
-        parse_init_mode(&args(&["--format", "claude", "--format", "generic"])).expect("must parse");
-    assert_eq!(mode, InitMode::Format(InitFormat::Generic));
+fn format_repeated_is_error() {
+    for pair in [
+        ["claude", "generic"],
+        ["bogus", "claude"],
+        ["claude", "bogus"],
+    ] {
+        let err = parse_init_mode(&args(&["--format", pair[0], "--format", pair[1]]))
+            .expect_err("repeated --format must error");
+        assert!(
+            err.contains("--format given more than once"),
+            "message: {err:?}"
+        );
+    }
 }
 
 /// `--agent pi` — unchanged: selects the pi installer, project scope.
