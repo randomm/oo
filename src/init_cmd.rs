@@ -133,7 +133,7 @@ fn parse_init_format(value: &str) -> Result<InitFormat, String> {
         "generic" => Ok(InitFormat::Generic),
         "claude" => Ok(InitFormat::Claude),
         other => Err(format!(
-            "init: unknown --format value '{other}' (supported: claude, generic)"
+            "oo init: unsupported format '{other}' (supported: claude, generic)"
         )),
     }
 }

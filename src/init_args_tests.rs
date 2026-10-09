@@ -194,11 +194,10 @@ fn format_claude_unchanged() {
 #[test]
 fn format_bogus_is_error() {
     let err = parse_init_mode(&args(&["--format", "bogus"])).expect_err("bogus format must error");
-    assert!(
-        err.contains("unknown --format value 'bogus'"),
-        "message: {err:?}"
+    assert_eq!(
+        err,
+        "oo init: unsupported format 'bogus' (supported: claude, generic)"
     );
-    assert!(err.contains("claude, generic"), "message: {err:?}");
 }
 
 /// A repeated `--format` is rejected, whatever the values are.

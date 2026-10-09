@@ -97,7 +97,13 @@ pub fn parse_action(args: &[String]) -> Action {
         Some("init") => match parse_init_mode(&args[1..]) {
             Ok(mode) => Action::Init(mode),
             Err(e) => {
-                eprintln!("oo: {e}");
+                // Errors already carry their full prefix when they need one
+                // (`oo init: unsupported format ...`); the rest keep `oo: `.
+                if e.starts_with("oo init: ") {
+                    eprintln!("{e}");
+                } else {
+                    eprintln!("oo: {e}");
+                }
                 std::process::exit(1);
             }
         },

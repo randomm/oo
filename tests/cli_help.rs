@@ -94,7 +94,7 @@ fn init_rejects_unknown_options_and_writes_nothing() {
             .args(&case)
             .assert()
             .code(1)
-            .stderr(predicate::str::contains("oo: "));
+            .stderr(predicate::str::starts_with("oo"));
         assert_eq!(entries(repo.path()), 0, "`oo {case:?}` wrote files");
     }
 }
@@ -122,11 +122,69 @@ fn plain_init_still_writes_hooks_json() {
 #[test]
 fn non_reserved_command_with_help_flag_still_executes() {
     let (repo, data, home) = fixture();
-    // `oo echo --help` must run `echo`, not print oo usage.
+    // `oo sh -c '...' sh --help` must run the shell, not print oo usage. Going
+    // through `sh` keeps the check portable: `echo --help` is intercepted by
+    // GNU echo (Linux CI) and prints its own usage, unlike BSD echo (macOS).
     oo_in(&repo, &data, &home)
-        .args(["echo", "--help"])
+        .args(["sh", "-c", "printf '%s\\n' \"$1\"", "sh", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::diff("--help\n"))
         .stdout(predicate::str::contains("Usage: oo").not());
+}
+
+#[test]
+fn no_args_usage_has_exact_init_line() {
+    let (repo, data, home) = fixture();
+    oo_in(&repo, &data, &home)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "  init [--format claude|generic | --agent pi|claude-code [--global]]   Set up hooks for agent frameworks (see: oo init --help)\n",
+        ));
+}
+
+#[test]
+fn unsupported_format_error_is_exact_and_writes_nothing() {
+    let (repo, data, home) = fixture();
+    oo_in(&repo, &data, &home)
+        .args(["init", "--format", "x"])
+        .assert()
+        .code(1)
+        .stdout("")
+        .stderr("oo init: unsupported format 'x' (supported: claude, generic)\n");
+    assert_eq!(entries(repo.path()), 0, "unsupported format wrote files");
+}
+
+#[test]
+fn top_level_help_has_exact_init_summary() {
+    // The clap doc comment is the source of `oo --help`. Clap may re-wrap the
+    // rendered text, so assert the exact source line and the unwrapped tokens.
+    const LINE: &str = "init (set up agent hooks: --format claude|generic, --agent pi|claude-code [--global]; see oo init --help),";
+    let main_src = include_str!("../src/main.rs");
+    assert!(
+        main_src.contains(LINE),
+        "doc comment source lacks the init line"
+    );
+    let (repo, data, home) = fixture();
+    let out = oo_in(&repo, &data, &home)
+        .arg("--help")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let rendered: String = String::from_utf8(out)
+        .unwrap()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for token in [
+        "init (set up agent hooks:",
+        "--format claude|generic,",
+        "--agent pi|claude-code [--global];",
+        "see oo init --help),",
+    ] {
+        assert!(rendered.contains(token), "missing {token:?} in --help");
+    }
 }
