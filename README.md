@@ -181,11 +181,13 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo recall <query>` | Search indexed output for this project |
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
-| `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
+| `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
 | `oo version` | Print version |
 
-> **Note:** `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
+> **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`).
+>
+> `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
 
 ---
 

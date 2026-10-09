@@ -5,11 +5,8 @@
 //! on `Init` failure, so these tests call `parse_init_mode` directly: the
 //! parse-time error is the contract (nothing is written before it).
 //!
-//! Note on stdout capture: `oo init --format bogus` prints its warn through
-//! the process's stderr — these unit tests exercise the parse result (and
-//! the exact error strings) without capturing output; the behavioral
-//! warn-and-fall-back-to-claude case is additionally pinned by
-//! `test_init_format_bogus_falls_back_to_claude` in `tests/integration.rs`.
+//! The behavioural side (nothing written on a parse error) is pinned by
+//! `init_rejects_unknown_options_and_writes_nothing` in `tests/cli_help.rs`.
 
 use crate::commands::InitMode;
 use crate::commands::parse_init_mode;
@@ -58,12 +55,23 @@ fn agent_followed_by_flag_is_error() {
 // --format value validation
 // ---------------------------------------------------------------------------
 
-/// `oo init --format` with no value alone: unchanged behavior — the value
-/// defaults to claude (parse_init_format semantics).
+/// `oo init --format` with no value is an error (nothing is written).
 #[test]
-fn format_without_value_defaults_to_claude() {
-    let mode = parse_init_mode(&args(&["--format"])).expect("no value must fall back to claude");
-    assert_eq!(mode, InitMode::Format(InitFormat::Claude));
+fn format_without_value_is_error() {
+    let err = parse_init_mode(&args(&["--format"])).expect_err("bare --format must error");
+    assert!(
+        err.contains("--format requires a value"),
+        "message: {err:?}"
+    );
+}
+
+/// `--format` followed by a flag does not consume the flag as its value: the
+/// flag is then reported as an unknown option.
+#[test]
+fn format_followed_by_flag_does_not_consume_it() {
+    let err =
+        parse_init_mode(&args(&["--format", "--bogus"])).expect_err("flag-like value must error");
+    assert!(err.contains("'--bogus'"), "message: {err:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -134,20 +142,27 @@ fn agent_pi_global_works_both_orders() {
 // unknown flags: today's behavior preserved
 // ---------------------------------------------------------------------------
 
-/// Unknown extra flags are ignored (today's behavior).
+/// Unknown dash-options are errors naming the option, in any position.
 #[test]
-fn unknown_flags_are_ignored() {
-    let mode = parse_init_mode(&args(&["--agent", "pi", "--bogus"]))
-        .expect("unknown flags must be ignored");
-    assert_eq!(mode, InitMode::Pi { global: false });
+fn unknown_flags_are_errors() {
+    for case in [
+        &["--bogus"][..],
+        &["--agent", "pi", "--bogus"][..],
+        &["--format", "generic", "--bogus"][..],
+    ] {
+        let err = parse_init_mode(&args(case)).expect_err("unknown option must error");
+        assert_eq!(
+            err, "init: unknown option '--bogus' (try: oo init --help)",
+            "case {case:?}"
+        );
+    }
 }
 
-/// A trailing unknown flag after `--format` keeps the pure-format path
-/// (parse_init_format re-scans the original args).
+/// A stray non-flag positional is an error naming it.
 #[test]
-fn unknown_flags_with_format_preserve_format_path() {
-    let mode = parse_init_mode(&args(&["--format", "generic", "--bogus"])).expect("must parse");
-    assert_eq!(mode, InitMode::Format(InitFormat::Generic));
+fn stray_positional_is_error() {
+    let err = parse_init_mode(&args(&["stray"])).expect_err("stray positional must error");
+    assert!(err.contains("'stray'"), "message: {err:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -175,15 +190,31 @@ fn format_claude_unchanged() {
     assert_eq!(mode, InitMode::Format(InitFormat::Claude));
 }
 
-/// `--format bogus` alone — unchanged: warn (stderr) and fall back to claude.
+/// `--format bogus` is a parse error naming the value and the supported set.
 #[test]
-fn format_bogus_alone_falls_back_to_claude() {
-    let mode = parse_init_mode(&args(&["--format", "bogus"])).expect("bogus format must parse");
+fn format_bogus_is_error() {
+    let err = parse_init_mode(&args(&["--format", "bogus"])).expect_err("bogus format must error");
     assert_eq!(
-        mode,
-        InitMode::Format(InitFormat::Claude),
-        "unknown --format value must fall back to claude"
+        err,
+        "oo init: unsupported format 'bogus' (supported: claude, generic)"
     );
+}
+
+/// A repeated `--format` is rejected, whatever the values are.
+#[test]
+fn format_repeated_is_error() {
+    for pair in [
+        ["claude", "generic"],
+        ["bogus", "claude"],
+        ["claude", "bogus"],
+    ] {
+        let err = parse_init_mode(&args(&["--format", pair[0], "--format", pair[1]]))
+            .expect_err("repeated --format must error");
+        assert!(
+            err.contains("--format given more than once"),
+            "message: {err:?}"
+        );
+    }
 }
 
 /// `--agent pi` — unchanged: selects the pi installer, project scope.
@@ -216,6 +247,44 @@ fn agent_claude_code_global_works_both_orders() {
             InitMode::ClaudeCode { global: true },
             "order {flag_order:?}"
         );
+    }
+}
+
+/// Every flag is single-use: a repeat is an error in every order, with any
+/// values, and nothing is written. Each case is `(args, flag name)`.
+#[test]
+fn repeated_flags_are_errors_in_every_order() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--format", "claude", "--format", "generic"], "--format"),
+        (&["--format", "generic", "--format", "claude"], "--format"),
+        (&["--format", "bogus", "--format", "claude"], "--format"),
+        (&["--format", "claude", "--format"], "--format"),
+        (&["--format", "--format", "claude"], "--format"),
+        (&["--agent", "pi", "--agent", "claude-code"], "--agent"),
+        (&["--agent", "claude-code", "--agent", "pi"], "--agent"),
+        (&["--agent", "pi", "--agent", "bogus"], "--agent"),
+        (&["--agent", "pi", "--global", "--agent", "pi"], "--agent"),
+        (&["--global", "--agent", "pi", "--global"], "--global"),
+        (&["--agent", "pi", "--global", "--global"], "--global"),
+        (&["--global", "--global", "--agent", "pi"], "--global"),
+        (&["--global", "--format", "claude", "--global"], "--global"),
+    ];
+    for (case, flag) in cases {
+        let err = parse_init_mode(&args(case)).expect_err("repeated flag must error");
+        assert!(
+            err.contains(&format!("{flag} given more than once")),
+            "case {case:?}: {err:?}"
+        );
+    }
+}
+
+/// Every entry of `SUPPORTED_AGENTS` must parse, so the list and the match
+/// in `parse_init_mode` cannot drift apart.
+#[test]
+fn every_supported_agent_parses() {
+    for agent in crate::init_cmd::SUPPORTED_AGENTS {
+        let res = parse_init_mode(&args(&["--agent", agent]));
+        assert!(res.is_ok(), "supported agent {agent} must parse: {res:?}");
     }
 }
 

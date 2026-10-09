@@ -249,6 +249,15 @@ Returns the exit code of the wrapped command. Learning failures are reported in 
 
 ## `oo help <cmd>`
 
+`oo help <reserved-subcommand>` (for example `oo help init`) prints the local
+usage text instead of a cheat sheet. Other names still come from cheat.sh.
+
+Every reserved subcommand (`recall`, `forget`, `learn`, `init`, `patterns`,
+`rewrite`, `hook`, `version`) accepts `--help` or `-h` as its **first**
+argument after the name: it prints that subcommand's usage, exits 0, and has no
+side effects. `oo recall --help` therefore does not search for the text
+`--help`. Other commands (e.g. `oo cargo --help`) run as normal.
+
 Fetch a cheat sheet for `cmd` from [cheat.sh](https://cheat.sh).
 
 ### Usage
@@ -281,6 +290,17 @@ Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
 (`oo init: --agent and --format cannot be used together`, exit 1, nothing
 written). `--agent` alone selects the agent installer; `--format` alone and
 plain `oo init` behave exactly as before.
+
+Unknown options (`--bogus`), an unknown `--format` value, a bare or flag-like
+`--format` with no value, and stray positional arguments are errors (`oo: init:
+unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
+
+Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
+error, in any order.
+
+**CLI contract change (since 0.8.0):** unknown options and unsupported `--format`
+values are now errors. Earlier releases warned and fell back to the default
+format or ignored the option.
 
 ### Usage
 
