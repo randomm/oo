@@ -19,7 +19,7 @@ struct Cli {
     /// A subcommand, or a command to run. Subcommands:
     /// recall (recall indexed output), forget (clear indexed output for this project),
     /// learn (auto-generate a compression pattern), help (cheat.sh sheet),
-    /// init (set up project hooks), patterns (list compression patterns),
+    /// init (set up project hooks; see `oo init --help`), patterns (list compression patterns),
     /// rewrite (print oo-prefixed command for agent hooks),
     /// hook (rewrite Bash commands for agent hook processors, e.g. `oo hook claude`),
     /// version (print oo version). Any other command runs as a shell command.
@@ -64,7 +64,7 @@ fn main() {
                 "  help [cmd]                 Show help (or cheat-sheet for cmd via cheat.sh)"
             );
             println!(
-                "  init [format|--agent <agent>]   Set up hooks for agent frameworks (pi: --agent pi [--global])"
+                "  init [--format claude|generic] [--agent pi|claude-code] [--global]  Set up hooks for agent frameworks"
             );
             println!("  patterns                   List output compression patterns");
             println!("  rewrite <command>          Print oo-prefixed form for agent hooks");
@@ -77,6 +77,10 @@ fn main() {
             0
         }
         Action::Help(Some(cmd)) => cmd_help(&cmd),
+        Action::Usage(text) => {
+            print!("{text}");
+            0
+        }
         Action::Version => {
             println!("oo {}", env!("CARGO_PKG_VERSION"));
             0

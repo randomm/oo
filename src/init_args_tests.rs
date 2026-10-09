@@ -58,12 +58,23 @@ fn agent_followed_by_flag_is_error() {
 // --format value validation
 // ---------------------------------------------------------------------------
 
-/// `oo init --format` with no value alone: unchanged behavior — the value
-/// defaults to claude (parse_init_format semantics).
+/// `oo init --format` with no value is an error (nothing is written).
 #[test]
-fn format_without_value_defaults_to_claude() {
-    let mode = parse_init_mode(&args(&["--format"])).expect("no value must fall back to claude");
-    assert_eq!(mode, InitMode::Format(InitFormat::Claude));
+fn format_without_value_is_error() {
+    let err = parse_init_mode(&args(&["--format"])).expect_err("bare --format must error");
+    assert!(
+        err.contains("--format requires a value"),
+        "message: {err:?}"
+    );
+}
+
+/// `--format` followed by a flag does not consume the flag as its value: the
+/// flag is then reported as an unknown option.
+#[test]
+fn format_followed_by_flag_does_not_consume_it() {
+    let err =
+        parse_init_mode(&args(&["--format", "--bogus"])).expect_err("flag-like value must error");
+    assert!(err.contains("'--bogus'"), "message: {err:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -134,20 +145,27 @@ fn agent_pi_global_works_both_orders() {
 // unknown flags: today's behavior preserved
 // ---------------------------------------------------------------------------
 
-/// Unknown extra flags are ignored (today's behavior).
+/// Unknown dash-options are errors naming the option, in any position.
 #[test]
-fn unknown_flags_are_ignored() {
-    let mode = parse_init_mode(&args(&["--agent", "pi", "--bogus"]))
-        .expect("unknown flags must be ignored");
-    assert_eq!(mode, InitMode::Pi { global: false });
+fn unknown_flags_are_errors() {
+    for case in [
+        &["--bogus"][..],
+        &["--agent", "pi", "--bogus"][..],
+        &["--format", "generic", "--bogus"][..],
+    ] {
+        let err = parse_init_mode(&args(case)).expect_err("unknown option must error");
+        assert_eq!(
+            err, "init: unknown option '--bogus' (try: oo init --help)",
+            "case {case:?}"
+        );
+    }
 }
 
-/// A trailing unknown flag after `--format` keeps the pure-format path
-/// (parse_init_format re-scans the original args).
+/// A stray non-flag positional is an error naming it.
 #[test]
-fn unknown_flags_with_format_preserve_format_path() {
-    let mode = parse_init_mode(&args(&["--format", "generic", "--bogus"])).expect("must parse");
-    assert_eq!(mode, InitMode::Format(InitFormat::Generic));
+fn stray_positional_is_error() {
+    let err = parse_init_mode(&args(&["stray"])).expect_err("stray positional must error");
+    assert!(err.contains("'stray'"), "message: {err:?}");
 }
 
 // ---------------------------------------------------------------------------

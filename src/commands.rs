@@ -9,12 +9,17 @@ use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
     classify, commands_patterns, error::Error, exec, help, init, init_pi, learn, pattern,
-    pattern_load, rewrite, session, store,
+    pattern_load, rewrite, session, store, usage,
 };
 
 pub enum Action {
+    /// Print a reserved subcommand's usage text and exit 0 (no side effects).
+    Usage(&'static str),
     Run(Vec<String>),
-    Recall { query: String, full: bool },
+    Recall {
+        query: String,
+        full: bool,
+    },
     Forget,
     Learn(Vec<String>, Option<String>),
     Version,
@@ -60,7 +65,9 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     let mut agent: Option<String> = None;
     let mut global = false;
     let mut has_format = false;
-    let mut iter = args.iter();
+    let mut format_value: Option<String> = None;
+    let mut format_missing = false;
+    let mut iter = args.iter().peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--agent" => {
@@ -74,11 +81,27 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
                 agent = Some(value.clone());
             }
             "--global" => global = true,
-            // `--format` alone: the original args are re-scanned by
-            // parse_init_format below (no value consumed here, so its warn
-            // and fall-back-to-claude behavior is preserved).
-            "--format" => has_format = true,
-            _ => {}
+            // A value is required; a following flag-like token is not consumed.
+            "--format" => {
+                has_format = true;
+                match iter.peek() {
+                    Some(v) if !v.starts_with('-') => {
+                        format_value = Some((*v).clone());
+                        iter.next();
+                    }
+                    _ => format_missing = true,
+                }
+            }
+            other if other.starts_with('-') => {
+                return Err(format!(
+                    "init: unknown option '{other}' (try: oo init --help)"
+                ));
+            }
+            other => {
+                return Err(format!(
+                    "init: unexpected argument '{other}' (try: oo init --help)"
+                ));
+            }
         }
     }
     let Some(agent) = agent else {
@@ -89,7 +112,14 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
             return Err("--global requires --agent".to_string());
         }
         if has_format {
-            return Ok(InitMode::Format(parse_init_format(args)));
+            if format_missing {
+                return Err(
+                    "--format requires a value; supported formats: claude, generic".to_string(),
+                );
+            }
+            return Ok(InitMode::Format(parse_init_format(
+                format_value.as_deref().unwrap_or("claude"),
+            )));
         }
         return Ok(InitMode::Format(InitFormat::Claude));
     };
@@ -109,28 +139,19 @@ pub(crate) fn parse_init_mode(args: &[String]) -> Result<InitMode, String> {
     }
 }
 
-/// Parse `--format <value>` from the remaining init args.
+/// Map a `--format <value>` to an [`InitFormat`].
 ///
-/// Recognised values: `claude` (default), `generic`.
-/// Unknown values emit a warning to stderr and fall back to Claude.
-fn parse_init_format(args: &[String]) -> InitFormat {
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        if arg == "--format" {
-            return match iter.next().map(|s| s.as_str()) {
-                Some("generic") => InitFormat::Generic,
-                Some("claude") | None => InitFormat::Claude,
-                Some(other) => {
-                    eprintln!(
-                        "oo: unknown --format value '{}', defaulting to claude",
-                        other
-                    );
-                    InitFormat::Claude
-                }
-            };
+/// Recognised values: `claude`, `generic`. Unknown values emit a warning to
+/// stderr and fall back to Claude (pinned by an integration test).
+fn parse_init_format(value: &str) -> InitFormat {
+    match value {
+        "generic" => InitFormat::Generic,
+        "claude" => InitFormat::Claude,
+        other => {
+            eprintln!("oo: unknown --format value '{other}', defaulting to claude");
+            InitFormat::Claude
         }
     }
-    InitFormat::Claude
 }
 
 /// Parse `oo recall` arguments, extracting optional `--full` flag.
@@ -180,6 +201,16 @@ fn parse_learn_action(args: &[String]) -> Action {
 }
 
 pub fn parse_action(args: &[String]) -> Action {
+    // `oo <reserved> --help|-h`: the flag must be the first argument after the
+    // subcommand. Intercepted before any side-effecting arm runs.
+    let help_flag = args.get(1).is_some_and(|a| a == "--help" || a == "-h");
+    if let Some(text) = args
+        .first()
+        .filter(|_| help_flag)
+        .and_then(|s| usage::for_subcommand(s))
+    {
+        return Action::Usage(text);
+    }
     match args.first().map(|s| s.as_str()) {
         None => Action::Help(None),
         Some("recall") => parse_recall_action(&args[1..]),
@@ -554,6 +585,10 @@ pub fn list_patterns_in(dir: &Path) -> bool {
 }
 
 pub fn cmd_help(cmd: &str) -> i32 {
+    if let Some(text) = usage::for_subcommand(cmd) {
+        print!("{text}");
+        return 0;
+    }
     match help::lookup(cmd) {
         Ok(text) => {
             print!("{text}");

@@ -100,6 +100,12 @@ pub mod commands_patterns;
 mod init_args_tests;
 pub mod learn_prompt;
 pub mod learn_utils;
+/// Static usage text for reserved subcommands (`--help` and `oo help <sub>`).
+#[doc(hidden)]
+pub mod usage;
+#[cfg(test)]
+#[path = "usage_tests.rs"]
+mod usage_tests;
 
 // CLI internals - hidden from documentation but accessible to binary crate
 #[doc(hidden)]

@@ -145,6 +145,9 @@ fn assert_full_subcommand_list(
         assertion = assertion.stdout(predicate::str::contains(description));
     }
     assertion = assertion.stdout(predicate::str::contains(
+        "init [--format claude|generic] [--agent pi|claude-code] [--global]",
+    ));
+    assertion = assertion.stdout(predicate::str::contains(
         "Context-efficient command runner for AI coding agents",
     ));
     // The internal _learn_bg command must never leak into help output.
