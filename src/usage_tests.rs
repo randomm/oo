@@ -21,7 +21,20 @@ fn every_reserved_subcommand_has_usage() {
 #[test]
 fn non_reserved_name_has_no_usage() {
     assert!(for_subcommand("cargo").is_none());
-    assert!(for_subcommand("help").is_none());
+    assert!(for_subcommand("--help").is_none());
+}
+
+/// Every name in the usage table is dispatched by `parse_action` to its own
+/// action, never to the `Run` fall-through (which would spawn it as a shell
+/// command). Keeps the dispatch match in step with the table.
+#[test]
+fn every_reserved_name_is_dispatched_not_run() {
+    for sub in reserved_names() {
+        assert!(
+            !matches!(parse_action(&args(&[sub])), Action::Run(_)),
+            "`oo {sub}` must be a reserved dispatch, not a shell command"
+        );
+    }
 }
 
 #[test]

@@ -31,6 +31,13 @@ const USAGE: &[(&str, &str)] = &[
          Options:\n  --hint <text>    Extra context for the pattern generator\n",
     ),
     (
+        "help",
+        "Usage: oo help [command]\n\
+         \n\
+         For a reserved subcommand, print its local usage. For any other command,\n\
+         fetch a cheat sheet from cheat.sh.\n",
+    ),
+    (
         "init",
         "Usage:\n\
          \x20 oo init [--format claude|generic]\n\
@@ -53,7 +60,10 @@ const USAGE: &[(&str, &str)] = &[
          Rules:\n\
          \x20 --agent and --format cannot be combined.\n\
          \x20 --global requires --agent.\n\
+         \x20 Each flag may be given once; repeats are errors.\n\
          \x20 Unknown options and stray arguments are errors; nothing is written.\n\
+         \x20 `--help` is only recognised as the first argument: `oo init pi --help`\n\
+         \x20 is a stray-argument error.\n\
          \n\
          Environment (--global only):\n\
          \x20 OO_PI_EXTENSIONS_DIR  Override the pi extensions directory\n\
@@ -76,7 +86,11 @@ const USAGE: &[(&str, &str)] = &[
         "Usage: oo hook <agent>\n\
          \n\
          Agent hook processor. `oo hook claude` reads a PreToolUse JSON payload on\n\
-         stdin.\n",
+         stdin.\n\
+         \n\
+         `--help` is only recognised as the first argument after the subcommand, so\n\
+         `oo hook claude --help` is not intercepted: it runs the hook processor,\n\
+         which reads stdin and fails open.\n",
     ),
     (
         "version",

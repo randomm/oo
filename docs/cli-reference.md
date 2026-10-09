@@ -295,6 +295,13 @@ Unknown options (`--bogus`), an unknown `--format` value, a bare or flag-like
 `--format` with no value, and stray positional arguments are errors (`oo: init:
 unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 
+Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
+error, in any order.
+
+**CLI contract change (since 0.8.0):** unknown options and unsupported `--format`
+values are now errors. Earlier releases warned and fell back to the default
+format or ignored the option.
+
 ### Usage
 
 ```bash

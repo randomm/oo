@@ -251,6 +251,44 @@ fn agent_claude_code_global_works_both_orders() {
     }
 }
 
+/// Every flag is single-use: a repeat is an error in every order, with any
+/// values, and nothing is written. Each case is `(args, flag name)`.
+#[test]
+fn repeated_flags_are_errors_in_every_order() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--format", "claude", "--format", "generic"], "--format"),
+        (&["--format", "generic", "--format", "claude"], "--format"),
+        (&["--format", "bogus", "--format", "claude"], "--format"),
+        (&["--format", "claude", "--format"], "--format"),
+        (&["--format", "--format", "claude"], "--format"),
+        (&["--agent", "pi", "--agent", "claude-code"], "--agent"),
+        (&["--agent", "claude-code", "--agent", "pi"], "--agent"),
+        (&["--agent", "pi", "--agent", "bogus"], "--agent"),
+        (&["--agent", "pi", "--global", "--agent", "pi"], "--agent"),
+        (&["--global", "--agent", "pi", "--global"], "--global"),
+        (&["--agent", "pi", "--global", "--global"], "--global"),
+        (&["--global", "--global", "--agent", "pi"], "--global"),
+        (&["--global", "--format", "claude", "--global"], "--global"),
+    ];
+    for (case, flag) in cases {
+        let err = parse_init_mode(&args(case)).expect_err("repeated flag must error");
+        assert!(
+            err.contains(&format!("{flag} given more than once")),
+            "case {case:?}: {err:?}"
+        );
+    }
+}
+
+/// Every entry of `SUPPORTED_AGENTS` must parse, so the list and the match
+/// in `parse_init_mode` cannot drift apart.
+#[test]
+fn every_supported_agent_parses() {
+    for agent in crate::init_cmd::SUPPORTED_AGENTS {
+        let res = parse_init_mode(&args(&["--agent", agent]));
+        assert!(res.is_ok(), "supported agent {agent} must parse: {res:?}");
+    }
+}
+
 /// Unknown agent values error naming the supported values.
 #[test]
 fn agent_unknown_value_errors_naming_supported() {

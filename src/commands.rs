@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::classify::Classification;
 pub use crate::init::InitFormat;
 pub(crate) use crate::init_cmd::parse_init_mode;
-pub use crate::init_cmd::{InitMode, SUPPORTED_AGENTS, cmd_init};
+pub use crate::init_cmd::{InitMode, cmd_init};
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
