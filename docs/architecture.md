@@ -199,7 +199,7 @@ These are built-in commands (not shell commands):
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `recall` | `cmd_recall()` | Search indexed outputs via full-text query |
-| `forget` | `cmd_forget()` | Clear indexed outputs for the current project (complete for the SQLite store; with `vipune-store` the paging stop rule in the Security Model's Data retention section applies, #177) |
+| `forget` | `cmd_forget()` | Clear indexed outputs for the current project (complete for the SQLite store; with `vipune-store` the paging stop rule in the Security Model's Data retention section applies; see #177 for the drain loop work) |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats), the pi extension (`--agent pi`), or the Claude Code `settings.json` hook (`--agent claude-code`) |
