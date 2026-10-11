@@ -137,6 +137,19 @@ fn try_index_default_keeps_entry_aged_two_days() {
 }
 
 #[test]
+fn try_index_default_keeps_entries_aged_25h_to_6d() {
+    let dir = tempfile::tempdir().unwrap();
+    let _data = crate::store::set_test_data_dir(dir.path());
+    with_config(None, || {
+        seed_aged("zqxmarkerdefault25h", 25 * 3600);
+        seed_aged("zqxmarkerdefault6d", 6 * DAY);
+        assert!(crate::commands::try_index("cmd", "unrelated body"));
+        assert!(survives("zqxmarkerdefault25h"));
+        assert!(survives("zqxmarkerdefault6d"));
+    });
+}
+
+#[test]
 fn try_index_default_purges_entry_aged_eight_days() {
     let dir = tempfile::tempdir().unwrap();
     let _data = crate::store::set_test_data_dir(dir.path());
