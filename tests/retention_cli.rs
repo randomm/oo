@@ -2,7 +2,6 @@
 //! performed by `oo` when it indexes output. Isolation is via `OO_CONFIG_DIR`
 //! and `OO_DATA_DIR` on the child process only, so the test process env is untouched.
 
-use assert_cmd::Command;
 use double_o::store::{SessionMeta, SqliteStore, Store};
 use std::path::Path;
 use tempfile::TempDir;
@@ -46,8 +45,7 @@ fn run_index(config: Option<&str>, data_dir: &Path) -> (String, String) {
     if let Some(content) = config {
         std::fs::write(cfg_dir.path().join("config.toml"), content).unwrap();
     }
-    let out = Command::cargo_bin("oo")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("oo")
         .args(["seq", "1", "3000"])
         .env("OO_CONFIG_DIR", cfg_dir.path())
         .env("OO_DATA_DIR", data_dir)
