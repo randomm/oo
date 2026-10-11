@@ -50,7 +50,9 @@ the available API key.
 
 If the env var named by `api_key_env` is unset, the background learn step cannot
 call the LLM. The command itself still runs and its output is not affected; the
-learn error is reported as a status line on a later `oo` invocation.
+learn error is reported as a status line on a later `oo` invocation, but only if the
+config directory already exists; otherwise the failure is silent (see
+[CLI reference](cli-reference.md#oo-learn)).
 
 ## Where patterns are saved
 

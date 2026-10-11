@@ -222,7 +222,7 @@ oo learn --hint "compact test summary" pytest tests/
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
 3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml` (the config directory is platform-specific; see [configuration.md](configuration.md#directories))
-4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported the same way, but only when the config directory already exists; see Exit codes
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form, but only when the config directory already exists; see Exit codes
 
 `--hint <text>` (before the command) passes extra context to the pattern generator.
 
@@ -301,7 +301,7 @@ unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
 error, in any order.
 
-**CLI contract change (since 0.7.1):** unknown options and unsupported `--format`
+**CLI contract change (unreleased, after v0.7.0):** unknown options and unsupported `--format`
 values are now errors. Earlier releases warned and fell back to the default
 format or ignored the option.
 

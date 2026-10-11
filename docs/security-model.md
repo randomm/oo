@@ -133,7 +133,7 @@ oo reads from:
 - Environment variables (runtime only)
 - Configuration directory (`~/.config/oo/`)
 - Pattern directory (`~/.config/oo/patterns/`)
-- Storage directory (`~/.local/share/.oo/`)
+- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS)
 
 All are within your user home directory.
 
