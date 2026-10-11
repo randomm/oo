@@ -39,8 +39,8 @@ oo classifies command output into five tiers:
 | **Success** | `✓ label (summary) [saved N]` (suffix when the saving exceeds 4 KiB) | Output > 4 KiB with pattern summary |
 | **Status** | `✓ label [saved N]` (no parentheses; savings suffix as for Success) | Output > 4 KiB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
 | **Failure** | `✗ label [saved N]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output, then (only when the filtered output does not match the full output line for line, ignoring trailing empty lines) ``● label (output truncated: N total → use `oo recall` to query)``. Full output is indexed in that case. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)`` and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only` | Non-zero exit code |
-| **Large** | ``● label (indexed N → use `oo recall` to query)``. If indexing fails: the `smart_truncate` view with no indicator line | Output > 4 KiB without a pattern summary, Data category |
-| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KiB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)``, the same slice, and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only`. The slice's own marker still reads `use oo recall to query` in both cases) |
+| **Large** | ``● label (indexed N → use `oo recall` to query)``. If indexing fails: the `smart_truncate` view with no indicator line and no stderr warning (known defect, #182) | Output > 4 KiB without a pattern summary, Data category |
+| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KiB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)``, the same slice, and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only`. The slice's own marker still reads `use oo recall to query` in both cases, which advertises a recall that does not work when indexing failed; known defect, #182) |
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
@@ -51,7 +51,7 @@ Output of 81 to 120 lines prints no truncation marker, and its last head line an
 `... [N lines truncated] ...` marker.
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
-a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
+a byte-bounded head+tail slice of at most 4 KiB of output, separated by a truncation marker of
 the form ``... [N bytes truncated → use `oo recall` to query] ...``. The truncation marker is inserted once, between the head and tail pieces (the output itself may contain identical text). It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
 output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
 written to stderr, and the slice is still displayed.
@@ -316,7 +316,7 @@ unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
 error, in any order.
 
-**CLI contract change (unreleased, after v0.7.0):** these inputs were accepted in v0.7.0 and now
+**CLI contract change (since v0.8.0; these inputs were accepted in v0.7.0):** they now
 exit 1 with nothing written: an unknown option such as `--bogus` (silently ignored), including
 `--format=<value>` and `--agent=<value>` (the `=` form was ignored, so the claude format was written);
 a stray positional argument (silently ignored); a repeated `--format`, `--agent` or `--global` (silently
