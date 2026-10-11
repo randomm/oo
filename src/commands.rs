@@ -15,7 +15,8 @@ use crate::{
 };
 
 pub enum Action {
-    /// Print a reserved subcommand's usage text and exit 0 (no side effects).
+    /// Print a reserved subcommand's usage text and exit 0. The subcommand does not run,
+    /// but a pending learn-status message is printed and cleared before this action.
     Usage(&'static str),
     Run(Vec<String>),
     Recall {
