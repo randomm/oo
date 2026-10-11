@@ -2,7 +2,7 @@
 
 ## Directories
 
-oo uses the per-OS base directories from the `dirs` crate: `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. The table lists the values on macOS (verified) and Linux (verified against `dirs` 6.0.0 source):
+oo uses the per-OS base directories from the `dirs` crate: `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. The table lists the default values on macOS and Linux. On Linux the values follow the XDG base directory rules as implemented by the `dirs` crate:
 
 | Purpose | Linux | macOS |
 |---------|-------|-------|
@@ -10,11 +10,11 @@ oo uses the per-OS base directories from the `dirs` crate: `dirs::config_dir()` 
 | Data (SQLite index) | `$XDG_DATA_HOME/.oo/oo.db` (default `~/.local/share/.oo/oo.db`) | `~/Library/Application Support/.oo/oo.db` |
 | Patterns (user-defined) | `<config dir>/patterns/` (default `~/.config/oo/patterns/`) | `~/Library/Application Support/oo/patterns/` |
 
-On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are absolute paths; otherwise the defaults above apply. On macOS the XDG variables are ignored. Windows is not tested and is not documented here.
+On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are absolute paths; otherwise the defaults above apply. On macOS the XDG variables are ignored. Windows is untested.
 
 If the `dirs` crate cannot determine a base directory, the config directory falls back to `/tmp/oo` and the data directory falls back to `$HOME/.oo` (then `/tmp/.oo`).
 
-Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it:
+Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it. A relative value is resolved against the current working directory, and an empty value (`OO_CONFIG_DIR=`) means the current working directory itself:
 
 ```bash
 export OO_CONFIG_DIR=/custom/path
@@ -26,7 +26,7 @@ Override the data directory with the `OO_DATA_DIR` environment variable (used pr
 export OO_DATA_DIR=/custom/data/path
 ```
 
-The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`); otherwise it is the platform data directory plus `.oo/` (the Data row above).
+The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`). A relative value is resolved against the current working directory (`OO_DATA_DIR=rel` gives `./rel/oo.db`), and an empty value gives `./oo.db`. Otherwise it is the platform data directory plus `.oo/` (the Data row above).
 
 ## Config File
 

@@ -106,7 +106,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 Large outputs that don't match patterns are stored for full-text retrieval.
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:
@@ -181,7 +181,7 @@ Pattern learning runs in the background after the command completes. This doesn'
 
 ### 6. Project-scoped storage
 
-Indexed outputs are keyed by a project id derived from the git remote (last path segment), the git root directory name, or the current directory name. `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
+Indexed outputs are keyed by a project id. In the default build it is derived from the git remote (last path segment), else the git root directory name, else the current directory name. In the `vipune-store` build it comes from vipune's own project detection (`VIPUNE_PROJECT` is honoured first). `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
 
 ## Reserved Subcommands
 

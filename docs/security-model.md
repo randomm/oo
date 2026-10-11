@@ -44,7 +44,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added)
+- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). A relative `OO_DATA_DIR` is resolved against the current working directory, and an empty `OO_DATA_DIR=` puts the database at `./oo.db`
 - Permissions: the file is created with the default mode from the process umask (`0644` under the common umask `022`); oo does not set a restrictive mode. For sensitive environments, run `chmod 600` on the file or use a restrictive umask (e.g. `umask 077`) before running oo
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Other local users can read it if the file and its parent directory permit it
@@ -131,9 +131,9 @@ User patterns in the user patterns directory (see Read Access) are trusted by de
 oo reads from:
 - Standard input (commands)
 - Environment variables (runtime only)
-- Configuration directory (`~/.config/oo/` on Linux, `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides)
+- Configuration directory (`~/.config/oo/` on Linux, `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides)
+- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 
 All are within your user home directory.
 
@@ -175,7 +175,7 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 
 ## Project-Scoped Storage
 
-Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's `detect_project`, which also honours `VIPUNE_PROJECT`.
+Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
 
 - `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
 - `oo forget` deletes every indexed entry with that project id
