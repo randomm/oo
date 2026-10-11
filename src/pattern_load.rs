@@ -1,7 +1,7 @@
 //! Pattern-set assembly for `oo <cmd>`, `oo rewrite`, and the hook processors.
 //!
-//! Single source of the canonical pattern precedence order: project-local,
-//! then user config, then builtins (first-match-wins). Imports `pattern`
+//! The canonical pattern precedence set used by dispatch (`oo <cmd>`), `oo rewrite`
+//! and `oo hook`: project, user, then built-in, first match wins. Imports `pattern`
 //! (loading and builtins), `learn` (user config directory via
 //! `learn::patterns_dir`) and `init::find_root` (git root for project-local
 //! patterns). Used by the dispatch layer (`commands`) and `rewrite`, so both
