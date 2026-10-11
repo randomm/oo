@@ -60,7 +60,7 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 
 - **When purging happens:** lazily and per project. A purge runs when a project next indexes output, and removes only that project's entries older than `retention`. Other projects, and a project that never indexes again, keep their entries until then.
 - **Vipune store backend:** with `--features vipune-store`, each purge examines only the first 10,000 entries that Vipune lists for the project, so stale entries beyond that page are not purged by that run.
-- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. Unknown top-level sections such as `[learn]` do not affect retention.
+- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. The `[learn]` table is parsed separately: a partial or otherwise invalid `[learn]` table (observed: only `model`) leaves `[store] retention` in effect, and an invalid `[store]` value (observed: `retention = "x"`) leaves `oo learn` working. Only a TOML syntax error in `config.toml` affects both: indexing then warns and uses the default retention, and `oo learn` prints a config error.
 - `oo forget` clears a project's indexed entries immediately, regardless of retention. With `--features vipune-store`, its completeness is subject to the stop rule in [Security Model](security-model.md#command-output).
 
 ## Environment Variables
@@ -111,7 +111,7 @@ Optional custom endpoint for Anthropic API.
 export ANTHROPIC_API_URL="https://your-proxy.example.com/v1/messages"
 ```
 
-> **Security warning:** `https://` URLs are accepted for any host. `http://` URLs are accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is currently bypassable with URL userinfo such as `http://localhost:@host/`, which sends requests to `host` in plaintext (known defect, #190). The check applies only to the configured URL: the HTTP client follows redirects by default (up to 10), and redirect targets are not checked against it.
+> **Security warning:** `https://` URLs are accepted for any host. `http://` URLs are accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is currently bypassable with URL userinfo such as `http://localhost:@host/`, which sends requests to `host` in plaintext (known defect, #190). The check applies only to the configured URL: the HTTP client follows redirects by default (up to 10), and redirect targets are not checked against it. On a 301, 302 or 303 response the `x-api-key` header (the API key) is also sent to the redirect target; on a 307 or 308 response to the POST the request fails instead.
 
 ## Runtime Thresholds
 

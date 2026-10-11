@@ -198,7 +198,7 @@ oo forget
 
 ### Behavior
 
-Deletes all outputs indexed for the current project, regardless of which session stored them. With the `vipune-store` build, the deletion can report success while entries remain; see the stop rule in [Security Model](security-model.md#command-output). This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
+Deletes all outputs indexed for the current project, regardless of which session stored them. With the `vipune-store` build, the deletion can report success while entries remain, because the loop stops after any short page and after any full page with no successful deletion; see the stop rule in [Security Model](security-model.md#command-output). This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
 
 ### Output format
 
