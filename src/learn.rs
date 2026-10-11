@@ -87,7 +87,7 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
     }
 }
 
-fn config_dir() -> PathBuf {
+pub(crate) fn config_dir() -> PathBuf {
     if let Some(test_dir) = std::env::var_os("OO_CONFIG_DIR") {
         return PathBuf::from(test_dir);
     }

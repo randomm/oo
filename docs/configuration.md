@@ -48,6 +48,16 @@ Configuration for the `oo learn` LLM integration. This is the single source of t
 
 If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`.
 
+### `[store]` section
+
+Retention for indexed command output (the entries `oo` stores for `oo recall`). An annotated example lives in [config.example.toml](../config.example.toml).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged the next time oo indexes output. `0` disables automatic purging. Must be `>= 0`. |
+
+An absent `[store]` section or `retention` key uses the default. An invalid value (negative, non-integer, or malformed `config.toml`) prints a warning on stderr and uses the default; indexing is never blocked by config. `oo forget` still clears a project's entries at any time.
+
 ## Environment Variables
 
 ### `OO_CONFIG_DIR`
@@ -107,7 +117,6 @@ These constants are built into the binary and cannot be configured.
 | `SMALL_THRESHOLD` | 4096 bytes | Output below this size passes through unchanged |
 | `TRUNCATION_THRESHOLD` | 80 lines | Failure output truncation starts after this many lines |
 | `MAX_LINES` | 120 lines | Hard cap on lines shown after smart truncation |
-| Entry TTL | 86400 seconds (24 hours) | Stale indexed entries are auto-cleaned |
 
 ## Feature Flags
 

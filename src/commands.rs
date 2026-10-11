@@ -301,8 +301,11 @@ pub fn try_index(command: &str, content: &str) -> bool {
         timestamp: now_epoch(),
     };
 
-    // Lazy TTL cleanup (best-effort)
-    let _ = store.cleanup_stale(&project_id, 86400);
+    // Lazy retention cleanup (best-effort); `retention = 0` disables purging.
+    let retention = crate::retention::load_retention();
+    if retention > 0 {
+        let _ = store.cleanup_stale(&project_id, retention);
+    }
 
     store.index(&project_id, content, &meta).is_ok()
 }

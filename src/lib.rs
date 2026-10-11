@@ -83,6 +83,8 @@ pub mod pattern;
 /// by the dispatch layer and the rewrite/hook feature modules.
 #[doc(hidden)]
 pub mod pattern_load;
+/// Retention of indexed output (`[store] retention` in config.toml).
+mod retention;
 /// Session tracking and management.
 pub mod session;
 /// Storage backends for indexed output.
