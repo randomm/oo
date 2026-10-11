@@ -88,11 +88,11 @@ $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
 Query indexed output with `oo recall "<terms>"`. Small outputs (≤4 KB) pass through
-unchanged. Larger unpatterned output is indexed in full. Data commands like `git log` and `ls` show
-only an indicator line; content commands like `git show` and `git diff` and unknown commands
-like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation marker (`... [N bytes
-truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or `sh -c` output
-cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
+unchanged. Larger unpatterned Data, Content, and Unknown output is indexed in full; Status output (test runners, builds, linters) gets a quiet `✓` line and is not indexed. Data commands like
+`git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
+and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
+marker (`... [N bytes truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or
+`sh -c` output cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
 for details.
 
 ---
@@ -299,9 +299,10 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 ## FAQ
 
 **What if oo doesn't recognize my command?**
-Unknown commands pass through unchanged under 4 KB. Larger output is indexed in full for
-later retrieval via `oo recall`. Data commands show only an indicator line; other commands
-show a byte-bounded head+tail slice (marked with a truncation line). Use `oo learn <command>` to teach oo a compression pattern.
+Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
+is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
+line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
+Status commands such as `make` print only a `✓` line and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for

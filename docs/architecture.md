@@ -161,7 +161,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 
 ### 1. Bounded passthrough by default
 
-Small outputs (≤4 KiB) pass through unchanged for every category. Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small outputs (≤4 KiB) pass through unchanged for every category. Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 

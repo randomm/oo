@@ -49,8 +49,7 @@ lines, is printed in full; longer output keeps its first 72 and last 48 lines ar
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
 a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
-the form `... [N bytes truncated → use `oo recall` to query] ...`. The marker is a single line,
-present exactly once. The head and tail shown are an exact prefix and suffix of the full
+the form `... [N bytes truncated → use `oo recall` to query] ...`. The marker text appears exactly once, between the head and tail pieces. It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
 output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
 written to stderr, and the slice is still displayed.
 
@@ -448,7 +447,7 @@ User (<user patterns dir>):
 
 If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
 
-Files that are not valid TOML are skipped silently. A file with valid TOML but an invalid regex is still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
+Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 
