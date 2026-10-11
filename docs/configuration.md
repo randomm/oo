@@ -46,7 +46,9 @@ Configuration for the `oo learn` LLM integration. This is the single source of t
 
 ### Default behavior
 
-If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`.
+If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`. These defaults are fixed in code and do not depend on which environment variables are set.
+
+A `[learn]` table that is present must set all three keys. The per-field defaults in the table above do not fill in a missing key: a table with only some of them (for example only `model`) fails to load with `missing field` (for example ``missing field `provider` ``). `oo learn` then prints an `oo: config error` line, and its background step fails on the same error, so no pattern is written.
 
 ## Environment Variables
 
@@ -113,7 +115,7 @@ These constants are built into the binary and cannot be configured.
 
 | Flag | Description |
 |------|-------------|
-| `vipune-store` | Enables Vipune backend for indexed output with semantic search. When enabled, outputs are stored using Vipune instead of SQLite. Build with `cargo build --features vipune-store`. |
+| `vipune-store` | Enables Vipune backend for indexed output with semantic search. When enabled, outputs are stored in Vipune's database (`~/.vipune/memories.db` by default) instead of SQLite. Build with `cargo build --features vipune-store`. |
 
 To build with Vipune support:
 
@@ -121,7 +123,7 @@ To build with Vipune support:
 cargo build --release --features vipune-store
 ```
 
-The `vipune-store` feature changes only the storage backend for `oo recall`. All other oo behavior remains identical.
+The `vipune-store` feature changes the storage backend for indexed output (`oo recall`, `oo forget` and indexing). It also adds network access that the default build does not have: opening the store downloads the embedding model from Hugging Face when it is not cached, and the `ort` dependency downloads ONNX Runtime at build time. These behaviours come from source inspection of vipune 0.1.2 and were not observed at runtime. See [Security Model](security-model.md#when-oo-makes-network-calls).
 
 ## Files in Configuration Directory
 

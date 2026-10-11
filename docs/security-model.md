@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — oo sends no usage data. Its only network requests are the ones listed in [Network Access](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. Commands you run may make their own requests
+2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [Network Access](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see Network Access). Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -23,7 +23,7 @@ You must trust:
 
 ### What We Don't Trust (and Why)
 
-- **Remote servers**: All command execution is local. oo makes network requests only for `oo learn` and for `oo help <command>` (see Network Access).
+- **Remote servers**: All command execution is local. The default build makes network requests only for `oo learn` and `oo help <command>`; a `vipune-store` build also downloads an embedding model (see Network Access).
 - **Command inputs**: Commands are parsed but not modified. If a command is malicious (e.g., `rm -rf /`), oo executes it as-is — the security boundary is between you and the command, not oo.
 
 ## Data Handling
@@ -34,7 +34,7 @@ You must trust:
 
 - **Small outputs (<4 KiB)**: Displayed directly, never stored
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
-- **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
+- **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally for recall, in the SQLite index by default or in Vipune's database with `vipune-store` (see Storage Backends)
 
 **Data retention**:
 - Indexed outputs persist until you run `oo forget` or delete them manually
@@ -49,10 +49,11 @@ You must trust:
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Other local users can read it if the file and its parent directory permit it
 
-**Vipune (optional, feature flag)**:
-- Stores outputs in Vipune's database
+**Vipune (optional, `--features vipune-store` build)**:
+- Stores outputs in Vipune's database instead of `oo.db`. The default database is `~/.vipune/memories.db`; `VIPUNE_DATABASE_PATH`, or `database_path` in `vipune/config.toml` in the platform config directory, changes it (from source inspection of vipune 0.1.2)
 - Same access controls as your Vipune installation
 - Only used if you explicitly enable the `vipune-store` feature
+- Opening the store may download the embedding model from Hugging Face when it is not cached (see Network Access)
 
 ### LLM Learning (`oo learn`)
 
@@ -140,7 +141,8 @@ oo reads from:
 - Environment variables (runtime only)
 - Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- With `vipune-store`, Vipune's database (`~/.vipune/memories.db` by default) and its config file (`vipune/config.toml` in the platform config directory) instead of `oo.db`
 - Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), loaded each time oo classifies a command
 
 By default the configuration and storage directories are under your user home directory; if no home directory can be determined they fall back under `/tmp` (see [configuration.md](configuration.md#directories)). On Linux, they move under `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` when those are absolute paths. The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
@@ -148,7 +150,8 @@ By default the configuration and storage directories are under your user home di
 ### Write Access
 
 oo writes to:
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs
+- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead)
+- Hugging Face cache (`$HF_HOME/hub`, default `~/.cache/huggingface/hub`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results
 
@@ -181,7 +184,7 @@ oo executes commands using your shell environment:
 
 ### When oo makes network calls
 
-oo itself makes network requests in two cases:
+In the default build, oo itself makes network requests in two cases:
 
 **Via `oo learn`**:
 - To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1; the check is bypassable with userinfo such as `http://localhost:@host/`, see #190)
@@ -189,10 +192,16 @@ oo itself makes network requests in two cases:
 - In the background, after command completes
 
 **Via `oo help <command>`** (not for reserved subcommands):
-- An HTTPS GET to `https://cheat.sh/<command>?T`, with the command name URL-encoded
+- An HTTPS GET to `https://cheat.sh/<command>?T`, with the command name URL-encoded. The HTTP client follows redirects (up to 10 by default), so a redirect causes further requests
 - Reserved subcommands (for example `oo help recall`) print the local usage text and make no request
 
-**No other network calls**:
+**Via the embedding store (only with `--features vipune-store`)**:
+- When the store is opened (for example by `oo recall`, `oo forget`, or indexing output) and the embedding model is not yet in the Hugging Face cache, vipune downloads the model over HTTPS from `https://huggingface.co` (`HF_ENDPOINT` may change the host): `onnx/model.onnx` (or `model.onnx`) and `tokenizer.json`. The model is set by vipune's `embedding_model` / `VIPUNE_EMBEDDING_MODEL` (default `BAAI/bge-small-en-v1.5`). Cached files are not re-downloaded
+- The request carries no command output. If a Hugging Face token file exists in the HF cache, it is sent as a `Bearer` header
+- At build time, the `ort` dependency's default `download-binaries` feature fetches ONNX Runtime binaries during `cargo build`
+- All of the above is from source inspection of vipune 0.1.2, hf-hub 0.4.3 and ort 2.0.0-rc.10. It was not observed at runtime, and the `vipune-store` build was not compiled
+
+**No other network calls** (beyond the cases above):
 - No telemetry
 - No updates
 - No cloud storage
@@ -285,14 +294,14 @@ This section is for compliance assessments.
 
 ### Data Location
 
-- **Command output**: Stored in the storage directory (see [Read Access](#read-access)); sent to Anthropic only when you run `oo learn` (see LLM data)
+- **Command output**: In the default build, stored in `oo.db` in the storage directory (see [Read Access](#read-access)). With `--features vipune-store`, stored in Vipune's database (`~/.vipune/memories.db` by default). Sent to Anthropic only when you run `oo learn` (see LLM data)
 - **Patterns**: Local-only, in the user patterns directory (under the configuration directory) and in project-local `.oo/patterns/` (see [Read Access](#read-access))
 - **LLM data**: Sent to Anthropic (US-based), subject to Anthropic's privacy policy
 
 ### Data Access
 
 - **Owner**: User account running oo
-- **Permissions**: Storage files use the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments
+- **Permissions**: The SQLite database file (default build) uses the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments. With `vipune-store`, oo does not set the mode of Vipune's database (the vipune-side mode was not checked)
 - **Sharing**: No data sharing or syncing capabilities
 
 ### Data Retention
@@ -303,7 +312,7 @@ This section is for compliance assessments.
 
 ### Right to Delete
 
-- **Local data**: Delete the storage directory and the user patterns directory (paths above)
+- **Local data**: Delete the storage directory and the user patterns directory (paths above). With `vipune-store`, also delete Vipune's database (`~/.vipune/memories.db` by default) and the Hugging Face model cache
 - **LLM data**: No mechanism; contact Anthropic directly if needed
 
 ## Further Reading

@@ -1,7 +1,8 @@
 # Example oo configuration file
 #
 # Create this file at: ~/.config/oo/config.toml
-# All sections and fields are optional — oo uses defaults if absent.
+# The file itself is optional. If [learn] is present, all three of its keys are
+# required; omit the whole table to use the defaults.
 
 # Configuration for `oo learn` (LLM-assisted pattern generation)
 # Requires ANTHROPIC_API_KEY environment variable to be set.
@@ -9,8 +10,8 @@
 # LLM provider (only "anthropic" is supported)
 provider = "anthropic"
 
-# Model identifier (default: "claude-haiku-4-5")
+# Model identifier (required in [learn])
 model = "claude-haiku-4-5"
 
-# Environment variable containing the API key (default: "ANTHROPIC_API_KEY")
+# Environment variable containing the API key (required in [learn])
 api_key_env = "ANTHROPIC_API_KEY"
