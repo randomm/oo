@@ -9,7 +9,7 @@
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and learn an output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh |
-| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
+| `oo init` | Set up hooks for agent frameworks (`--format claude` or `--format generic`; or `--agent pi` or `--agent claude-code`, with optional `--global`) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in, project, and user) |
@@ -36,13 +36,15 @@ oo classifies command output into five tiers:
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
-| **Success** | `✓ label (summary) [saved N KiB|MiB]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
-| **Status** | `✓ label [saved N KiB|MiB]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
-| **Failure** | `✗ label [saved N KiB|MiB]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
+| **Success** | `✓ label (summary) [saved N]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
+| **Status** | `✓ label [saved N]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
+| **Failure** | `✗ label [saved N]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
 | **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
 | **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
-The `saved` figure uses binary units: `KiB` below 1 MiB (1,048,576 bytes), `MiB` from 1 MiB upward, with two decimal places. Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
+The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
+
+Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
 display is only the indicator line. If indexing fails, the display falls back to
 `smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
 Output of 81 to 120 lines has all of its lines present and no truncation marker, except that
@@ -62,14 +64,18 @@ When oo compresses output (Success and Failure arms), the savings are reported o
 indicator line itself:
 
 ```
-✓ cargo test (47 passed, 2.1s) [saved 46.1 KiB]
+✓ cargo test (47 passed, 2.1s) [saved 46.10 KiB]
 ```
 
 The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
 the existing line content, using `humansize::format_size(saved, BINARY)` (the same
 binary-unit idiom the Large tier's `indexed N` figure uses; no new formatter, no new
-dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the indicator line EXCLUDING the savings suffix — call sites measure the line before the suffix is appended, so the figure overstates displayed bytes by the suffix's own length (~15 B, immaterial at the sizes where a suffix can appear). For the Failure arm, the filtered output lines printed after the indicator line
-do NOT count as displayed — only the indicator line does.
+dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the indicator line EXCLUDING the savings suffix — call sites measure the line before the suffix is appended, so the figure overstates displayed bytes by the suffix's own length (~15 B, immaterial at the sizes where a suffix can appear). The subtracted amount, per arm, is the indicator line only; printed text beyond it is never subtracted:
+
+- **Success** and **Status** (`✓` line): the indicator line is the whole displayed output, so `saved` is the merged output size minus the displayed text.
+- **Failure** (`✗` line): `render_classification` passes the full merged output size (`original_size`) and subtracts only the `✗ label` line. The filtered error output printed after it is not subtracted, so the figure overstates the saving: a failure with 8,893 bytes of output shows `[saved 8.68 KiB]` while its filtered error body is still printed.
+
+Because `saved` subtracts the indicator line, output just over 4 KiB can print no suffix: a 4,100-byte successful `make` prints `✓ make`, and 4,105 bytes prints `✓ make [saved 4.00 KiB]`.
 
 The figure appears on:
 - **Success** — both the `✓ label (summary)` form and the quiet `✓ label` empty-summary

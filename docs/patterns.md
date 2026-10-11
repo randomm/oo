@@ -39,7 +39,7 @@ grep = "Error:|error\\["
 | `grep` | `grep` (regex) | — | Lines matching the regex become the summary |
 
 An empty `summary = ""` suppresses output on success (quiet pass) — the indicator
-line is `✓ label` with no summary. The savings figure (`[saved N KiB|MiB]`) is still
+line is `✓ label` with no summary. The savings figure (`[saved N]`) is still
 appended when the saving exceeds `MIN_SAVINGS` (4 KiB), so the compression win is
 visible even on the quiet form. This makes the quiet path the largest compression
 win in the product: a 100 KiB build log becomes a single line with a savings figure,
