@@ -183,7 +183,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
-| `oo patterns` | List loaded output patterns (project, user, built-in) |
+| `oo patterns` | List loaded output patterns (built-in, project and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
