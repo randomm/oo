@@ -39,15 +39,20 @@ oo classifies command output into five tiers:
 | **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
 | **Failure** | `✗ label` followed by error output | Non-zero exit code |
 | **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
-| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is bounded) |
+| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
-Large unpatterned output (Data, Content, or Unknown category) is indexed in full and
-retrievable via `oo recall`. The display is a byte-bounded head+tail slice separated by a
-truncation marker of the form `... [N bytes truncated → use `oo recall` to query] ...` —
-the marker is a single machine-detectable line, present exactly once, so agents can tell
-with certainty when content was withheld. The head and tail shown are an exact prefix and
-suffix of the indexed content. If indexing fails, the same byte-bounded slice is displayed
-without a false indexing promise.
+Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
+display is only the indicator line. If indexing fails, the display falls back to
+`smart_truncate` with no indicator line: output of 80 lines or fewer, and output of 81 to 120
+lines, is printed in full; longer output keeps its first 72 and last 48 lines around a
+`... [N lines truncated] ...` marker.
+
+Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
+a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
+the form `... [N bytes truncated → use `oo recall` to query] ...`. The marker is a single line,
+present exactly once. The head and tail shown are an exact prefix and suffix of the full
+output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
+written to stderr, and the slice is still displayed.
 
 ### Savings indicator
 
@@ -96,7 +101,7 @@ When no pattern matches, oo uses command category to determine behavior:
 | **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KB |
 | **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 
-Patterns take priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins.
+A pattern whose success strategy yields a summary takes priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins. Within one directory, pattern files are loaded in unsorted directory-listing order, so when two patterns in the same directory match a command, which one wins is not defined; keep their `command_match` values disjoint.
 
 ### Exit codes
 
@@ -443,7 +448,7 @@ User (<user patterns dir>):
 
 If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
 
-Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
+Files that are not valid TOML are skipped silently. A file with valid TOML but an invalid regex is still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 

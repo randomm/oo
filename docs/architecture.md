@@ -56,7 +56,7 @@ The classification engine decides how to present output to the agent:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
 - **Passthrough** (success, ≤4 KiB): Verbatim output
 - **Success** (success, >4 KiB, pattern match): Compressed summary
-- **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, head+tail slice displayed
+- **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
 - **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
@@ -103,7 +103,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 
 **Module**: [`src/store.rs`](../src/store.rs)
 
-Large outputs that don't match patterns are stored for full-text retrieval.
+Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval.
 
 **Storage backends**:
 - `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
@@ -161,7 +161,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 
 ### 1. Bounded passthrough by default
 
-Small outputs (≤4 KiB) pass through unchanged for every category. Large Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small outputs (≤4 KiB) pass through unchanged for every category. Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
@@ -169,7 +169,7 @@ For normal command classification, project and user patterns take priority over 
 
 ### 3. Category-based fallbacks
 
-When no pattern matches, category detection provides sensible defaults. Content commands (git show, diff, cat) and Unknown commands (curl, sh -c, custom scripts) all route large unpatterned output through the bounded Large tier — the agent keeps a bounded head+tail view of the actual output while the full content stays recoverable via `oo recall`.
+When no pattern matches, category detection provides sensible defaults. Content commands (git show, diff, cat) and Unknown commands (curl, sh -c, custom scripts) all route large unpatterned output through the Bounded tier — the agent keeps a bounded head+tail view of the actual output while the full content stays recoverable via `oo recall`.
 
 ### 4. SQLite by default
 
