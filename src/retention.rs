@@ -63,11 +63,16 @@ pub(crate) fn load_retention_from(path: &Path) -> i64 {
     })
 }
 
-/// Lazy, per-project purge run when `project_id` indexes output. Entries of
+/// Lazy, per-project purge run when `project_id` indexes output, using the
+/// retention from config.toml.
+pub(crate) fn purge_stale(store: &mut dyn Store, project_id: &str) {
+    purge_with(store, project_id, load_retention());
+}
+
+/// Purge `project_id`'s entries older than `retention` seconds. Entries of
 /// other projects are untouched; `retention = 0` skips the purge entirely.
 /// Best-effort: a failed purge warns on stderr but never blocks indexing.
-pub(crate) fn purge_stale(store: &mut dyn Store, project_id: &str) {
-    let retention = load_retention();
+pub(crate) fn purge_with(store: &mut dyn Store, project_id: &str, retention: i64) {
     if retention == 0 {
         return;
     }

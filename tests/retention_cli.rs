@@ -7,13 +7,6 @@ use double_o::store::{SessionMeta, SqliteStore, Store};
 use std::path::Path;
 use tempfile::TempDir;
 
-fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
-
 /// Seed an entry whose timestamp is `age_secs` in the past, under the project id
 /// the CLI child will compute (same cwd, so same project id).
 fn seed(data_dir: &Path, marker: &str, age_secs: i64) {
@@ -22,7 +15,7 @@ fn seed(data_dir: &Path, marker: &str, age_secs: i64) {
         source: "oo".into(),
         session: "test".into(),
         command: "seed".into(),
-        timestamp: now() - age_secs,
+        timestamp: double_o::util::now_epoch() - age_secs,
     };
     store
         .index(&double_o::session::project_id(), marker, &meta)
@@ -38,7 +31,8 @@ fn survives(data_dir: &Path, marker: &str) -> bool {
 }
 
 /// Run `oo` with the given config (None = no config.toml) and a large output
-/// that gets indexed, which triggers the retention purge. Returns stderr.
+/// that gets indexed, which triggers the retention purge. Asserts the child
+/// exits successfully and returns stderr.
 fn run_index(config: Option<&str>, data_dir: &Path) -> String {
     let cfg_dir = TempDir::new().unwrap();
     if let Some(content) = config {
@@ -50,6 +44,7 @@ fn run_index(config: Option<&str>, data_dir: &Path) -> String {
         .env("OO_DATA_DIR", data_dir)
         .output()
         .unwrap();
+    assert!(out.status.success(), "oo exited with {:?}", out.status);
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 

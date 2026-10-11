@@ -1,6 +1,6 @@
-//! Tests for `src/retention.rs`: config parsing and the `try_index` purge path.
+//! Tests for `src/retention.rs`: config parsing and the purge logic.
 use super::*;
-use crate::store::SessionMeta;
+use crate::store::{SessionMeta, SqliteStore};
 use crate::util::now_epoch;
 
 // OO_CONFIG_DIR is process-global; every test that mutates it takes this lock.
@@ -138,101 +138,70 @@ fn load_reads_config_dir_override() {
     });
 }
 
-/// Seed an oo entry whose timestamp is `age_secs` in the past.
-fn seed_aged(marker: &str, age_secs: i64) {
-    let mut store = crate::store::open().unwrap();
+/// Fixed project id: purge tests never run `git` to derive one.
+const PROJECT: &str = "retention-test-project";
+const DAY: i64 = 86_400;
+
+/// Open a store in a fresh temp dir (no env vars, no thread-local override).
+fn temp_store() -> (tempfile::TempDir, SqliteStore) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_at(&dir.path().join("oo.db")).unwrap();
+    (dir, store)
+}
+
+/// Seed an entry whose timestamp is `age_secs` in the past.
+fn seed_aged(store: &mut SqliteStore, project: &str, marker: &str, age_secs: i64) {
     let meta = SessionMeta {
         source: "oo".into(),
         session: "test".into(),
         command: "seed".into(),
         timestamp: now_epoch() - age_secs,
     };
-    store
-        .index(&crate::session::project_id(), marker, &meta)
-        .unwrap();
+    store.index(project, marker, &meta).unwrap();
 }
 
-fn survives(marker: &str) -> bool {
-    let mut store = crate::store::open().unwrap();
-    !store
-        .search(&crate::session::project_id(), marker, 10)
-        .unwrap()
-        .is_empty()
-}
-
-const DAY: i64 = 86_400;
-
-#[test]
-fn try_index_default_keeps_entry_aged_two_days() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(None, || {
-        seed_aged("zqxmarkerdefaultkeep", 2 * DAY);
-        assert!(crate::commands::try_index(
-            "cmd",
-            "zqxmarkerdefaultkeep body"
-        ));
-        assert!(survives("zqxmarkerdefaultkeep"));
-    });
+fn survives(store: &mut SqliteStore, project: &str, marker: &str) -> bool {
+    !store.search(project, marker, 10).unwrap().is_empty()
 }
 
 #[test]
-fn try_index_default_keeps_entries_aged_25h_to_6d() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(None, || {
-        seed_aged("zqxmarkerdefault25h", 25 * 3600);
-        seed_aged("zqxmarkerdefault6d", 6 * DAY);
-        assert!(crate::commands::try_index("cmd", "unrelated body"));
-        assert!(survives("zqxmarkerdefault25h"));
-        assert!(survives("zqxmarkerdefault6d"));
-    });
+fn purge_default_keeps_entries_aged_25h_to_6d() {
+    let (_dir, mut store) = temp_store();
+    seed_aged(&mut store, PROJECT, "zqxmarkerdefault25h", 25 * 3600);
+    seed_aged(&mut store, PROJECT, "zqxmarkerdefault6d", 6 * DAY);
+    purge_with(&mut store, PROJECT, DEFAULT_RETENTION_SECS);
+    assert!(survives(&mut store, PROJECT, "zqxmarkerdefault25h"));
+    assert!(survives(&mut store, PROJECT, "zqxmarkerdefault6d"));
 }
 
 #[test]
-fn try_index_default_purges_entry_aged_eight_days() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(None, || {
-        seed_aged("zqxmarkerdefaultpurge", 8 * DAY);
-        assert!(crate::commands::try_index("cmd", "unrelated body"));
-        assert!(!survives("zqxmarkerdefaultpurge"));
-    });
+fn purge_default_purges_entry_aged_eight_days() {
+    let (_dir, mut store) = temp_store();
+    seed_aged(&mut store, PROJECT, "zqxmarkerdefaultpurge", 8 * DAY);
+    purge_with(&mut store, PROJECT, DEFAULT_RETENTION_SECS);
+    assert!(!survives(&mut store, PROJECT, "zqxmarkerdefaultpurge"));
 }
 
 #[test]
-fn try_index_custom_retention_purges_entry_older_than_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(Some("[store]\nretention = 86400\n"), || {
-        seed_aged("zqxmarkercustompurge", 2 * DAY);
-        assert!(crate::commands::try_index("cmd", "unrelated body"));
-        assert!(!survives("zqxmarkercustompurge"));
-    });
+fn purge_custom_retention_purges_entry_older_than_it() {
+    let (_dir, mut store) = temp_store();
+    seed_aged(&mut store, PROJECT, "zqxmarkercustompurge", 2 * DAY);
+    purge_with(&mut store, PROJECT, DAY);
+    assert!(!survives(&mut store, PROJECT, "zqxmarkercustompurge"));
 }
 
 #[test]
-fn try_index_zero_retention_never_purges() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(Some("[store]\nretention = 0\n"), || {
-        seed_aged("zqxmarkerzeroforever", 30 * DAY);
-        assert!(crate::commands::try_index("cmd", "unrelated body"));
-        assert!(survives("zqxmarkerzeroforever"));
-    });
+fn purge_zero_retention_never_purges() {
+    let (_dir, mut store) = temp_store();
+    seed_aged(&mut store, PROJECT, "zqxmarkerzeroforever", 30 * DAY);
+    purge_with(&mut store, PROJECT, 0);
+    assert!(survives(&mut store, PROJECT, "zqxmarkerzeroforever"));
 }
 
 #[test]
-fn try_index_invalid_config_still_indexes() {
-    let dir = tempfile::tempdir().unwrap();
-    let _data = crate::store::set_test_data_dir(dir.path());
-    with_config(Some("[store]\nretention = -1\n"), || {
-        seed_aged("zqxmarkerinvalidkeep", 2 * DAY);
-        assert!(crate::commands::try_index(
-            "cmd",
-            "zqxmarkerinvalidnew body"
-        ));
-        assert!(survives("zqxmarkerinvalidkeep"));
-        assert!(survives("zqxmarkerinvalidnew"));
-    });
+fn purge_leaves_other_projects_untouched() {
+    let (_dir, mut store) = temp_store();
+    seed_aged(&mut store, "other-project", "zqxmarkerotherproj", 30 * DAY);
+    purge_with(&mut store, PROJECT, DAY);
+    assert!(survives(&mut store, "other-project", "zqxmarkerotherproj"));
 }
