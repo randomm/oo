@@ -1908,6 +1908,43 @@ fn test_failure_fully_displayed_is_not_indexed() {
 }
 
 #[test]
+fn test_failure_pattern_slice_showing_all_lines_is_not_indexed() {
+    // `cargo test` has a built-in tail pattern. A 5-line failure fits inside
+    // its window, so every line is shown; the slice has no trailing newline
+    // and must still count as "nothing dropped". The second run uses CRLF
+    // endings, which `lines()` also normalises.
+    let lf = "#!/bin/sh\nprintf 'oo185fit1\\noo185fit2\\nl3\\nl4\\nl5\\n'\nexit 1\n";
+    let crlf =
+        "#!/bin/sh\nprintf 'oo185fit1\\r\\noo185fit2\\r\\nl3\\r\\nl4\\r\\nl5\\r\\n'\nexit 1\n";
+    for script in [lf, crlf] {
+        let (_bin, path) = make_fake_bin("cargo", script);
+        let (_guard, data_dir) = isolated_store();
+
+        let assert = oo()
+            .args(["cargo", "test"])
+            .env("PATH", &path)
+            .env("OO_DATA_DIR", &data_dir)
+            .assert()
+            .failure();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        assert!(
+            stdout.contains("oo185fit2"),
+            "shown lines must be displayed; got: {stdout:?}"
+        );
+        assert!(
+            !stdout.contains("output truncated") && !stdout.contains("oo recall"),
+            "fully shown failure must not advertise recall; got: {stdout:?}"
+        );
+
+        oo().args(["recall", "oo185fit1"])
+            .env("OO_DATA_DIR", &data_dir)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("No results found"));
+    }
+}
+
+#[test]
 fn test_failure_index_failure_warns_and_does_not_advertise_recall() {
     // OO_DATA_DIR pointing at a regular file makes the store unopenable.
     let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"line $i\"; done\nexit 1\n";

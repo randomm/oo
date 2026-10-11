@@ -80,7 +80,7 @@ FAILED tests/test_api.py::test_login - AssertionError: expected 200, got 401
 FAILED tests/test_api.py::test_create_user - ValueError: email already exists
 === 2 failed, 45 passed in 1.8s ===
 ```
-Failure output is filtered to the actionable tail. When the displayed output differs from the full output of the failed run, that full output is indexed too, so `oo recall` can find what the display left out.
+Failure output is filtered to the actionable tail. When the displayed output does not match the full output of the failed run line for line, that full output is indexed too, so `oo recall` can find what the display left out.
 
 **Large unrecognised output:** Indexed for retrieval.
 ```

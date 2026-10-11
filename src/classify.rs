@@ -3,7 +3,7 @@
 //! This module is the core of `oo`'s context-efficient output handling. It analyzes
 //! command results and produces one of five [`Classification`] outcomes:
 //!
-//! - **Failure**: Non-zero exit codes → filtered error output (full output kept for recall)
+//! - **Failure**: Non-zero exit codes → filtered error output (full output indexed for recall when the slice does not match it)
 //! - **Passthrough**: Small successful outputs (<4KB) → verbatim
 //! - **Success**: Large successful outputs with pattern match → compressed summary
 //! - **Bounded**: Large Content/Unknown output → full output indexed, byte-bounded display

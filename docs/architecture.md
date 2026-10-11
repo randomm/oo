@@ -13,7 +13,10 @@ flowchart TD
     C -->|Yes| D[Execute subcommand<br/>recall/forget/learn/help/init/patterns/rewrite/hook/version]
     C -->|No| E[Execute shell command]
     E --> F[Capture output<br/>stdout + stderr + exit code]
-    F --> G[Classify output]
+    F --> X{Exit code ≠ 0?}
+    X -->|Yes| FL[Failure: filter output<br/>index full output if the slice does not match it]
+    FL --> O
+    X -->|No| G[Classify output]
     G --> H{Find matching pattern?}
     H -->|Yes| I[Apply pattern<br/>success/failure logic]
     H -->|No| J[Detect command category<br/>Status/Content/Data/Unknown]
@@ -53,7 +56,7 @@ The classification engine decides how to present output to the agent:
 **Input**: `CommandOutput` + command string + patterns
 
 **Possible outcomes**:
-- **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between). When the displayed slice differs from the full merged output, the full output is indexed for recall and a `● label (output truncated: …)` line follows the slice
+- **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between). When the displayed slice does not match the full merged output line for line, the full output is indexed for recall and a `● label (output truncated: …)` line follows the slice
 - **Passthrough** (success, ≤4 KiB): Verbatim output
 - **Success** (success, >4 KiB, pattern summary): Compressed summary
 - **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N]` line (no parentheses), not indexed
@@ -104,7 +107,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 
 **Module**: [`src/store.rs`](../src/store.rs)
 
-Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval, as are the full merged outputs of failed commands whose displayed slice differs from them (see Failure above).
+Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval, as are the full merged outputs of failed commands whose displayed slice does not match them line for line (see Failure above).
 
 **Storage backends**:
 - `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
@@ -141,6 +144,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/main.rs`](../src/main.rs) | CLI entry point, subcommand dispatch | `Cli`, `main()` |
 | [`src/exec.rs`](../src/exec.rs) | Shell command execution, output capture | `run()`, `CommandOutput` |
 | [`src/classify.rs`](../src/classify.rs) | Classification engine, category detection | `classify()`, `detect_category()` |
+| [`src/failure_display.rs`](../src/failure_display.rs) | Failure-tier display and the recall notice for failed commands | `render()` |
 | [`src/pattern/mod.rs`](../src/pattern/mod.rs) | Pattern matching, extraction logic | `find_matching()`, `extract_summary()` |
 | [`src/pattern/builtins.rs`](../src/pattern/builtins.rs) | Built-in patterns for common tools (list with `oo patterns`) | `BUILTINS`, `builtin_patterns()` |
 | [`src/pattern/toml.rs`](../src/pattern/toml.rs) | Load/parse user patterns from TOML | `load_user_patterns()`, `parse_pattern_str()` |
@@ -164,7 +168,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 
 ### 1. Bounded passthrough by default
 
-Small outputs (≤4 KiB) pass through unchanged for every category. Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small successful outputs (≤4 KiB) pass through unchanged for every category; failed commands are always filtered (see Failure in the classification outcomes). Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
@@ -226,7 +230,7 @@ Everything else is treated as a shell command to execute.
 
 ## Performance Considerations
 
-- **Output size**: For successful commands, only outputs >4 KiB are considered for compression/indexing; small ones pass through immediately. Failed commands are classified at any size, and are indexed when their displayed slice differs from the full output.
+- **Output size**: For successful commands, only outputs >4 KiB are considered for compression/indexing; small ones pass through immediately. Failed commands are classified at any size, and are indexed when their displayed slice does not match the full output line for line.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
 - **Storage**: SQLite uses an FTS5 index over `content`; the `project` column is filtered with a plain predicate (no index on `project`).
 - **LLM learning**: Runs in background; doesn't block command execution.
