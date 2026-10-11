@@ -52,7 +52,7 @@ Output of 81 to 120 lines prints no truncation marker, and its last head line an
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
 a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
-the form `... [N bytes truncated → use `oo recall` to query] ...`. The truncation marker is inserted once, between the head and tail pieces (the output itself may contain identical text). It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
+the form ``... [N bytes truncated → use `oo recall` to query] ...``. The truncation marker is inserted once, between the head and tail pieces (the output itself may contain identical text). It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
 output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
 written to stderr, and the slice is still displayed.
 
@@ -85,8 +85,8 @@ The figure appears on:
 The figure does NOT appear on:
 - **Passthrough** — output is verbatim, nothing is saved
 - **Large** — already reports its size as `indexed N`; no double-reporting
-- **Bounded** — the display IS the bounded head+tail slice; the `● (output truncated:
-  N total → use `oo recall` to query)` framing line already communicates the size
+- **Bounded** — the display IS the bounded head+tail slice; the ``● (output truncated:
+  N total → use `oo recall` to query)`` framing line already communicates the size
   relationship. The Bounded arm's design purpose is transparency (bounded view +
   recall), not compression, so a savings figure would misframe the arm and
   double-report the size relationship.

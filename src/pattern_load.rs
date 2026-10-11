@@ -1,11 +1,12 @@
 //! Pattern-set assembly for `oo <cmd>`, `oo rewrite`, and the hook processors.
 //!
-//! The canonical pattern precedence set used by dispatch (`oo <cmd>`), `oo rewrite`
-//! and `oo hook`: project, user, then built-in, first match wins. Imports `pattern`
+//! The canonical pattern precedence set (project, user, then built-in; first match
+//! wins), built by [`all_patterns`]. `oo <cmd>` (`commands::run_command_args`) calls
+//! `all_patterns()` on each run. `oo rewrite` and `oo hook` use the [`PATTERNS`]
+//! static, which holds `all_patterns()` computed once per process. Imports `pattern`
 //! (loading and builtins), `learn` (user config directory via
 //! `learn::patterns_dir`) and `init::find_root` (git root for project-local
-//! patterns). Used by the dispatch layer (`commands`) and `rewrite`, so both
-//! share one pattern set.
+//! patterns).
 //!
 //! Exception: the foreground classification in `commands::cmd_learn` (issue
 //! #151) deliberately uses `pattern::builtins()` only, not this set, so the
@@ -21,13 +22,16 @@ use crate::{
 
 /// The canonical pattern set: project-local, then user config, then builtins,
 /// first-match-wins (project patterns override user patterns override
-/// builtins). Shared by `oo <cmd>` (classification) and the rewriter/hook
-/// paths — loaded once per process.
+/// builtins). Used by `oo rewrite` (`commands::cmd_rewrite`, via
+/// `rewrite::PATTERNS`) and `oo hook` (`hook.rs`). `oo <cmd>` does not use this
+/// static; it calls [`all_patterns`] on each run. Initialised once per process,
+/// on first use.
 pub static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
 
 /// Load all patterns in the canonical precedence order — project-local, then
 /// user config, then builtins — so first-match-wins gives project patterns
-/// priority over user patterns over builtins.
+/// priority over user patterns over builtins. Reads from disk on every call
+/// (no caching); called by `oo <cmd>` and by the [`PATTERNS`] initializer.
 pub fn all_patterns() -> Vec<Pattern> {
     let mut all_patterns = load_project_patterns();
     all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
