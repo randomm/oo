@@ -302,8 +302,9 @@ Each flag may be given once; a repeated `--agent`, `--format` or `--global` is a
 error, in any order.
 
 **CLI contract change (unreleased, after v0.7.0):** these inputs were accepted in v0.7.0 and now
-exit 1 with nothing written: an unknown option such as `--bogus` (silently ignored); a stray
-positional argument (silently ignored); a repeated `--format`, `--agent` or `--global` (silently
+exit 1 with nothing written: an unknown option such as `--bogus` (silently ignored), including
+`--format=<value>` and `--agent=<value>` (the `=` form was ignored, so the claude format was written);
+a stray positional argument (silently ignored); a repeated `--format`, `--agent` or `--global` (silently
 accepted, the first `--format` or the last `--agent` won); an unknown `--format` value (a warning on
 stderr, then the claude format); a bare `--format` with no value (the claude format, silently); and
 `--format` followed by a flag-like token such as `--bogus` (the token was taken as the value, with

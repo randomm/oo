@@ -175,7 +175,7 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 
 ## Project-Scoped Storage
 
-Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
+Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped; an empty last segment, e.g. from a trailing `/`, falls through to the next step), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
 
 - `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
 - `oo forget` deletes every indexed entry with that project id

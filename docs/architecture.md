@@ -181,7 +181,7 @@ Pattern learning runs in the background after the command completes. This doesn'
 
 ### 6. Project-scoped storage
 
-Indexed outputs are keyed by a project id. In the default build it is derived from the git remote (last path segment), else the git root directory name, else the current directory name. In the `vipune-store` build it comes from vipune's own project detection (`VIPUNE_PROJECT` is honoured first). `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
+Indexed outputs are keyed by a project id. In the default build it is derived from the git remote (last path segment; an empty one falls through), else the git root directory name, else the current directory name. In the `vipune-store` build it comes from vipune's own project detection (`VIPUNE_PROJECT` is honoured first). `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
 
 ## Reserved Subcommands
 
