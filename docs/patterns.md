@@ -56,7 +56,7 @@ and the agent can see exactly how much was saved.
 | `grep` | `grep` (regex, required) | Lines matching regex |
 | `between` | `start`, `end` (strings, required) | Lines from first `start` match to first `end` match (inclusive) |
 
-Omit `[failure]` to show all output on failure.
+Omit `[failure]` to use the default truncation (`smart_truncate`; see the [security model](security-model.md#pattern-files)).
 
 ## Examples
 

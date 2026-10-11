@@ -188,7 +188,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 
-> **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`).
+> **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage and exit 0 (e.g. `oo init --help`). The subcommand itself does not run, but a pending background-learn status message is still printed and cleared first.
 >
 > `oo help` sources from [cheat.sh](https://cheat.sh) which covers common Unix tools. For modern CLIs not yet in cheat.sh (e.g., `gh`, `kamal`), use `oo learn <cmd>` to teach `oo` the command's output patterns.
 
