@@ -80,15 +80,15 @@ FAILED tests/test_api.py::test_login - AssertionError: expected 200, got 401
 FAILED tests/test_api.py::test_create_user - ValueError: email already exists
 === 2 failed, 45 passed in 1.8s ===
 ```
-Failure output is filtered to the actionable tail.
+Failure output is filtered to the actionable tail. When the displayed output does not match the full output of the failed run line for line (ignoring trailing empty lines), that full output is indexed too, so `oo recall` can find what the display left out.
 
 **Large unrecognised output:** Indexed for retrieval.
 ```
 $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Small outputs (≤4 KB) pass through
-unchanged. Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
+Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤ 4 KiB) pass through
+unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
 marker (``... [N bytes truncated → use `oo recall` to query] ...``), so large `cat`, `jq`, or
@@ -299,14 +299,14 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 ## FAQ
 
 **What if oo doesn't recognize my command?**
-Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
-is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
+Successful unknown commands pass through unchanged at up to 4 KiB; failed ones are always filtered. Larger Data, Content, and Unknown output
+is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
-Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
+Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
-Unknown commands already show a bounded head+tail slice with the full output stored for
-`oo recall` (nothing is lost). For commands with built-in patterns, you can override with
+Larger unpatterned unknown commands already show a bounded head+tail slice with the full output stored for
+`oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). For commands with built-in patterns, you can override with
 a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 
 **Does oo work in CI?**

@@ -15,3 +15,9 @@ model = "claude-haiku-4-5"
 
 # Environment variable containing the API key (required in [learn])
 api_key_env = "ANTHROPIC_API_KEY"
+
+# Retention for indexed command output (used by `oo recall`). See docs/configuration.md.
+[store]
+# Seconds. Entries older than this are purged when the same project next indexes
+# output (default: 604800 = 7 days). 0 disables purging.
+retention = 604800

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::config::config_dir;
 use crate::error::Error;
 pub use crate::learn_prompt::SYSTEM_PROMPT;
 
@@ -85,15 +86,6 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
             api_key_env: "ANTHROPIC_API_KEY".into(),
         }
     }
-}
-
-fn config_dir() -> PathBuf {
-    if let Some(test_dir) = std::env::var_os("OO_CONFIG_DIR") {
-        return PathBuf::from(test_dir);
-    }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("oo")
 }
 
 /// Get the directory containing user-defined patterns.

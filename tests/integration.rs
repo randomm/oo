@@ -1780,7 +1780,7 @@ fn test_bounded_arm_wording_unchanged_no_savings() {
         .stdout(predicate::str::contains("[saved ").not());
 }
 
-/// Passthrough arm: small output (< 4 KB) passes through verbatim with no
+/// Passthrough arm: small output (≤ 4 KiB, 4096 bytes) passes through verbatim with no
 /// indicator line and no savings figure.
 #[test]
 fn test_passthrough_no_savings() {
@@ -1841,4 +1841,163 @@ fn test_clap_short_help_lists_all_subcommands() {
         .stdout(predicate::str::contains("rewrite ("))
         .stdout(predicate::str::contains("hook ("))
         .stdout(predicate::str::contains("version ("));
+}
+
+// ---------------------------------------------------------------------------
+// Failure tier recall (issue #185): failed-command output beyond the displayed
+// slice must be indexed so `oo recall` can reach it.
+// ---------------------------------------------------------------------------
+
+const FAIL_MARKER: &str = "oo185hiddenmarker4c1d";
+
+#[test]
+fn test_failure_slice_dropped_lines_are_recallable() {
+    // Marker sits at line 150 of 300: smart_truncate keeps head+tail only, so
+    // the marker is absent from the displayed slice but present in the output.
+    let script = format!(
+        "#!/bin/sh\nfor i in $(seq 1 300); do if [ $i -eq 150 ]; then echo {FAIL_MARKER}; else echo \"line $i\"; fi; done\nexit 1\n"
+    );
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        !stdout.contains(FAIL_MARKER),
+        "marker must be outside the displayed slice; got: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("use `oo recall` to query"),
+        "recall must be advertised after the slice; got: {stdout:?}"
+    );
+
+    assert_recall_contains(&data_dir, FAIL_MARKER);
+}
+
+#[test]
+fn test_failure_fully_displayed_is_not_indexed() {
+    // 10 lines is below the truncation threshold: the slice equals the full
+    // output, so nothing is indexed and recall is not advertised.
+    let script =
+        format!("#!/bin/sh\nfor i in $(seq 1 10); do echo \"{FAIL_MARKER} $i\"; done\nexit 1\n");
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        !stdout.contains("oo recall"),
+        "no recall advertisement for fully displayed output; got: {stdout:?}"
+    );
+
+    oo().args(["recall", FAIL_MARKER])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No results found"));
+}
+
+#[test]
+fn test_failure_pattern_slice_showing_all_lines_is_not_indexed() {
+    // `cargo test` has a built-in tail pattern. A 5-line failure fits inside
+    // its window, so every line is shown; the slice has no trailing newline
+    // and must still count as "nothing dropped". The second run uses CRLF
+    // endings, which `lines()` also normalises.
+    let lf = "#!/bin/sh\nprintf 'oo185fit1\\noo185fit2\\nl3\\nl4\\nl5\\n'\nexit 1\n";
+    let crlf =
+        "#!/bin/sh\nprintf 'oo185fit1\\r\\noo185fit2\\r\\nl3\\r\\nl4\\r\\nl5\\r\\n'\nexit 1\n";
+    for script in [lf, crlf] {
+        let (_bin, path) = make_fake_bin("cargo", script);
+        let (_guard, data_dir) = isolated_store();
+
+        let assert = oo()
+            .args(["cargo", "test"])
+            .env("PATH", &path)
+            .env("OO_DATA_DIR", &data_dir)
+            .assert()
+            .failure();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        assert!(
+            stdout.contains("oo185fit2"),
+            "shown lines must be displayed; got: {stdout:?}"
+        );
+        assert!(
+            !stdout.contains("output truncated") && !stdout.contains("oo recall"),
+            "fully shown failure must not advertise recall; got: {stdout:?}"
+        );
+
+        oo().args(["recall", "oo185fit1"])
+            .env("OO_DATA_DIR", &data_dir)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("No results found"));
+    }
+}
+
+#[test]
+fn test_failure_pattern_slice_with_trailing_empty_line_is_not_indexed() {
+    // The tail pattern keeps the trailing empty line in its slice, so the
+    // slice and the full output differ only by trailing empty lines: nothing
+    // was dropped and recall must not be advertised.
+    let script = "#!/bin/sh\nprintf 'oo185empty1\\noo185empty2\\nl3\\n\\n'\nexit 1\n";
+    let (_bin, path) = make_fake_bin("cargo", script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["cargo", "test"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("oo185empty2"),
+        "shown lines must be displayed; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("output truncated") && !stdout.contains("oo recall"),
+        "fully shown failure must not advertise recall; got: {stdout:?}"
+    );
+}
+
+#[test]
+fn test_failure_index_failure_warns_and_does_not_advertise_recall() {
+    // OO_DATA_DIR pointing at a regular file makes the store unopenable.
+    let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"line $i\"; done\nexit 1\n";
+    let (_bin, path) = make_fake_bin("zfailtool", script);
+    let file_dir = TempDir::new().unwrap();
+    let bogus = file_dir.path().join("not-a-dir");
+    std::fs::write(&bogus, b"x").unwrap();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &bogus)
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    assert!(
+        stderr.contains("could not index output for recall"),
+        "stderr must carry the index-failure warning; got: {stderr:?}"
+    );
+    assert!(
+        stdout.contains("NOT indexed, recall unavailable"),
+        "stdout must say recall is unavailable; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("use `oo recall` to query"),
+        "must not advertise recall when indexing failed; got: {stdout:?}"
+    );
 }

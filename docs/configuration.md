@@ -50,6 +50,19 @@ If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults t
 
 A `[learn]` table that is present must set all three keys. The per-field defaults in the table above do not fill in a missing key: a table with only some of them (for example only `model`) fails to load with `missing field` (for example ``missing field `provider` ``). `oo learn` then prints an `oo: config error` line, and its background step fails on the same error, so no pattern is written.
 
+### `[store]` section
+
+Retention for indexed command output (the entries `oo` stores for `oo recall`). An annotated example lives in [config.example.toml](../config.example.toml).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged. `0` disables purging. Must be `>= 0`. |
+
+- **When purging happens:** lazily and per project. A purge runs when a project next indexes output, and removes only that project's entries older than `retention`. Other projects, and a project that never indexes again, keep their entries until then.
+- **Vipune store backend:** with `--features vipune-store`, the purge is bounded for projects over 10,000 entries and may leave some behind (#182).
+- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. Unknown top-level sections such as `[learn]` do not affect retention.
+- `oo forget` clears a project's indexed entries immediately, regardless of retention.
+
 ## Environment Variables
 
 ### `OO_CONFIG_DIR`
@@ -106,10 +119,9 @@ These constants are built into the binary and cannot be configured.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `SMALL_THRESHOLD` | 4096 bytes | Output below this size passes through unchanged |
+| `SMALL_THRESHOLD` | 4096 bytes | Successful (exit 0) output of at most this many bytes (4 KiB) passes through unchanged; failed output is always filtered |
 | `TRUNCATION_THRESHOLD` | 80 lines | Failure output truncation starts after this many lines |
 | `MAX_LINES` | 120 lines | Hard cap on lines shown after smart truncation |
-| Entry TTL | 86400 seconds (24 hours) | Indexed entries older than this are deleted by the cleanup at the next indexing run of their project |
 
 ## Feature Flags
 

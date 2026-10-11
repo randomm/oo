@@ -21,7 +21,7 @@ fn test_failure_output() {
     let out = make_output(1, "error: something broke\n");
     let result = classify(&out, "some_cmd", &[]);
     match result {
-        Classification::Failure { label, output } => {
+        Classification::Failure { label, output, .. } => {
             assert_eq!(label, "some_cmd");
             assert!(output.contains("something broke"));
         }
@@ -119,7 +119,7 @@ fn test_failure_with_pattern() {
     let out = make_output(1, &big_fail);
     let result = classify(&out, "pytest -x", &patterns);
     match result {
-        Classification::Failure { label, output } => {
+        Classification::Failure { label, output, .. } => {
             assert_eq!(label, "pytest");
             // pytest failure uses tail 30
             assert!(output.contains("error line 70"));

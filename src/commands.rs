@@ -4,14 +4,15 @@ use humansize::{BINARY, format_size};
 use std::io::Write;
 
 use crate::classify::Classification;
+pub use crate::display::savings_suffix;
+use crate::indexing::index_or_warn;
+pub use crate::indexing::try_index;
 pub use crate::init::InitFormat;
 pub(crate) use crate::init_cmd::parse_init_mode;
 pub use crate::init_cmd::{InitMode, cmd_init};
-use crate::store::SessionMeta;
-use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, learn, pattern, pattern_load, rewrite, session, store,
-    usage,
+    classify, commands_patterns, exec, failure_display, help, learn, pattern, pattern_load,
+    rewrite, session, store, usage,
 };
 
 pub enum Action {
@@ -168,23 +169,6 @@ pub fn cmd_run(args: &[String]) -> i32 {
     run_command_args(args).0
 }
 
-/// Build the `[saved {humansize}]` suffix for a compressed indicator line.
-///
-/// `original_bytes` is the merged output size in bytes (`merged_lossy().len()`);
-/// `indicator_bytes` is the byte length of the indicator line EXCLUDING the
-/// savings suffix (call sites pass `line.len()` before the suffix is
-/// appended), so the reported figure overstates displayed bytes by the
-/// suffix's own length (~15 B — immaterial at the sizes where a suffix can
-/// appear). Returns `None` when the saving is ≤ [`classify::MIN_SAVINGS`]
-/// (i.e. the suffix appears only when `saved > MIN_SAVINGS`; saturating
-/// arithmetic makes underflow impossible), so the caller prints the line
-/// unchanged. Only the indicator line counts as displayed — the filtered
-/// output lines printed after it (Failure arm) are not included.
-pub fn savings_suffix(original_bytes: usize, indicator_bytes: usize) -> Option<String> {
-    let saved = original_bytes.saturating_sub(indicator_bytes);
-    (saved > classify::MIN_SAVINGS).then(|| format!(" [saved {}]", format_size(saved, BINARY)))
-}
-
 /// Print a [`Classification`] to stdout using the shared display path.
 ///
 /// `original_size` is the merged output size in bytes, used to append the
@@ -194,18 +178,11 @@ pub fn savings_suffix(original_bytes: usize, indicator_bytes: usize) -> Option<S
 /// Both `cmd_run` and `cmd_learn` use this so the arms cannot drift apart.
 pub fn render_classification(classification: &Classification, command: &str, original_size: usize) {
     match classification {
-        Classification::Failure { label, output } => {
-            let line = format!("\u{2717} {label}");
-            // The `\n` in the payload plus `println!`'s own newline is a
-            // deliberate BLANK LINE between the indicator and the error
-            // body — the suffix (if any) lands on the indicator line only,
-            // and the blank line survives with or without it.
-            println!(
-                "{line}{}\n",
-                savings_suffix(original_size, line.len()).unwrap_or_default()
-            );
-            println!("{output}");
-        }
+        Classification::Failure {
+            label,
+            output,
+            full_output,
+        } => failure_display::render(label, command, original_size, output, full_output),
         Classification::Passthrough { output } => {
             print!("{output}");
         }
@@ -246,19 +223,14 @@ pub fn render_classification(classification: &Classification, command: &str, ori
             // framing line carrying the authoritative size (mirrors the Large
             // arm) — an agent must never be told to recall data that was not
             // indexed.
-            let indexed = try_index(command, output);
             let human_size = format_size(*size, BINARY);
-            if indexed {
+            // Indexing failed: do NOT advertise `oo recall` — the display is
+            // all the agent gets; `index_or_warn` keeps the failure visible.
+            if index_or_warn(command, output) {
                 println!(
                     "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
                 );
             } else {
-                // Indexing failed: do NOT advertise `oo recall` — the display
-                // is all the agent gets, and the stderr note keeps the
-                // failure visible instead of swallowed.
-                eprintln!(
-                    "oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only"
-                );
                 println!(
                     "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
                 );
@@ -285,26 +257,6 @@ pub fn render_classification(classification: &Classification, command: &str, ori
             }
         }
     }
-}
-
-pub fn try_index(command: &str, content: &str) -> bool {
-    let mut store = match store::open() {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-
-    let project_id = session::project_id();
-    let meta = SessionMeta {
-        source: "oo".into(),
-        session: session::session_id(),
-        command: command.into(),
-        timestamp: now_epoch(),
-    };
-
-    // Lazy TTL cleanup (best-effort)
-    let _ = store.cleanup_stale(&project_id, 86400);
-
-    store.index(&project_id, content, &meta).is_ok()
 }
 
 pub fn cmd_recall(query: &str, full: bool) -> i32 {
