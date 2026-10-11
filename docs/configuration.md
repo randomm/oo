@@ -131,4 +131,4 @@ The configuration directory (see the [Directories](#directories) table) contains
 - `patterns/` - User-defined pattern files (`.toml`) — see [Custom Patterns](patterns.md)
 - `learn-status.log` - Transient status from background learn processes (auto-cleaned)
 
-User patterns in the config directory's `patterns/` directory override the built-in patterns (see `oo patterns` for the full list).
+Project patterns (`<git-root>/.oo/patterns/`) and user patterns in the config directory's `patterns/` directory override the built-in patterns; project patterns are checked before user patterns (see `oo patterns` for the full list).

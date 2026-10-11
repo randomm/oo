@@ -34,12 +34,16 @@ impl VipuneStore {
 
 /// `Store` for Vipune.
 ///
-/// Caveat for `delete_project` and `cleanup_stale`: Vipune has no bulk delete,
-/// so a project is enumerated with `list` (capped at 10,000 entries per call).
-/// `delete_project` pages until a short page arrives and stops early if a full
-/// page yields no successful deletion; `cleanup_stale` inspects only the first
-/// 10,000 entries. For very large projects, entries can survive these calls.
-/// A failed individual deletion is returned as an error.
+/// Completeness caveat for `delete_project` and `cleanup_stale`: Vipune has no
+/// bulk delete and no offset, so `delete_project` drains a project by repeatedly
+/// calling `list(project, 10_000)` and deleting each returned entry (deleted
+/// entries drop out, so each round re-lists the remainder). It stops after a
+/// short page (fewer than 10,000 entries), or after a full page in which no
+/// deletion returned `Ok(true)` (an `Ok(false)` is not counted, which prevents
+/// spinning on ids that never delete). A failed individual deletion is logged
+/// and the round continues; if any deletion failed, the call returns an error
+/// reporting partial progress. `cleanup_stale` inspects only the first 10,000
+/// entries. Projects larger than this can keep entries after these calls.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
@@ -88,10 +92,9 @@ impl Store for VipuneStore {
         // of metadata. Completeness is bounded by the paginated `list` below
         // (see the impl doc); search is similarity-based and is not the criterion.
         //
-        // The vipune API has no bulk-delete, so we enumerate via `list` and
-        // delete one-by-one. Because `list` is capped at 10 000 entries per
-        // call, we page until a short page or a full page with no successful
-        // deletion (see the impl doc for the resulting completeness bound).
+        // Vipune has no bulk-delete, so entries are listed (capped at 10 000
+        // per call) and deleted one-by-one. The stopping rule and its
+        // completeness bound are stated on the impl block above.
         const PAGE: usize = 10_000;
         let mut deleted = 0;
         let mut failed = 0usize;

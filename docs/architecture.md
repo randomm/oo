@@ -165,7 +165,7 @@ Small outputs (≤4 KiB) pass through unchanged for every category. Large Conten
 
 ### 2. Patterns are opt-in overrides
 
-User patterns in the user patterns directory always take priority over built-ins. This lets users customize behavior without modifying oo itself.
+Project and user patterns always take priority over built-ins (project patterns are checked before user patterns). This lets users customize behavior without modifying oo itself.
 
 ### 3. Category-based fallbacks
 

@@ -118,7 +118,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 User patterns in the user patterns directory (see Read Access) are trusted by design:
 
-- Patterns are loaded from a user-owned directory
+- User patterns are loaded from the user patterns directory; project patterns are loaded from `<git-root>/.oo/patterns/` and can come from any repository you work in
 - No privilege escalation
 - Invalid patterns are silently discarded (not crashed)
 
@@ -134,8 +134,9 @@ oo reads from:
 - Configuration directory (`~/.config/oo/` on Linux, `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 - Pattern directory (`patterns/` inside the configuration directory)
 - Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), read once per process
 
-All are within your user home directory.
+By default the configuration and storage directories are under your user home directory (on Linux, the storage directory moves to `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path). The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
 
 ### Write Access
 
@@ -144,7 +145,16 @@ oo writes to:
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results
 
-No writes outside your user home directory.
+Writes made by `oo init` (only when you run it):
+- `oo init` or `oo init --format claude`: `.claude/hooks.json` in the git root (or the current directory when there is no git root)
+- `oo init --agent claude-code`: `.claude/settings.json` in the git root (same fallback)
+- `oo init --agent claude-code --global`: `$OO_CLAUDE_DIR/settings.json`, or `~/.claude/settings.json` when `OO_CLAUDE_DIR` is unset
+- `oo init --agent pi`: `.pi/extensions/oo.ts` in the git root (same fallback)
+- `oo init --agent pi --global`: `$OO_PI_EXTENSIONS_DIR/oo.ts`, or `~/.pi/agent/extensions/oo.ts` when `OO_PI_EXTENSIONS_DIR` is unset
+
+By default these writes stay under your user home directory (global installs) or the repository root (project installs). The `OO_CONFIG_DIR`, `OO_DATA_DIR`, `OO_CLAUDE_DIR`, and `OO_PI_EXTENSIONS_DIR` overrides can point anywhere.
+
+User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. oo itself only writes the paths listed above.
 
 ### Execution Access
 

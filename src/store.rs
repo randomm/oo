@@ -102,10 +102,11 @@ pub trait Store {
     ///
     /// - `SqliteStore` deletes by the same `project` predicate that `search`
     ///   uses, so `recall` finds nothing afterwards.
-    /// - `VipuneStore` enumerates the project through a paginated `list` with a
-    ///   per-page cap, and its search is similarity-based, so completeness for
-    ///   very large projects is bounded by that enumeration. A failed individual
-    ///   deletion is reported as an error.
+    /// - `VipuneStore` enumerates the project with repeated `list` calls capped at
+    ///   10,000 entries, and its search is similarity-based. Completeness for very
+    ///   large projects is therefore backend-dependent and bounded by that
+    ///   stopping rule (see the `VipuneStore` impl docs in `store_vipune.rs`). A
+    ///   failed individual deletion is reported as an error.
     ///
     /// Returns the number of entries deleted.
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
