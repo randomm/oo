@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — No data leaves your machine except what you explicitly send via the commands you run
+2. **No telemetry or data collection** — oo sends no usage data. Its only network requests are the ones listed in [Network Access](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -23,7 +23,7 @@ You must trust:
 
 ### What We Don't Trust (and Why)
 
-- **Remote servers**: All command execution is local. No remote API calls except when you explicitly use `oo learn`.
+- **Remote servers**: All command execution is local. oo makes network requests only for `oo learn` and for `oo help <command>` (see Network Access).
 - **Command inputs**: Commands are parsed but not modified. If a command is malicious (e.g., `rm -rf /`), oo executes it as-is — the security boundary is between you and the command, not oo.
 
 ## Data Handling
@@ -39,7 +39,7 @@ You must trust:
 **Data retention**:
 - Indexed outputs persist until you run `oo forget` or delete them manually
 - No automatic syncing to remote services
-- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#182)
+- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#177)
 
 ### Storage Backends
 
@@ -90,7 +90,7 @@ You must trust:
 
 **Transmission**:
 - Keys are sent only to the configured API endpoint (Anthropic)
-- HTTPS is required for every host; plain `http://` is accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is bypassable with URL userinfo such as `http://localhost:@host/` (known defect, #190)
+- HTTPS is required for every host except `localhost` and `127.0.0.1`, which may use plain HTTP (the check can currently be bypassed with URL userinfo, see #190).
 - Keys are never logged or printed in output
 
 **Best practice**: Use shell environment or a secret manager:
@@ -181,10 +181,16 @@ oo executes commands using your shell environment:
 
 ### When oo makes network calls
 
-**Only via `oo learn`**:
+oo itself makes network requests in two cases:
+
+**Via `oo learn`**:
 - To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1; the check is bypassable with userinfo such as `http://localhost:@host/`, see #190)
 - With your command output and API key
 - In the background, after command completes
+
+**Via `oo help <command>`** (not for reserved subcommands):
+- An HTTPS GET to `https://cheat.sh/<command>?T`, with the command name URL-encoded
+- Reserved subcommands (for example `oo help recall`) print the local usage text and make no request
 
 **No other network calls**:
 - No telemetry
@@ -200,7 +206,7 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped; an empty last segment, e.g. from a trailing `/`, falls through to the next step), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
 
 - `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
-- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, projects over 10,000 entries may keep entries after `oo forget` (#182)
+- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, projects over 10,000 entries may keep entries after `oo forget` (#177)
 - The project id is an organisational key, **not a security boundary**. Two repositories with the same remote name or directory name (for example two checkouts of `app`) share one partition: each can recall the other's indexed output, and `oo forget` in either one clears both (SQLite store).
 
 Use `oo forget` to clear a project's index when done.
@@ -279,7 +285,7 @@ This section is for compliance assessments.
 
 ### Data Location
 
-- **Command output**: Local-only, stored in the storage directory (see [Read Access](#read-access))
+- **Command output**: Stored in the storage directory (see [Read Access](#read-access)); sent to Anthropic only when you run `oo learn` (see LLM data)
 - **Patterns**: Local-only, in the user patterns directory (under the configuration directory) and in project-local `.oo/patterns/` (see [Read Access](#read-access))
 - **LLM data**: Sent to Anthropic (US-based), subject to Anthropic's privacy policy
 
