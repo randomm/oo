@@ -40,16 +40,14 @@ oo classifies command output into five tiers:
 | **Status** | `✓ label [saved N]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
 | **Failure** | `✗ label [saved N]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
 | **Large** | ``● label (indexed N → use `oo recall` to query)``. If indexing fails: the `smart_truncate` view with no indicator line | Output > 4 KB without a pattern summary, Data category |
-| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)``, the same slice, and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only`. The slice's own marker still reads `use oo recall to query` in both cases) |
+| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)``, the same slice, and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only`. The slice's own marker still reads ``... [N bytes truncated → use `oo recall` to query] ...`` in both cases) |
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
 Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
 display is only the indicator line. If indexing fails, the display falls back to
 `smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
-Output of 81 to 120 lines has all of its lines present and no truncation marker, except that
-its last head line and first tail line are joined into one line with no newline between them
-(e.g. `seq 1 81` shows `4950` for lines 49 and 50). Longer output keeps its first 72 and last 48 lines around a
+Output of 81 to 120 lines prints no truncation marker, and its last head line and first tail line are joined into one line with no newline between them (for example, `seq 1 81` shows `4950` for lines 49 and 50; known defect, tracked in #182). Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
