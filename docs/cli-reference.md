@@ -239,9 +239,9 @@ oo learn --hint "compact test summary" pytest tests/
 
 ### Requirements
 
-- `ANTHROPIC_API_KEY` environment variable must be set
+- The environment variable named by `api_key_env` must be set (default `ANTHROPIC_API_KEY`)
 - Optional: `ANTHROPIC_API_URL` for custom endpoints
-- Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent)
+- Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent; a present `[learn]` table must set `provider`, `model` and `api_key_env`)
 
 ### Pattern file naming
 

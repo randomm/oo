@@ -5,7 +5,7 @@
 # required; omit the whole table to use the defaults.
 
 # Configuration for `oo learn` (LLM-assisted pattern generation)
-# Requires ANTHROPIC_API_KEY environment variable to be set.
+# The environment variable named by api_key_env must be set (here ANTHROPIC_API_KEY).
 [learn]
 # LLM provider (only "anthropic" is supported)
 provider = "anthropic"

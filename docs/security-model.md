@@ -151,7 +151,7 @@ By default the configuration and storage directories are under your user home di
 
 oo writes to:
 - Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead)
-- Hugging Face cache (`$HF_HOME/hub`, default `~/.cache/huggingface/hub`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
+- Hugging Face cache (`~/.cache/huggingface/hub`; vipune 0.1.2 ignores `HF_HOME`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results
 
@@ -196,8 +196,8 @@ In the default build, oo itself makes network requests in two cases:
 - Reserved subcommands (for example `oo help recall`) print the local usage text and make no request
 
 **Via the embedding store (only with `--features vipune-store`)**:
-- When the store is opened (for example by `oo recall`, `oo forget`, or indexing output) and the embedding model is not yet in the Hugging Face cache, vipune downloads the model over HTTPS from `https://huggingface.co` (`HF_ENDPOINT` may change the host): `onnx/model.onnx` (or `model.onnx`) and `tokenizer.json`. The model is set by vipune's `embedding_model` / `VIPUNE_EMBEDDING_MODEL` (default `BAAI/bge-small-en-v1.5`). Cached files are not re-downloaded
-- The request carries no command output. If a Hugging Face token file exists in the HF cache, it is sent as a `Bearer` header
+- When the store is opened (for example by `oo recall`, `oo forget`, or indexing output) and the embedding model is not yet in the Hugging Face cache, vipune downloads the model (only if the database's parent directory exists; vipune canonicalizes that path before loading the model) over HTTPS from `https://huggingface.co` (vipune 0.1.2 ignores `HF_ENDPOINT`): `onnx/model.onnx` (or `model.onnx`) and `tokenizer.json`. The model is set by vipune's `embedding_model` / `VIPUNE_EMBEDDING_MODEL` (default `BAAI/bge-small-en-v1.5`). Cached files are not re-downloaded
+- The request carries no command output. If a Hugging Face token file exists at `~/.cache/huggingface/token`, it is sent as a `Bearer` header
 - At build time, the `ort` dependency's default `download-binaries` feature fetches ONNX Runtime binaries during `cargo build`
 - All of the above is from source inspection of vipune 0.1.2, hf-hub 0.4.3 and ort 2.0.0-rc.10. It was not observed at runtime, and the `vipune-store` build was not compiled
 
@@ -312,7 +312,7 @@ This section is for compliance assessments.
 
 ### Right to Delete
 
-- **Local data**: Delete the storage directory and the user patterns directory (paths above). With `vipune-store`, also delete Vipune's database (`~/.vipune/memories.db` by default) and the Hugging Face model cache
+- **Local data**: Delete the storage directory and the user patterns directory (paths above). With `vipune-store`, also delete Vipune's database (`~/.vipune/memories.db` by default) and the Hugging Face model cache (`~/.cache/huggingface/hub`)
 - **LLM data**: No mechanism; contact Anthropic directly if needed
 
 ## Further Reading

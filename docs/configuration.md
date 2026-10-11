@@ -38,11 +38,11 @@ The config file is optional. If it doesn't exist, oo uses defaults.
 
 Configuration for the `oo learn` LLM integration. This is the single source of truth for the model name — the default model is `claude-haiku-4-5` (only Anthropic is supported). An annotated example lives in [config.example.toml](../config.example.toml).
 
-| Field | Type | Default | Description |
+| Field | Type | Default (only when the whole `[learn]` table is absent) | Description |
 |-------|------|---------|-------------|
-| `provider` | string | `"anthropic"` | LLM provider (only `"anthropic"` is supported) |
-| `model` | string | `"claude-haiku-4-5"` | Model identifier for the provider |
-| `api_key_env` | string | `"ANTHROPIC_API_KEY"` | Environment variable containing the API key |
+| `provider` | string | `"anthropic"` | LLM provider (only `"anthropic"` is supported); required when `[learn]` is present |
+| `model` | string | `"claude-haiku-4-5"` | Model identifier for the provider; required when `[learn]` is present |
+| `api_key_env` | string | `"ANTHROPIC_API_KEY"` | Environment variable containing the API key; required when `[learn]` is present |
 
 ### Default behavior
 
@@ -123,7 +123,7 @@ To build with Vipune support:
 cargo build --release --features vipune-store
 ```
 
-The `vipune-store` feature changes the storage backend for indexed output (`oo recall`, `oo forget` and indexing). It also adds network access that the default build does not have: opening the store downloads the embedding model from Hugging Face when it is not cached, and the `ort` dependency downloads ONNX Runtime at build time. These behaviours come from source inspection of vipune 0.1.2 and were not observed at runtime. See [Security Model](security-model.md#when-oo-makes-network-calls).
+The `vipune-store` feature changes the storage backend for indexed output (`oo recall`, `oo forget` and indexing). It also adds network access that the default build does not have: opening the store downloads the embedding model from Hugging Face when it is not cached (only once the database's parent directory exists, because vipune canonicalizes that path before loading the model), and the `ort` dependency downloads ONNX Runtime at build time. These behaviours come from source inspection of vipune 0.1.2 and were not observed at runtime. See [Security Model](security-model.md#when-oo-makes-network-calls).
 
 ## Files in Configuration Directory
 
