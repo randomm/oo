@@ -38,8 +38,8 @@ oo classifies command output into five tiers:
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
 | **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
 | **Failure** | `✗ label` followed by error output | Non-zero exit code |
-| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern, Data category |
-| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without pattern, Content or Unknown category (full output indexed; display is bounded) |
+| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
+| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is bounded) |
 
 Large unpatterned output (Data, Content, or Unknown category) is indexed in full and
 retrievable via `oo recall`. The display is a byte-bounded head+tail slice separated by a

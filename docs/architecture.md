@@ -56,8 +56,8 @@ The classification engine decides how to present output to the agent:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
 - **Passthrough** (success, ≤4 KiB): Verbatim output
 - **Success** (success, >4 KiB, pattern match): Compressed summary
-- **Large** (success, >4 KiB, no pattern, Data category): Full output indexed, head+tail slice displayed
-- **Bounded** (success, >4 KiB, no pattern, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
+- **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, head+tail slice displayed
+- **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
