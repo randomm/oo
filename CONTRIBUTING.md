@@ -65,7 +65,7 @@ For a more comprehensive test, try indexing a large output:
 ./target/release/oo git log --oneline -100
 ```
 
-Expected output (if output > 4 KB):
+Expected output (if output > 4 KiB):
 ```
 ● git log (indexed X.XX KiB → use `oo recall` to query)
 ```

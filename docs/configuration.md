@@ -117,7 +117,7 @@ These constants are built into the binary and cannot be configured.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `SMALL_THRESHOLD` | 4096 bytes | Successful (exit 0) output below this size passes through unchanged; failed output is always filtered |
+| `SMALL_THRESHOLD` | 4096 bytes | Successful (exit 0) output of at most this many bytes (4 KiB) passes through unchanged; failed output is always filtered |
 | `TRUNCATION_THRESHOLD` | 80 lines | Failure output truncation starts after this many lines |
 | `MAX_LINES` | 120 lines | Hard cap on lines shown after smart truncation |
 

@@ -87,8 +87,8 @@ Failure output is filtered to the actionable tail. When the displayed output doe
 $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤4 KB) pass through
-unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
+Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤ 4 KiB) pass through
+unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
 marker (`... [N bytes truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or
@@ -299,10 +299,10 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 ## FAQ
 
 **What if oo doesn't recognize my command?**
-Successful unknown commands pass through unchanged under 4 KB; failed ones are always filtered. Larger Data, Content, and Unknown output
+Successful unknown commands pass through unchanged at up to 4 KiB; failed ones are always filtered. Larger Data, Content, and Unknown output
 is indexed in full for later retrieval via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
-Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
+Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for

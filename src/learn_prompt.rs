@@ -12,7 +12,7 @@ IMPORTANT: Use named capture groups (?P<name>...) only — never numbered groups
 
 ## oo's 4-tier system
 
-- Passthrough: output <4 KB passes through unchanged
+- Passthrough: output ≤ 4 KiB (4096 bytes) passes through unchanged
 - Failure: failed commands get ✗ prefix with filtered error output
 - Success: successful commands get ✓ prefix with a pattern-extracted summary
 - Large: if regex fails to match, output is FTS5 indexed for recall

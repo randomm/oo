@@ -57,11 +57,11 @@ The classification engine decides how to present output to the agent:
 
 **Possible outcomes**:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between). When the displayed slice does not match the full merged output line for line (ignoring trailing blank lines), the full output is indexed for recall and a `● label (output truncated: …)` line follows the slice
-- **Passthrough** (success, ≤4 KiB): Verbatim output
-- **Success** (success, >4 KiB, pattern summary): Compressed summary
-- **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N]` line (no parentheses), not indexed
-- **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
-- **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
+- **Passthrough** (success, ≤ 4 KiB): Verbatim output
+- **Success** (success, > 4 KiB, pattern summary): Compressed summary
+- **Status** (success, > 4 KiB, no pattern summary, Status category): quiet `✓ label [saved N]` line (no parentheses), not indexed
+- **Large** (success, > 4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
+- **Bounded** (success, > 4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
@@ -168,7 +168,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 
 ### 1. Bounded passthrough by default
 
-Small successful outputs (≤4 KiB) pass through unchanged for every category; failed commands are always filtered (see Failure in the classification outcomes). Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small successful outputs (≤ 4 KiB) pass through unchanged for every category; failed commands are always filtered (see Failure in the classification outcomes). Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
@@ -230,7 +230,7 @@ Everything else is treated as a shell command to execute.
 
 ## Performance Considerations
 
-- **Output size**: For successful commands, only outputs >4 KiB are considered for compression/indexing; small ones pass through immediately. Failed commands are classified at any size, and are indexed when their displayed slice does not match the full output line for line.
+- **Output size**: For successful commands, only outputs > 4 KiB are considered for compression/indexing; small ones pass through immediately. Failed commands are classified at any size, and are indexed when their displayed slice does not match the full output line for line.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
 - **Storage**: SQLite uses an FTS5 index over `content`; the `project` column is filtered with a plain predicate (no index on `project`).
 - **LLM learning**: Runs in background; doesn't block command execution.

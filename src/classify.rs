@@ -4,7 +4,7 @@
 //! command results and produces one of five [`Classification`] outcomes:
 //!
 //! - **Failure**: Non-zero exit codes → filtered error output (full output indexed for recall when the slice does not match it)
-//! - **Passthrough**: Small successful outputs (<4KB) → verbatim
+//! - **Passthrough**: Small successful outputs (≤ 4 KiB, 4096 bytes) → verbatim
 //! - **Success**: Large successful outputs with pattern match → compressed summary
 //! - **Bounded**: Large Content/Unknown output → full output indexed, byte-bounded display
 //! - **Large**: Large Data output without pattern → indexed for recall
@@ -15,7 +15,8 @@
 use crate::exec::CommandOutput;
 use crate::pattern::{self, Pattern};
 
-/// 4 KB — below this, output passes through verbatim.
+/// 4 KiB (4096 bytes). Successful output of at most this many bytes passes
+/// through verbatim; larger output is classified.
 pub const SMALL_THRESHOLD: usize = 4096;
 
 /// Minimum savings (bytes) for the `[saved …]` indicator-line suffix.
@@ -332,7 +333,7 @@ pub fn detect_category(command: &str) -> CommandCategory {
 /// # Algorithm
 ///
 /// 1. **Failure path** (exit_code ≠ 0): Apply failure pattern or smart truncation
-/// 2. **Small success** (output ≤ 4KB): Pass through verbatim
+/// 2. **Small success** (output ≤ 4 KiB): Pass through verbatim
 /// 3. **Pattern match**: Extract summary using success pattern
 /// 4. **Category fallback**: Use command category to determine behavior
 ///

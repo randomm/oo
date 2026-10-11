@@ -63,3 +63,7 @@ fn trimmed_lines(text: &str) -> impl Iterator<Item = &str> {
         .map_or(0, |i| i + 1);
     lines.into_iter().take(end)
 }
+
+#[cfg(test)]
+#[path = "failure_display_tests.rs"]
+mod tests;

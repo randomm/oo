@@ -802,7 +802,7 @@ fn test_cmd_run_cargo_nextest_run_quiet_success() {
             assert_ne!(code, 0, "Failure arm implies non-zero exit code");
         }
         Classification::Passthrough { .. } => {
-            // Small output (≤4KB) — e.g. a "command not found" or similar
+            // Small output (≤ 4 KiB) — e.g. a "command not found" or similar
             // short error. Still not Bounded/Large, so acceptable.
             assert_ne!(
                 code, 0,

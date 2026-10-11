@@ -1780,7 +1780,7 @@ fn test_bounded_arm_wording_unchanged_no_savings() {
         .stdout(predicate::str::contains("[saved ").not());
 }
 
-/// Passthrough arm: small output (< 4 KB) passes through verbatim with no
+/// Passthrough arm: small output (≤ 4 KiB, 4096 bytes) passes through verbatim with no
 /// indicator line and no savings figure.
 #[test]
 fn test_passthrough_no_savings() {
