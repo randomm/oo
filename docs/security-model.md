@@ -34,7 +34,7 @@ You must trust:
 
 - **Small outputs (<4 KiB)**: Displayed directly, never stored
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
-- **Large unpatterned outputs**: Stored locally in `~/.local/share/oo/` for recall
+- **Large unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
 
 **Data retention**:
 - Indexed outputs persist until you run `oo forget` or delete them manually
@@ -44,9 +44,9 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `~/.local/share/.oo/oo.db`
+- Database file: `~/.local/share/.oo/oo.db` on Linux (`~/Library/Application Support/.oo/oo.db` on macOS; `OO_DATA_DIR` overrides the directory)
 - Permissions: User-only (rw-------)
-- Contents: Command output, metadata (command, timestamp, session identifier)
+- Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Accessible only by your user account
 
 **Vipune (optional, feature flag)**:
@@ -72,7 +72,7 @@ You must trust:
 - **Required**: `ANTHROPIC_API_KEY` environment variable
 - **Model**: `claude-haiku-4-5` (default, configurable)
 - **Endpoint**: `https://api.anthropic.com`
-- **URL validation**: oo validates that the API URL uses HTTPS; non-HTTPS URLs are rejected with an error
+- **URL validation**: oo validates that the API URL uses HTTPS; plain HTTP is accepted only for `localhost` and `127.0.0.1`, other non-HTTPS URLs are rejected with an error
 
 **When it runs**:
 - Only when you explicitly run `oo learn <command>`
@@ -90,7 +90,7 @@ You must trust:
 
 **Transmission**:
 - Keys are sent only to the configured API endpoint (Anthropic)
-- HTTPS is enforced; HTTP is rejected
+- HTTPS is enforced; plain HTTP is accepted only for `localhost` and `127.0.0.1`
 - Keys are never logged or printed in output
 
 **Best practice**: Use shell environment or a secret manager:
@@ -133,7 +133,7 @@ oo reads from:
 - Environment variables (runtime only)
 - Configuration directory (`~/.config/oo/`)
 - Pattern directory (`~/.config/oo/patterns/`)
-- Storage directory (`~/.local/share/oo/`)
+- Storage directory (`~/.local/share/.oo/`)
 
 All are within your user home directory.
 
@@ -175,13 +175,13 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 
 ## Project-Scoped Storage
 
-Indexed output is scoped to the project (git remote, or directory name):
+Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's `detect_project`, which also honours `VIPUNE_PROJECT`.
 
-- `oo recall` searches all indexed output for the current project, regardless of which session stored it
-- `oo forget` clears all indexed output for the current project
-- Output from other projects is never visible to recall or forget
+- `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
+- `oo forget` deletes every indexed entry with that project id
+- The project id is an organisational key, **not a security boundary**. Two repositories with the same remote name or directory name (for example two checkouts of `app`) share one partition: each can recall the other's indexed output, and `oo forget` in either one clears both.
 
-**Benefit**: Working in a different project never surfaces another project's indexed output. Use `oo forget` to clear a project's index when done.
+Use `oo forget` to clear a project's index when done.
 
 ## Auditing
 

@@ -10,7 +10,7 @@ oo wraps shell commands, analyzes their output, and provides context-efficient r
 flowchart TD
     A[User runs: oo cargo test] --> B[Parse Action]
     B --> C{Is reserved subcommand?}
-    C -->|Yes| D[Execute subcommand<br/>recall/forget/learn/help/init/version]
+    C -->|Yes| D[Execute subcommand<br/>recall/forget/learn/help/init/patterns/rewrite/hook/version]
     C -->|No| E[Execute shell command]
     E --> F[Capture output<br/>stdout + stderr + exit code]
     F --> G[Classify output]
@@ -87,7 +87,7 @@ Pattern {
 }
 ```
 
-**Matching priority**: User patterns → Built-in patterns → Category defaults
+**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`~/.config/oo/patterns/`) → built-in patterns → category defaults
 
 ### 4. Category Detection
 
@@ -149,10 +149,12 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
 | [`src/commands.rs`](../src/commands.rs) | CLI command handlers (private) | `cmd_run()`, `cmd_recall()`, etc. |
 | [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |
-| [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
+| [`src/help.rs`](../src/help.rs) | cheat.sh lookup for `oo help <cmd>` (URL encoding, HTML/error detection) | `lookup()`, `encode_cmd()` |
+| [`src/usage.rs`](../src/usage.rs) | Static usage text for reserved subcommands (`oo <sub> --help` and `oo help <sub>`) | `for_subcommand()` |
+| [`src/pattern_load.rs`](../src/pattern_load.rs) | Canonical pattern set: project, then user, then builtins | `all_patterns()`, `PATTERNS` |
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
 | [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
-| [`src/hook.rs`](src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
+| [`src/hook.rs`](../src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](../src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
 | [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
 
 ## Key Design Decisions
@@ -179,7 +181,7 @@ Pattern learning runs in the background after the command completes. This doesn'
 
 ### 6. Project-scoped storage
 
-Indexed outputs are scoped to the project (git remote or directory name). `oo recall` searches all output indexed for the current project, and `oo forget` clears all of it — output from other projects is never visible.
+Indexed outputs are keyed by a project id derived from the git remote (last path segment), the git root directory name, or the current directory name. `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
 
 ## Reserved Subcommands
 
@@ -192,7 +194,7 @@ These are built-in commands (not shell commands):
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats), the pi extension (`--agent pi`), or the Claude Code `settings.json` hook (`--agent claude-code`) |
-| `version` | Built-in to clap | Print version |
+| `version` | `parse_action()` → `Action::Version` (`oo --version` is handled by clap) | Print version |
 | `rewrite` | `cmd_rewrite()` | Print `oo`-prefixed form of a command for agent hooks (never executes) |
 | `hook` | `cmd_hook()` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `_learn_bg` | `run_background()` | Internal command for background learning |
@@ -223,7 +225,7 @@ Everything else is treated as a shell command to execute.
 
 - **Output size**: Only outputs >4 KiB are considered for compression/indexing. Small outputs pass through immediately.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
-- **Storage**: SQLite indexes on `project_id` for fast queries.
+- **Storage**: SQLite uses an FTS5 index over `content`; the `project` column is filtered with a plain predicate (no index on `project`).
 - **LLM learning**: Runs in background; doesn't block command execution.
 
 ## Security Considerations

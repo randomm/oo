@@ -214,14 +214,17 @@ Run a command and teach oo a new output pattern via LLM.
 oo learn terraform plan
 oo learn make -j4
 oo learn npm test -- --coverage
+oo learn --hint "compact test summary" pytest tests/
 ```
 
 ### Behavior
 
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
-3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml`
-4. On the next invocation, prints status: `oo: learned pattern for "<cmd>" -> <path>`
+3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml` (the config directory is platform-specific; see [configuration.md](configuration.md#directories))
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`)
+
+`--hint <text>` (before the command) passes extra context to the pattern generator.
 
 ### Requirements
 
@@ -234,7 +237,7 @@ oo learn npm test -- --coverage
 The filename is derived from the command:
 
 - `cargo test` → `cargo-test.toml`
-- `gh issue list` → `gh-issue-list.toml`
+- `gh issue list` → `gh-issue.toml` (only the first two words are used)
 - `npm --version` → `npm.toml` (flags don't affect naming)
 
 ### Overwrite behavior
@@ -252,7 +255,7 @@ Returns the exit code of the wrapped command. Learning failures are reported in 
 `oo help <reserved-subcommand>` (for example `oo help init`) prints the local
 usage text instead of a cheat sheet. Other names still come from cheat.sh.
 
-Every reserved subcommand (`recall`, `forget`, `learn`, `init`, `patterns`,
+Every reserved subcommand (`recall`, `forget`, `learn`, `help`, `init`, `patterns`,
 `rewrite`, `hook`, `version`) accepts `--help` or `-h` as its **first**
 argument after the name: it prints that subcommand's usage, exits 0, and has no
 side effects. `oo recall --help` therefore does not search for the text
@@ -287,7 +290,7 @@ oo help docker
 
 Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
 `--agent` and `--format` are mutually exclusive — passing both is an error
-(`oo init: --agent and --format cannot be used together`, exit 1, nothing
+(`oo: --agent and --format cannot be used together`, exit 1, nothing
 written). `--agent` alone selects the agent installer; `--format` alone and
 plain `oo init` behave exactly as before.
 
@@ -298,7 +301,7 @@ unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
 error, in any order.
 
-**CLI contract change (since 0.8.0):** unknown options and unsupported `--format`
+**CLI contract change (since 0.7.1):** unknown options and unsupported `--format`
 values are now errors. Earlier releases warned and fell back to the default
 format or ignored the option.
 
@@ -369,12 +372,15 @@ Install is idempotent: an existing identical file is a no-op ("already installed
 ### Output format
 
 ```
-Generated .claude/hooks.json
+Created /path/to/project/.claude/hooks.json
 
 Add this to your AGENTS.md:
 
-Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs.
+## Shell commands
+Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs (use `--full` for the complete output).
 ```
+
+If `.claude/hooks.json` already exists it is left untouched: an `oo init: <path> already exists — skipping (delete it to regenerate)` line goes to stderr, the AGENTS.md snippet is still printed, and the exit code is 0.
 
 ### Exit codes
 
@@ -426,7 +432,7 @@ Built-in (N patterns):
   \\bcargo\\s+test\\b  [success] [failure]
   \\bpytest\\b
 
-User (~/.config/oo/patterns):
+User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 

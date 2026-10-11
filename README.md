@@ -178,11 +178,14 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall <query>` | Search indexed output for this project |
+| `oo recall [--full] <query>` | Search indexed output for this project |
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
+| `oo patterns` | List loaded output patterns (project, user, built-in) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
+| `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 
 > **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`).
@@ -227,7 +230,9 @@ oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_
 - Disable for a session: `OO_DISABLE=1`.
 - Uninstall: delete the installed `oo.ts` file.
 
-Claude Code is also supported via `oo init` (writes `.claude/hooks.json`); see
+Plain `oo init` (the `--format claude` default) only writes the legacy
+`.claude/hooks.json`; for the rewriting Claude Code hook use `--agent claude-code`
+(below). See
 the [CLI reference](docs/cli-reference.md#oo-init) for the full option matrix.
 
 ### Use with Claude Code

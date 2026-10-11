@@ -48,8 +48,9 @@ the available API key.
 
 ## What happens if no LLM is configured
 
-If the env var named by `api_key_env` is unset, `oo learn` will not be
-available. The command itself still runs and its output is not affected.
+If the env var named by `api_key_env` is unset, the background learn step cannot
+call the LLM. The command itself still runs and its output is not affected; the
+learn error is reported as a status line on a later `oo` invocation.
 
 ## Where patterns are saved
 
@@ -68,8 +69,8 @@ binary/subcommand pair gets its own file and patterns don't collide across subco
 Running `oo learn <command>` again for the same command overwrites the existing
 pattern file. No backup is made and no warning is shown.
 
-The pattern filename is derived from the first two words of the command
-(e.g. `cargo-test.toml` for `cargo test --release`). This means re-running
+The filename is derived from the command name plus the second word when that word
+is not a flag (e.g. `cargo-test.toml` for `cargo test --release`). This means re-running
 `oo learn cargo test` after updating oo or switching LLM providers will silently
 replace the previous pattern.
 

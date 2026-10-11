@@ -96,9 +96,16 @@ pub trait Store {
 
     /// Delete all entries for a project.
     ///
-    /// Removes every entry stored for `project_id`, regardless of the session
-    /// that indexed it, and including entries with NULL or unparseable
-    /// metadata — exactly the set `search` can return.
+    /// Removes every entry the backend can enumerate under `project_id`,
+    /// regardless of the session that indexed it, including entries with NULL
+    /// or unparseable metadata. Completeness is backend-dependent:
+    ///
+    /// - `SqliteStore` deletes by the same `project` predicate that `search`
+    ///   uses, so `recall` finds nothing afterwards.
+    /// - `VipuneStore` enumerates the project through a paginated `list` with a
+    ///   per-page cap, and its search is similarity-based, so completeness for
+    ///   very large projects is bounded by that enumeration. A failed individual
+    ///   deletion is reported as an error.
     ///
     /// Returns the number of entries deleted.
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;

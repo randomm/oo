@@ -32,6 +32,14 @@ impl VipuneStore {
     }
 }
 
+/// `Store` for Vipune.
+///
+/// Caveat for `delete_project` and `cleanup_stale`: Vipune has no bulk delete,
+/// so a project is enumerated with `list` (capped at 10,000 entries per call).
+/// `delete_project` pages until a short page arrives and stops early if a full
+/// page yields no successful deletion; `cleanup_stale` inspects only the first
+/// 10,000 entries. For very large projects, entries can survive these calls.
+/// A failed individual deletion is returned as an error.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
@@ -77,7 +85,8 @@ impl Store for VipuneStore {
 
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
         // Project-scoped delete: drop every entry for this project regardless
-        // of metadata, so it removes exactly what `search` can return.
+        // of metadata. Completeness is bounded by the paginated `list` below
+        // (see the impl doc); search is similarity-based and is not the criterion.
         //
         // The vipune API has no bulk-delete, so we enumerate via `list` and
         // delete one-by-one. Because `list` is capped at 10 000 entries per
