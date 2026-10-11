@@ -38,15 +38,17 @@ The config file is optional. If it doesn't exist, oo uses defaults.
 
 Configuration for the `oo learn` LLM integration. This is the single source of truth for the model name — the default model is `claude-haiku-4-5` (only Anthropic is supported). An annotated example lives in [config.example.toml](../config.example.toml).
 
-| Field | Type | Default | Description |
+| Field | Type | Default (only when the whole `[learn]` table is absent) | Description |
 |-------|------|---------|-------------|
-| `provider` | string | `"anthropic"` | LLM provider (only `"anthropic"` is supported) |
-| `model` | string | `"claude-haiku-4-5"` | Model identifier for the provider |
-| `api_key_env` | string | `"ANTHROPIC_API_KEY"` | Environment variable containing the API key |
+| `provider` | string | `"anthropic"` | LLM provider (only `"anthropic"` is supported); required when `[learn]` is present |
+| `model` | string | `"claude-haiku-4-5"` | Model identifier for the provider; required when `[learn]` is present |
+| `api_key_env` | string | `"ANTHROPIC_API_KEY"` | Environment variable containing the API key; required when `[learn]` is present |
 
 ### Default behavior
 
-If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`.
+If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`. These defaults are fixed in code and do not depend on which environment variables are set.
+
+A `[learn]` table that is present must set all three keys. The per-field defaults in the table above do not fill in a missing key: a table with only some of them (for example only `model`) fails to load with `missing field` (for example ``missing field `provider` ``). `oo learn` then prints an `oo: config error` line, and its background step fails on the same error, so no pattern is written.
 
 ### `[store]` section
 
@@ -57,9 +59,9 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 | `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged. `0` disables purging. Must be `>= 0`. |
 
 - **When purging happens:** lazily and per project. A purge runs when a project next indexes output, and removes only that project's entries older than `retention`. Other projects, and a project that never indexes again, keep their entries until then.
-- **Vipune store backend:** with `--features vipune-store`, the purge is bounded for projects over 10,000 entries and may leave some behind (#182).
-- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. Unknown top-level sections such as `[learn]` do not affect retention.
-- `oo forget` clears a project's indexed entries immediately, regardless of retention.
+- **Vipune store backend:** with `--features vipune-store`, each purge examines only the first 10,000 entries that Vipune lists for the project, so stale entries beyond that page are not purged by that run.
+- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. The `[learn]` table is parsed separately: a partial or otherwise invalid `[learn]` table (observed: only `model`) leaves `[store] retention` in effect, and an invalid `[store]` value (observed: `retention = "x"`) leaves `oo learn` working. Only a TOML syntax error or an unreadable `config.toml` affects both: indexing then warns and uses the default retention, and `oo learn` prints a config error. Observed for a `config.toml` with mode 000 and for a directory named `config.toml`. One case differs: if the config directory itself cannot be searched (observed with mode 000 on the directory), `oo learn` treats `config.toml` as absent, prints no error and silently uses its defaults (exit 0), while indexing still warns. The cause in source is `load_learn_config` (`learn.rs`) using `path.exists()`, which returns false on any metadata error, whereas `retention.rs` reads the file and reports the error.
+- `oo forget` clears a project's indexed entries immediately, regardless of retention. With `--features vipune-store`, its completeness is subject to the stop rule in [Security Model](security-model.md#command-output).
 
 ## Environment Variables
 
@@ -68,7 +70,7 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 Overrides the configuration directory.
 
 - **Default**: the platform configuration directory plus `oo/` (see the [Directories](#directories) table)
-- **Purpose**: Specify a custom location for `config.toml` and `patterns/`
+- **Purpose**: Specify a custom location for `config.toml` and `patterns/`. The same `config.toml` supplies `[learn]` and `[store] retention`. With an empty or relative value it is read from the working directory, so a repository's own `config.toml` can then set the retention (see [Security Model](security-model.md#pattern-files))
 
 ```bash
 export OO_CONFIG_DIR="/some/custom/dir"
@@ -87,10 +89,10 @@ export OO_DATA_DIR="/some/custom/data/dir"
 
 ### `ANTHROPIC_API_KEY`
 
-Required for `oo learn`.
+The environment variable named by `api_key_env` in `[learn]` must be set for `oo learn`.
 
 - **Required**: Only when using `oo learn`
-- **Default**: None
+- **Default**: no value is set; the variable name defaults to `ANTHROPIC_API_KEY`
 
 Set this to enable LLM-assisted pattern learning:
 
@@ -109,7 +111,7 @@ Optional custom endpoint for Anthropic API.
 export ANTHROPIC_API_URL="https://your-proxy.example.com/v1/messages"
 ```
 
-> **Security warning:** HTTP URLs only allowed for `localhost` or `127.0.0.1`. All other hosts must use HTTPS.
+> **Security warning:** `https://` URLs are accepted for any host. `http://` URLs are accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is currently bypassable with URL userinfo such as `http://localhost:@host/`, which sends requests to `host` in plaintext (known defect, #190). The check applies only to the configured URL. The HTTP client follows redirects (up to 10 by default) and redirect targets are not checked. On a 3xx response other than 304 that has a `Location` header, the request is repeated against the new URL: for 307 and 308 a POST cannot be repeated and fails with an error; for the other codes (for example 301, 302, 303) it becomes a GET without a body. The `x-api-key` header (the API key) is sent to the redirect target, including to another host, and the target is not re-validated (known defect, #193; 302 observed with two local 127.0.0.1 servers, which is the same host; 307 fails before the target is contacted; other hosts and the other codes are from source). Because `https_only` is off, an `https://` endpoint can redirect to `http://`, and the key is then sent in plaintext (from source: `ureq-3.2.0/src/config.rs:872`, `run.rs:149`). A 3xx other than 304 without a `Location` header is an error.
 
 ## Runtime Thresholds
 
@@ -125,7 +127,7 @@ These constants are built into the binary and cannot be configured.
 
 | Flag | Description |
 |------|-------------|
-| `vipune-store` | Enables Vipune backend for indexed output with semantic search. When enabled, outputs are stored using Vipune instead of SQLite. Build with `cargo build --features vipune-store`. |
+| `vipune-store` | Enables Vipune backend for indexed output with semantic search. When enabled, outputs are stored in Vipune's database (`~/.vipune/memories.db` by default) instead of SQLite. Build with `cargo build --features vipune-store`. |
 
 To build with Vipune support:
 
@@ -133,7 +135,7 @@ To build with Vipune support:
 cargo build --release --features vipune-store
 ```
 
-The `vipune-store` feature changes only the storage backend for `oo recall`. All other oo behavior remains identical.
+The `vipune-store` feature changes the storage backend for indexed output (`oo recall`, `oo forget` and indexing). It also adds network access that the default build does not have: opening the store downloads the embedding model from Hugging Face when it is not cached (only once the database's parent directory exists, because vipune canonicalizes that path before loading the model), and the `ort` dependency downloads ONNX Runtime at build time. These behaviours come from source inspection of vipune 0.1.2 and were not observed at runtime. See [Security Model](security-model.md#when-oo-makes-network-calls).
 
 ## Files in Configuration Directory
 

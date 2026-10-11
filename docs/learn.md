@@ -17,13 +17,15 @@ pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Li
 
 ```toml
 [learn]
-provider    = "anthropic"                    # default
-model       = "claude-haiku-4-5"             # optional
+provider    = "anthropic"                    # the only accepted value
+model       = "claude-haiku-4-5"             # model identifier
 api_key_env = "ANTHROPIC_API_KEY"            # env var holding the key
 ```
 
-All keys are optional — Anthropic is the default provider and will use
-the `ANTHROPIC_API_KEY` environment variable if the `[learn]` section is absent.
+When a `[learn]` table is present, all three keys are required: a table that sets only some of them
+fails to load with `missing field` (for example ``missing field `provider` ``). With no `config.toml`, or
+no `[learn]` table, the defaults apply whatever environment variables are set: provider `anthropic`,
+model `claude-haiku-4-5`, and `api_key_env` `ANTHROPIC_API_KEY`.
 
 ### Providers
 
@@ -31,20 +33,10 @@ the `ANTHROPIC_API_KEY` environment variable if the `[learn]` section is absent.
 |----------|---------|---------------|
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 
-The provider is determined from the configured provider or auto-detected from
-the available API key.
+The `provider` value must be `anthropic`. Any other value fails with `unknown provider`, but only after oo reads the `api_key_env` variable (an unset variable is reported as missing first) and `ANTHROPIC_API_URL` passes its URL check.
 
-> **Note:** When configuring manually, set `api_key_env` to match the env var for
-> your chosen provider. The default model is `claude-haiku-4-5` (see
-> [Configuration — model reference](configuration.md#learn-section)); the example
-> below just shows the shape of the section:
->
-> ```toml
-> [learn]
-> provider    = "anthropic"
-> model       = "<model identifier>"
-> api_key_env = "ANTHROPIC_API_KEY"
-> ```
+> **Note:** `api_key_env` must name the environment variable that holds your provider's key. The
+> default model is `claude-haiku-4-5` (see [Configuration — `[learn]` section](configuration.md#learn-section)).
 
 ## What happens if no LLM is configured
 

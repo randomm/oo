@@ -91,7 +91,7 @@ Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤ 4
 unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
-marker (`... [N bytes truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or
+marker (``... [N bytes truncated → use `oo recall` to query] ...``), so large `cat`, `jq`, or
 `sh -c` output cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
 for details.
 

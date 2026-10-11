@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — No data leaves your machine except what you explicitly send via the commands you run
+2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [Network Access](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see Network Access). Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -23,7 +23,7 @@ You must trust:
 
 ### What We Don't Trust (and Why)
 
-- **Remote servers**: All command execution is local. No remote API calls except when you explicitly use `oo learn`.
+- **Remote servers**: All command execution is local. The default build makes network requests only for `oo learn` and `oo help <command>`; a `vipune-store` build also downloads an embedding model (see Network Access).
 - **Command inputs**: Commands are parsed but not modified. If a command is malicious (e.g., `rm -rf /`), oo executes it as-is — the security boundary is between you and the command, not oo.
 
 ## Data Handling
@@ -34,13 +34,13 @@ You must trust:
 
 - **Small successful outputs (≤ 4 KiB, 4096 bytes)**: Displayed directly, never stored (failed-command output is handled by the failure bullet below, at any size)
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
-- **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
-- **Failed-command outputs (exit code ≠ 0)**: when the displayed slice does not match the full merged output line for line (compared line for line; trailing empty lines and CRLF line endings are ignored), the full merged output is stored in the same index for recall, with the same file permissions, project scoping and retention as other indexed output. It can contain secrets the failing command printed. The recall line printed after the slice is host-authored, but it follows command output that can contain a byte-identical copy of it, so its text does not prove that oo printed it (the same residual risk as the Bounded framing line; see Pattern Files)
+- **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally for recall, in the SQLite index by default or in Vipune's database with `vipune-store` (see Storage Backends)
+- **Failed-command outputs (exit code ≠ 0)**: when the displayed slice does not match the full merged output line for line (compared line for line; trailing empty lines and CRLF line endings are ignored), the full merged output is stored in the same index for recall, with the same project scoping as other indexed output. With the default SQLite store it also has the same file permissions (the default umask mode, `0644` under umask `022`; see Storage Backends) and the same retention (the `[store] retention` purge). With `--features vipune-store`, oo sets no mode on Vipune's database, so its permissions are whatever Vipune creates, and the retention purge examines only the first 10,000 entries Vipune lists for the project (from source inspection; see Data retention). It can contain secrets the failing command printed. The recall line printed after the slice is host-authored, but it follows command output that can contain a byte-identical copy of it, so its text does not prove that oo printed it (the same residual risk as the Bounded framing line; see Pattern Files)
 
 **Data retention**:
 - Indexed outputs are purged automatically after a configurable retention period (default 7 days), lazily when the same project next indexes output — see [configuration.md](configuration.md#store-section)
 - No automatic syncing to remote services
-- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#182)
+- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store it deletes every entry with that project id. With `--features vipune-store` it lists up to 10,000 of the project's entries per page and tries to delete each listed entry. It lists again only after a full page in which at least one deletion succeeded; it stops after any other page, short or full. It returns an error in three cases: the store cannot be opened (before any listing); a listing fails, which returns at once with no count (even after earlier pages were deleted); or a deletion fails on any page, which returns after the loop ends with `partial delete: removed N of M entries, K deletion(s) failed` (M is the number of entries listed; K counts failed deletion calls, not distinct entries, so an entry that fails on several pages is counted once per failure; known defect, #182). Otherwise it reports success with the number deleted. The loop also stops after a full page in which no deletion succeeded, so entries beyond that page can remain while `oo forget` reports success (see #177 for the drain loop work); in a sequential run this needs a concurrent writer to remove every listed entry first. Entries whose deletion returned not-found are not counted. On the vipune store, the retention purge looks only at the first page of up to 10,000 entries that Vipune lists for the project
 
 ### Storage Backends
 
@@ -50,10 +50,11 @@ You must trust:
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Other local users can read it if the file and its parent directory permit it
 
-**Vipune (optional, feature flag)**:
-- Stores outputs in Vipune's database
+**Vipune (optional, `--features vipune-store` build)**:
+- Stores outputs in Vipune's database instead of `oo.db`. The default database is `~/.vipune/memories.db`; `VIPUNE_DATABASE_PATH`, or `database_path` in `vipune/config.toml` in the platform config directory, changes it (from source inspection of vipune 0.1.2)
 - Same access controls as your Vipune installation
 - Only used if you explicitly enable the `vipune-store` feature
+- Opening the store may download the embedding model from Hugging Face when it is not cached (see Network Access)
 
 ### LLM Learning (`oo learn`)
 
@@ -70,10 +71,10 @@ You must trust:
 - Other projects' indexed output (storage is scoped per project)
 
 **Provider**: Anthropic only (currently supported)
-- **Required**: `ANTHROPIC_API_KEY` environment variable
+- **API key variable**: the environment variable named by `api_key_env` in the `[learn]` config (default `ANTHROPIC_API_KEY`); it must be set for `oo learn`
 - **Model**: `claude-haiku-4-5` (default, configurable)
 - **Endpoint**: `https://api.anthropic.com`
-- **URL validation**: oo validates that the API URL uses HTTPS; plain HTTP is accepted only for `localhost` and `127.0.0.1`, other non-HTTPS URLs are rejected with an error
+- **URL validation**: oo accepts the API URL only if it starts with `https://`, or with `http://` followed by a host (the text before the first `:` or `/`) that is exactly `localhost` or `127.0.0.1`; other URLs are rejected with an error. This check is bypassable with URL userinfo such as `http://localhost:@host/` (known defect, #190; see Pattern Files). The check applies only to the configured URL, validated once before any request is sent. The HTTP client follows redirects by default, and redirect targets are not checked again (on a 3xx redirect that is followed, the `x-api-key` header is sent to the target as well): `call_anthropic` sets timeouts only, and ureq 3.2.0 defaults to `max_redirects` 10 and `https_only` off (`ureq-3.2.0/src/config.rs`, `Config` defaults), so this configuration does not limit a redirect target to HTTPS. Sending the key to a redirect target is a known defect (#193).
 
 **When it runs**:
 - Only when you explicitly run `oo learn <command>`
@@ -90,8 +91,8 @@ You must trust:
 - No caching or persistence to disk
 
 **Transmission**:
-- Keys are sent only to the configured API endpoint (Anthropic)
-- HTTPS is enforced; plain HTTP is accepted only for `localhost` and `127.0.0.1`
+- The key is sent to the configured API endpoint (Anthropic); when a 3xx redirect is followed, the `x-api-key` header is also sent to the redirect target (known defect, #193; see Network Access)
+- For the configured `ANTHROPIC_API_URL`, HTTPS is required except for `localhost` and `127.0.0.1`, which may use plain HTTP. The check is not applied to redirect targets (the HTTP client follows up to 10 redirects by default; known defect, #193), and it can currently be bypassed with URL userinfo, see #190.
 - Keys are never logged or printed in output
 
 **Best practice**: Use shell environment or a secret manager:
@@ -117,7 +118,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V`) and `config.toml`, from which the learn settings (for example `learn.api_key_env` and `model`) are read, and `[store] retention` (the purge period for indexed output) is read on every indexing run. A relative or empty `OO_CONFIG_DIR` therefore also lets a repository's `./config.toml` set that retention, including `0` (never purge). Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` also writes its LLM-generated patterns into that same directory. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and, when it can be read, deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V` and the internal background-learn entry point) and `config.toml`. `[store] retention` in the same file sets how long indexed output is kept (read on every indexing run; `0` disables purging), so a repository-owned `config.toml` in a relative or empty `OO_CONFIG_DIR` can change that period. A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`: a repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`), and `oo learn` accepts a URL only if it starts with `https://`, or with `http://` followed by a host that is exactly `localhost` or `127.0.0.1` (the host is the text before the first `:` or `/`). This applies to the configured URL only; redirect targets are not checked, and when a 3xx redirect is followed, the API key is sent to the target (known defect, #193; see Network Access). A malformed `[learn]` table does not change retention, and an invalid `[store]` value does not stop `oo learn`; a TOML syntax error or an unreadable `config.toml` (a file with mode 000, or a directory named `config.toml`) affects both, except when the config directory itself is unsearchable (mode 000 on the directory): then `oo learn` silently uses its defaults while indexing still warns ([configuration](configuration.md#store-section)). This check is a known defect (tracked in #190): it is bypassable, because `http://localhost:@host.example/` passes the check while the HTTP client sends the request to `host.example` in plaintext, with the API key. Only the environment variable controls the URL, so a repository cannot set it, but a user who sets `ANTHROPIC_API_URL` to such a value sends the key to that host. Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -141,7 +142,8 @@ oo reads from:
 - Environment variables (runtime only)
 - Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- With `vipune-store`, Vipune's database (`~/.vipune/memories.db` by default) and its config file (`vipune/config.toml` in the platform config directory) instead of `oo.db`
 - Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), loaded each time oo classifies a command
 
 By default the configuration and storage directories are under your user home directory; if no home directory can be determined they fall back under `/tmp` (see [configuration.md](configuration.md#directories)). On Linux, they move under `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` when those are absolute paths. The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
@@ -149,7 +151,8 @@ By default the configuration and storage directories are under your user home di
 ### Write Access
 
 oo writes to:
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs
+- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead)
+- Hugging Face cache (`~/.cache/huggingface/hub`; vipune 0.1.2 ignores `HF_HOME`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results
 
@@ -182,12 +185,24 @@ oo executes commands using your shell environment:
 
 ### When oo makes network calls
 
-**Only via `oo learn`**:
-- To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1)
+In the default build, oo itself makes network requests in two cases:
+
+**Via `oo learn`**:
+- To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1; the check is bypassable with userinfo such as `http://localhost:@host/`, see #190). The check covers only the configured URL: the HTTP client follows redirects (up to 10 by default), and their targets are not checked; on a 3xx response other than 304 that has a `Location` header, the request is repeated against the new URL: for 307 and 308 a POST cannot be repeated and fails with an error; for the other codes (for example 301, 302, 303) it becomes a GET without a body. The `x-api-key` header (the API key) is sent to the redirect target, which is not re-validated (known defect, #193). Because `https_only` is off, an HTTPS endpoint can redirect to `http://` and the key is then sent in plaintext (from source). Observed with two local 127.0.0.1 servers (same host, dummy key; #193): 302 (GET without body, target received `x-api-key`), 307 (`redirect failed`, target received nothing), and 304 was not followed (#193). From source (`ureq-3.2.0`, `ureq-proto-0.5.3`): a 304 is not treated as a redirect (`ureq-proto` `client/mod.rs:313-315`), so its response is returned to oo; the rule for the other codes; a 3xx other than 304 without a `Location` header is an error (`NoLocationHeader`, `redirect.rs:28`); and on redirect only `Authorization`, `Cookie` and `Content-Length` are removed (`x-api-key` is kept)
 - With your command output and API key
 - In the background, after command completes
 
-**No other network calls**:
+**Via `oo help <command>`** (not for reserved subcommands):
+- An HTTPS GET to `https://cheat.sh/<command>?T`, with the command name URL-encoded. The HTTP client follows redirects (up to 10 by default), so a redirect causes further requests. Redirect targets are not restricted to cheat.sh and no API key is sent; the request to a target is built from its `Location` header, so the command name reaches the target only if that header contains it (from source)
+- Reserved subcommands (for example `oo help recall`) print the local usage text and make no request
+
+**Via the embedding store (only with `--features vipune-store`)**:
+- When the store is opened (for example by `oo recall`, `oo forget`, or indexing output) and the embedding model is not yet in the Hugging Face cache, vipune downloads the model (only if the database's parent directory exists; vipune canonicalizes that path before loading the model) over HTTPS from `https://huggingface.co` (vipune 0.1.2 ignores `HF_ENDPOINT`): `onnx/model.onnx` (or `model.onnx`) and `tokenizer.json`. The model is set by vipune's `embedding_model` / `VIPUNE_EMBEDDING_MODEL` (default `BAAI/bge-small-en-v1.5`). Cached files are not re-downloaded
+- The request carries no command output. If a Hugging Face token file exists at `~/.cache/huggingface/token`, it is sent as a `Bearer` header
+- At build time, the `ort` dependency's default `download-binaries` feature fetches ONNX Runtime binaries during `cargo build`
+- All of the above is from source inspection of vipune 0.1.2, hf-hub 0.4.3 and ort 2.0.0-rc.10. It was not observed at runtime, and the `vipune-store` build was not compiled
+
+**No other network calls** (beyond the cases above):
 - No telemetry
 - No updates
 - No cloud storage
@@ -201,7 +216,7 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped; an empty last segment, e.g. from a trailing `/`, falls through to the next step), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
 
 - `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
-- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, projects over 10,000 entries may keep entries after `oo forget` (#182)
+- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, it can report success while entries remain; see Data retention above (see #177 for the drain loop work)
 - The project id is an organisational key, **not a security boundary**. Two repositories with the same remote name or directory name (for example two checkouts of `app`) share one partition: each can recall the other's indexed output, and `oo forget` in either one clears both (SQLite store).
 
 Use `oo forget` to clear a project's index when done.
@@ -256,7 +271,7 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 ### For Contributors
 
 1. **No secret storage**: Never implement API key caching or persistence
-2. **Validate URLs**: Enforce HTTPS for all network connections
+2. **Validate URLs**: Enforce HTTPS for all network connections (plain HTTP only to `localhost`/`127.0.0.1`; the `ANTHROPIC_API_URL` check covers only the configured URL, not redirect targets (known defect, #193), and is currently bypassable, #190)
 3. **Sanitize inputs**: Use `clap` for argument parsing
 4. **Test for injection**: Ensure malformed input doesn't cause crashes or security issues
 5. **Document assumptions**: Be clear about what is trusted and what is not
@@ -280,14 +295,14 @@ This section is for compliance assessments.
 
 ### Data Location
 
-- **Command output**: Local-only, stored in the storage directory (see [Read Access](#read-access))
+- **Command output**: In the default build, stored in `oo.db` in the storage directory (see [Read Access](#read-access)). With `--features vipune-store`, stored in Vipune's database (`~/.vipune/memories.db` by default). Sent to Anthropic only when you run `oo learn` (see LLM data)
 - **Patterns**: Local-only, in the user patterns directory (under the configuration directory) and in project-local `.oo/patterns/` (see [Read Access](#read-access))
 - **LLM data**: Sent to Anthropic (US-based), subject to Anthropic's privacy policy
 
 ### Data Access
 
 - **Owner**: User account running oo
-- **Permissions**: Storage files use the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments
+- **Permissions**: The SQLite database file (default build) uses the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments. With `vipune-store`, oo does not set the mode of Vipune's database (the vipune-side mode was not checked)
 - **Sharing**: No data sharing or syncing capabilities
 
 ### Data Retention
@@ -298,7 +313,7 @@ This section is for compliance assessments.
 
 ### Right to Delete
 
-- **Local data**: Delete the storage directory and the user patterns directory (paths above)
+- **Local data**: Delete the storage directory and the user patterns directory (paths above). With `vipune-store`, also delete Vipune's database (`~/.vipune/memories.db` by default) and the Hugging Face model cache (`~/.cache/huggingface/hub`)
 - **LLM data**: No mechanism; contact Anthropic directly if needed
 
 ## Further Reading
