@@ -55,14 +55,15 @@ The classification engine decides how to present output to the agent:
 **Possible outcomes**:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
 - **Passthrough** (success, ≤4 KiB): Verbatim output
-- **Success** (success, >4 KiB, pattern match): Compressed summary
+- **Success** (success, >4 KiB, pattern summary): Compressed summary
+- **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label` line, not indexed
 - **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
 - **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
-2. Output < 4 KiB? Yes → Passthrough
-3. Pattern matches? Yes → Success (extract summary)
+2. Output ≤ 4 KiB? Yes → Passthrough
+3. Pattern matches and its success strategy yields a summary? Yes → Success
 4. Detect category → apply category defaults
 
 The **savings indicator** (the `[saved N]` suffix on compressed output) is specified in [docs/cli-reference.md](cli-reference.md#savings-indicator) (canonical).
@@ -76,7 +77,7 @@ Patterns define how to compress command output using regex.
 **Components**:
 - `mod.rs` — Pattern struct, matching logic
 - `builtins.rs` — built-in patterns for common tools (list with `oo patterns`)
-- `toml.rs` — Load user-defined patterns from the user patterns directory (`dirs::config_dir()/oo/patterns/`)
+- `toml.rs` — Load user-defined patterns from the user patterns directory (see `oo patterns` for its path)
 
 **Pattern structure**:
 ```rust
@@ -147,7 +148,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
 | [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
-| [`src/commands.rs`](../src/commands.rs) | CLI command handlers (private) | `cmd_run()`, `cmd_recall()`, etc. |
+| [`src/commands.rs`](../src/commands.rs) | CLI command handlers | `cmd_run()`, `cmd_recall()`, etc. |
 | [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |
 | [`src/help.rs`](../src/help.rs) | cheat.sh lookup for `oo help <cmd>` (URL encoding, HTML/error detection) | `lookup()`, `encode_cmd()` |
 | [`src/usage.rs`](../src/usage.rs) | Static usage text for reserved subcommands (`oo <sub> --help` and `oo help <sub>`) | `for_subcommand()` |
@@ -155,7 +156,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
 | [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
 | [`src/hook.rs`](../src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](../src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
-| [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
+| [`src/util.rs`](../src/util.rs) | Utilities (time helpers) | `now_epoch()`, `format_age()` |
 
 ## Key Design Decisions
 

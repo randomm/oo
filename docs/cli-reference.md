@@ -36,20 +36,23 @@ oo classifies command output into five tiers:
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
-| **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
+| **Success** | `✓ label (summary)` | Output > 4 KB with pattern summary |
+| **Status** | `✓ label` (no summary) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
 | **Failure** | `✗ label` followed by error output | Non-zero exit code |
 | **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
 | **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
 Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
 display is only the indicator line. If indexing fails, the display falls back to
-`smart_truncate` with no indicator line: output of 80 lines or fewer, and output of 81 to 120
-lines, is printed in full; longer output keeps its first 72 and last 48 lines around a
+`smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
+Output of 81 to 120 lines is printed with no marker, and its last head line and first tail
+line are joined without a newline (e.g. `seq 1 81` shows `4950` for lines 49 and 50); it is
+not printed in full. Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
 a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
-the form `... [N bytes truncated → use `oo recall` to query] ...`. The marker text appears exactly once, between the head and tail pieces. It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
+the form `... [N bytes truncated → use `oo recall` to query] ...`. The truncation marker is inserted once, between the head and tail pieces (the output itself may contain identical text). It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
 output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
 written to stderr, and the slice is still displayed.
 

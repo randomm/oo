@@ -88,7 +88,7 @@ $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
 Query indexed output with `oo recall "<terms>"`. Small outputs (≤4 KB) pass through
-unchanged. Larger unpatterned Data, Content, and Unknown output is indexed in full; Status output (test runners, builds, linters) gets a quiet `✓` line and is not indexed. Data commands like
+unchanged. Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
 marker (`... [N bytes truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or
@@ -233,7 +233,7 @@ oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_
 Plain `oo init` (the `--format claude` default) only writes the legacy
 `.claude/hooks.json`; for the rewriting Claude Code hook use `--agent claude-code`
 (below). See
-the [CLI reference](docs/cli-reference.md#oo-init) for the full option matrix.
+the [CLI reference](docs/cli-reference.md#oo-init---format-format---agent-agent---global) for the full option matrix.
 
 ### Use with Claude Code
 
@@ -302,7 +302,7 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
 is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
-Status commands such as `make` print only a `✓` line and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
+Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓` line and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for
