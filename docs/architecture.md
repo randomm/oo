@@ -115,7 +115,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 - `delete_project()` — Delete all indexed outputs for the current project
 
 **Project identification**:
-- [`src/session.rs`](../src/session.rs) — Project ID (git remote or directory name)
+- [`src/session.rs`](../src/session.rs) — Project ID (git remote last segment, git root directory name, or current directory name)
 
 ### 6. LLM Learning
 

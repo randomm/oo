@@ -9,7 +9,7 @@ oo learn cargo test --release
 
 The command executes normally. After it finishes, a background process sends
 the command, output, and exit code to the configured LLM and writes a TOML
-pattern to `~/.config/oo/patterns/`.
+pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux; platform-specific, see [configuration.md](configuration.md#directories)).
 
 ## Config
 
@@ -56,7 +56,7 @@ config directory already exists; otherwise the failure is silent (see
 
 ## Where patterns are saved
 
-`~/.config/oo/patterns/<label>.toml` — where `<label>` is derived from the command name.
+`<user patterns dir>/<label>.toml` — `~/.config/oo/patterns/` on Linux (platform-specific, see [configuration.md](configuration.md#directories)); `<label>` is derived from the command name.
 
 Existing files are overwritten, so running `oo learn` again refines the pattern.
 See [Custom Patterns](patterns.md) for the TOML format the generated files use, and

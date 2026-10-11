@@ -44,7 +44,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `~/.local/share/.oo/oo.db` on Linux (`~/Library/Application Support/.oo/oo.db` on macOS; `OO_DATA_DIR` overrides the directory)
+- Database file: `~/.local/share/.oo/oo.db` on Linux (`$XDG_DATA_HOME/.oo/oo.db` when `XDG_DATA_HOME` is set; `~/Library/Application Support/.oo/oo.db` on macOS; `OO_DATA_DIR` overrides the directory)
 - Permissions: the file is created with the default mode from the process umask (`0644` under the common umask `022`); oo does not set a restrictive mode. For sensitive environments, run `chmod 600` on the file or use a restrictive umask (e.g. `umask 077`) before running oo
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Other local users can read it if the file and its parent directory permit it

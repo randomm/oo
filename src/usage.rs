@@ -77,7 +77,7 @@ const USAGE: &[(&str, &str)] = &[
     ),
     (
         "rewrite",
-        "Usage: oo rewrite <command>\n\
+        "Usage: oo rewrite <command...>\n\
          \n\
          Print the oo-prefixed form of <command> for agent hooks. Does not run the command.\n",
     ),
