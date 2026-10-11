@@ -44,7 +44,7 @@ fn entries(dir: &std::path::Path) -> usize {
 }
 
 #[test]
-fn reserved_help_flags_print_usage_with_no_side_effects() {
+fn reserved_help_flags_print_usage_without_running_subcommand() {
     for sub in reserved_names() {
         for flag in ["--help", "-h"] {
             let (repo, data, home) = fixture();

@@ -39,8 +39,8 @@ oo classifies command output into five tiers:
 | **Success** | `✓ label (summary) [saved N]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
 | **Status** | `✓ label [saved N]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
 | **Failure** | `✗ label [saved N]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
-| **Large** | ``● label (indexed N → use `oo recall` to query)`` | Output > 4 KB without a pattern summary, Data category |
-| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
+| **Large** | ``● label (indexed N → use `oo recall` to query)``. If indexing fails: the `smart_truncate` view with no indicator line | Output > 4 KB without a pattern summary, Data category |
+| **Bounded** | ``● label (output truncated: N total → use `oo recall` to query)`` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice. If indexing fails: ``● label (output truncated: N total — NOT indexed, recall unavailable)``, the same slice, and stderr `oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only`. The slice's own marker still reads `use oo recall to query` in both cases) |
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
@@ -272,8 +272,10 @@ Every reserved subcommand (`recall`, `forget`, `learn`, `help`, `init`, `pattern
 `rewrite`, `hook`, `version`) accepts `--help` or `-h` as its **first**
 argument after the name: it prints that subcommand's usage and exits 0. The subcommand
 itself does not run (nothing is searched, learned, rewritten, deleted or installed), but a
-pending background-learn status message is still printed to stderr and cleared first, as on
-any other invocation. `oo recall --help` therefore does not search for the text
+pending background-learn status message is printed to stderr and cleared first.
+Top-level `oo --help`, `oo -h`, `oo --version` and `oo -V` are handled by argument parsing
+before that check: they print nothing from the status file and leave it in place. `oo version`
+(no flag) prints and clears it. `oo recall --help` therefore does not search for the text
 `--help`. Other commands (e.g. `oo cargo --help`) run as normal.
 
 Fetch a cheat sheet for `cmd` from [cheat.sh](https://cheat.sh).
