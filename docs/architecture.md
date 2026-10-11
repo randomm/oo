@@ -147,6 +147,8 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/store.rs`](../src/store.rs) | Storage backends (SQLite, Vipune) | `Store` trait, `SqliteStore` |
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
 | [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
+| [`src/config.rs`](../src/config.rs) | Config directory resolution (`OO_CONFIG_DIR` or the platform config dir) | `config_dir()` |
+| [`src/retention.rs`](../src/retention.rs) | `[store] retention` parsing and the lazy per-project purge of indexed output | `purge_stale()`, `load_retention()` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
 | [`src/commands.rs`](../src/commands.rs) | CLI command handlers | `cmd_run()`, `cmd_recall()`, etc. |
 | [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |

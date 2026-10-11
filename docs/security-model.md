@@ -37,7 +37,7 @@ You must trust:
 - **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
 
 **Data retention**:
-- Indexed outputs persist until you run `oo forget` or delete them manually
+- Indexed outputs are purged automatically after a configurable retention period (default 7 days), lazily when the same project next indexes output — see [configuration.md](configuration.md#store-section)
 - No automatic syncing to remote services
 - Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#182)
 
@@ -116,7 +116,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V`) and `config.toml`, from which the learn settings (for example `learn.api_key_env` and `model`) are read. Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V`) and `config.toml`, from which the learn settings (for example `learn.api_key_env` and `model`) are read, and `[store] retention` (the purge period for indexed output) is read on every indexing run. A relative or empty `OO_CONFIG_DIR` therefore also lets a repository's `./config.toml` set that retention, including `0` (never purge). Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -291,7 +291,7 @@ This section is for compliance assessments.
 
 ### Data Retention
 
-- **Indexed outputs**: Until manually deleted or `oo forget` runs
+- **Indexed outputs**: Purged automatically after a configurable retention period (default 7 days), lazily on the next indexing run of the same project — see [configuration.md](configuration.md#store-section)
 - **Patterns**: Permanent (until manually deleted)
 - **LLM data**: Per Anthropic's retention policy (typically undefined, may be used for service improvement)
 

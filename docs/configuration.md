@@ -48,6 +48,19 @@ Configuration for the `oo learn` LLM integration. This is the single source of t
 
 If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults to `provider = "anthropic"`, `model = "claude-haiku-4-5"`, and `api_key_env = "ANTHROPIC_API_KEY"`.
 
+### `[store]` section
+
+Retention for indexed command output (the entries `oo` stores for `oo recall`). An annotated example lives in [config.example.toml](../config.example.toml).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged. `0` disables purging. Must be `>= 0`. |
+
+- **When purging happens:** lazily and per project. A purge runs when a project next indexes output, and removes only that project's entries older than `retention`. Other projects, and a project that never indexes again, keep their entries until then.
+- **Vipune store backend:** with `--features vipune-store`, the purge is bounded for projects over 10,000 entries and may leave some behind (#182).
+- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative, non-integer, or out-of-range (above 2^63-1) value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that cannot be parsed prints a warning on stderr and uses the default. The warning appears when indexing runs (not on `oo recall` or `oo forget`). Indexing is never blocked by config. Unknown top-level sections such as `[learn]` do not affect retention.
+- `oo forget` clears a project's indexed entries immediately, regardless of retention.
+
 ## Environment Variables
 
 ### `OO_CONFIG_DIR`
@@ -107,7 +120,6 @@ These constants are built into the binary and cannot be configured.
 | `SMALL_THRESHOLD` | 4096 bytes | Output below this size passes through unchanged |
 | `TRUNCATION_THRESHOLD` | 80 lines | Failure output truncation starts after this many lines |
 | `MAX_LINES` | 120 lines | Hard cap on lines shown after smart truncation |
-| Entry TTL | 86400 seconds (24 hours) | Stale indexed entries are auto-cleaned |
 
 ## Feature Flags
 

@@ -301,8 +301,7 @@ pub fn try_index(command: &str, content: &str) -> bool {
         timestamp: now_epoch(),
     };
 
-    // Lazy TTL cleanup (best-effort)
-    let _ = store.cleanup_stale(&project_id, 86400);
+    crate::retention::purge_stale(store.as_mut(), &project_id);
 
     store.index(&project_id, content, &meta).is_ok()
 }

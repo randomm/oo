@@ -62,6 +62,8 @@ pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod commands;
+/// Config directory resolution (`OO_CONFIG_DIR` or the platform config dir).
+mod config;
 /// Error types for oo operations.
 pub mod error;
 /// Command execution and output capture.
@@ -83,6 +85,8 @@ pub mod pattern;
 /// by the dispatch layer and the rewrite/hook feature modules.
 #[doc(hidden)]
 pub mod pattern_load;
+/// Retention of indexed output (`[store] retention` in config.toml).
+mod retention;
 /// Session tracking and management.
 pub mod session;
 /// Storage backends for indexed output.
