@@ -10,8 +10,8 @@ pub use crate::init_cmd::{InitMode, cmd_init};
 use crate::store::SessionMeta;
 use crate::util::now_epoch;
 use crate::{
-    classify, commands_patterns, exec, help, learn, pattern, pattern_load, rewrite, session, store,
-    usage,
+    classify, commands_patterns, exec, failure_display, help, learn, pattern, pattern_load,
+    rewrite, session, store, usage,
 };
 
 pub enum Action {
@@ -198,36 +198,7 @@ pub fn render_classification(classification: &Classification, command: &str, ori
             label,
             output,
             full_output,
-        } => {
-            let line = format!("\u{2717} {label}");
-            // The `\n` in the payload plus `println!`'s own newline is a
-            // deliberate BLANK LINE between the indicator and the error
-            // body — the suffix (if any) lands on the indicator line only,
-            // and the blank line survives with or without it.
-            println!(
-                "{line}{}\n",
-                savings_suffix(original_size, line.len()).unwrap_or_default()
-            );
-            println!("{output}");
-            // The slice above is lossy (pattern/smart truncation); index the
-            // raw merged bytes so `oo recall` can reach what the display dropped.
-            // Equal bytes mean nothing was dropped, so nothing is indexed.
-            if full_output != output {
-                let human_size = format_size(full_output.len(), BINARY);
-                if try_index(command, full_output) {
-                    println!(
-                        "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
-                    );
-                } else {
-                    eprintln!(
-                        "oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only"
-                    );
-                    println!(
-                        "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
-                    );
-                }
-            }
-        }
+        } => failure_display::render(label, command, original_size, output, full_output),
         Classification::Passthrough { output } => {
             print!("{output}");
         }

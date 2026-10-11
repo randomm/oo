@@ -68,6 +68,8 @@ mod config;
 pub mod error;
 /// Command execution and output capture.
 pub mod exec;
+/// Failure-tier display and recall notice (used by `render_classification`).
+mod failure_display;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod help;
