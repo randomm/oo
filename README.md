@@ -305,7 +305,7 @@ line; other commands show a byte-bounded head+tail slice (marked with a truncati
 Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
-Unknown commands already show a bounded head+tail slice with the full output stored for
+Larger unpatterned unknown commands already show a bounded head+tail slice with the full output stored for
 `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). For commands with built-in patterns, you can override with
 a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 

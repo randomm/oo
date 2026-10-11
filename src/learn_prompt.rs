@@ -12,10 +12,10 @@ IMPORTANT: Use named capture groups (?P<name>...) only — never numbered groups
 
 ## oo's 4-tier system
 
-- Passthrough: output ≤ 4 KiB (4096 bytes) passes through unchanged
-- Failure: failed commands get ✗ prefix with filtered error output
+- Passthrough: successful output ≤ 4 KiB (4096 bytes) passes through unchanged
+- Failure: failed commands (any size) get ✗ prefix with filtered error output
 - Success: successful commands get ✓ prefix with a pattern-extracted summary
-- Large (over 4 KiB): if regex fails to match, Data is FTS5 indexed; Content/Unknown show a bounded slice
+- Large (over 4 KiB): if regex fails to match, Status is quiet, Data is FTS5 indexed, Content/Unknown show a bounded slice
 
 ## Examples
 
@@ -45,4 +45,4 @@ Build/lint — quiet on success (only useful when failing); strategy=head for fa
 
 ## Command Categories
 
-Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Output up to 4 KiB always passes through; larger output shows a matching success summary, else Data is indexed and Content/Unknown show a bounded slice (full output indexed)."#;
+Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Output up to 4 KiB passes through; larger shows a matching success summary, else Status is quiet, Data is indexed, Content/Unknown get a bounded slice."#;
