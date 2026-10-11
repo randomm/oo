@@ -297,7 +297,7 @@ pub fn spawn_background(
     // Prevent the parent from deleting the temp file on drop. On a loaded
     // system the child process may not have opened the file yet by the time
     // the parent exits this function. `keep()` makes the file persist on disk
-    // until the child cleans it up at run_background (line ~218 below).
+    // until the child cleans it up in `run_background` (below).
     tmp_path.keep().map_err(|e| Error::Learn(e.to_string()))?;
 
     Ok(())

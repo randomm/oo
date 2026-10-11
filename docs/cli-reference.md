@@ -12,7 +12,7 @@
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
-| `oo patterns` | List all loaded patterns (built-in + user) |
+| `oo patterns` | List all loaded patterns (built-in, project, and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
 
 ---

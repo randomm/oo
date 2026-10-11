@@ -190,7 +190,7 @@ These are built-in commands (not shell commands):
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `recall` | `cmd_recall()` | Search indexed outputs via full-text query |
-| `forget` | `cmd_forget()` | Clear all indexed outputs for the current project |
+| `forget` | `cmd_forget()` | Clear indexed outputs for the current project (complete for the SQLite store; bounded for `vipune-store` projects over 10,000 entries, #182) |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats), the pi extension (`--agent pi`), or the Claude Code `settings.json` hook (`--agent claude-code`) |

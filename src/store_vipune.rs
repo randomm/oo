@@ -35,15 +35,18 @@ impl VipuneStore {
 /// `Store` for Vipune.
 ///
 /// Completeness caveat for `delete_project` and `cleanup_stale`: Vipune has no
-/// bulk delete and no offset, so `delete_project` drains a project by repeatedly
-/// calling `list(project, 10_000)` and deleting each returned entry (deleted
-/// entries drop out, so each round re-lists the remainder). It stops after a
-/// short page (fewer than 10,000 entries), or after a full page in which no
-/// deletion returned `Ok(true)` (an `Ok(false)` is not counted, which prevents
-/// spinning on ids that never delete). A failed individual deletion is logged
-/// and the round continues; if any deletion failed, the call returns an error
-/// reporting partial progress. `cleanup_stale` inspects only the first 10,000
-/// entries. Projects larger than this can keep entries after these calls.
+/// bulk delete and no offset. `delete_project` repeatedly calls
+/// `list(project, 10_000)` and attempts to delete every entry returned, up to
+/// 10,000 entries per call. It stops after a call that returns fewer than
+/// 10,000 entries, or after a full page in which no deletion returned
+/// `Ok(true)` (an `Ok(false)` is not counted, which stops it from repeating on
+/// ids that never delete). A failed deletion is logged and the page is still
+/// processed. The `failed` count accumulates across pages and is never reset,
+/// so an entry that fails on more than one page is counted once per failure;
+/// the reported failure count can therefore include the same entry more than
+/// once. If `failed` is non-zero at the end, the call returns an error reporting
+/// partial progress. `cleanup_stale` inspects only the first 10,000 entries.
+/// Projects larger than this can keep entries after these calls.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
