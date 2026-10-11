@@ -1945,9 +1945,9 @@ fn test_failure_pattern_slice_showing_all_lines_is_not_indexed() {
 }
 
 #[test]
-fn test_failure_pattern_slice_with_trailing_blank_line_is_not_indexed() {
-    // The tail pattern keeps the trailing blank line in its slice, so the
-    // slice and the full output differ only by trailing blank lines: nothing
+fn test_failure_pattern_slice_with_trailing_empty_line_is_not_indexed() {
+    // The tail pattern keeps the trailing empty line in its slice, so the
+    // slice and the full output differ only by trailing empty lines: nothing
     // was dropped and recall must not be advertised.
     let script = "#!/bin/sh\nprintf 'oo185blank1\\noo185blank2\\nl3\\n\\n'\nexit 1\n";
     let (_bin, path) = make_fake_bin("cargo", script);

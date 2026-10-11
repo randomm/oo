@@ -45,4 +45,4 @@ Build/lint — quiet on success (only useful when failing); strategy=head for fa
 
 ## Command Categories
 
-Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Content commands always pass through regardless of size; Data commands are indexed when large and unpatterned."#;
+Note: oo categorizes commands (Status: tests/builds/lints, Content: git show/diff/cat, Data: git log/ls/gh, Unknown: others). Patterns are most valuable for Status commands. Output up to 4 KiB always passes through; larger output shows a matching success summary, else Data is indexed and Content/Unknown show a bounded slice (full output indexed)."#;

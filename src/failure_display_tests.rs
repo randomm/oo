@@ -25,7 +25,7 @@ fn smart_truncate_join_case_is_not_shown() {
 }
 
 #[test]
-fn trailing_blank_lines_and_final_newline_do_not_count() {
+fn trailing_empty_lines_and_final_newline_do_not_count() {
     let full = "alpha\nbeta";
     assert!(shows_all_lines(full, "alpha\nbeta\n"));
     assert!(shows_all_lines(full, "alpha\nbeta\n\n\n"));

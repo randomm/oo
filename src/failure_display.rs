@@ -48,7 +48,7 @@ pub fn render(label: &str, command: &str, original_size: usize, output: &str, fu
 /// Compares lines rather than raw bytes: `extract_failure` joins its lines
 /// without a final newline, and `lines()` ignores CRLF endings. Trailing empty
 /// lines are dropped from both sides, because a slice that keeps or loses only
-/// trailing blank lines (or the final newline) omits nothing a reader needs.
+/// trailing empty lines (or the final newline) omits nothing a reader needs.
 /// The 81–120-line `smart_truncate` join removes a line break, so it is
 /// correctly "not shown".
 fn shows_all_lines(full_output: &str, output: &str) -> bool {
