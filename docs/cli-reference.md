@@ -44,7 +44,7 @@ oo classifies command output into five tiers:
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
-Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
+Large unpatterned Data output is indexed in full and retrievable via `oo recall` until the retention period passes (7 days by default; see [configuration](configuration.md#store-section)); the
 display is only the indicator line. If indexing fails, the display falls back to
 `smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
 Output of 81 to 120 lines has all of its lines present and no truncation marker, except that

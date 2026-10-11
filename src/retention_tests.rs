@@ -3,36 +3,6 @@ use super::*;
 use crate::store::{SessionMeta, SqliteStore};
 use crate::util::now_epoch;
 
-// OO_CONFIG_DIR is process-global; every test that mutates it takes this lock.
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-    ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Unsets OO_CONFIG_DIR on drop, so a panicking test cannot leave it dangling.
-struct ConfigDirVar;
-
-impl Drop for ConfigDirVar {
-    fn drop(&mut self) {
-        unsafe { std::env::remove_var("OO_CONFIG_DIR") };
-    }
-}
-
-/// Run `f` with OO_CONFIG_DIR pointing at a temp dir holding `config` (if any).
-fn with_config<F: FnOnce()>(config: Option<&str>, f: F) {
-    let _lock = env_guard();
-    let cfg_dir = tempfile::tempdir().unwrap();
-    if let Some(content) = config {
-        std::fs::write(cfg_dir.path().join("config.toml"), content).unwrap();
-    }
-    unsafe { std::env::set_var("OO_CONFIG_DIR", cfg_dir.path()) };
-    let _var = ConfigDirVar;
-    f();
-}
-
 #[test]
 fn parse_missing_store_section_uses_default() {
     assert_eq!(parse_retention("").unwrap(), DEFAULT_RETENTION_SECS);
@@ -129,13 +99,12 @@ fn load_invalid_value_falls_back_to_default() {
 }
 
 #[test]
-fn load_reads_config_dir_override() {
-    with_config(Some("[store]\nretention = 42\n"), || {
-        assert_eq!(load_retention(), 42);
-    });
-    with_config(None, || {
-        assert_eq!(load_retention(), DEFAULT_RETENTION_SECS);
-    });
+fn load_resolves_config_toml_inside_config_dir() {
+    // Pure path resolution: no process env is read or written.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "[store]\nretention = 42\n").unwrap();
+    let path = crate::config::config_dir_from(Some(dir.path().into())).join("config.toml");
+    assert_eq!(load_retention_from(&path), 42);
 }
 
 /// Fixed project id: purge tests never run `git` to derive one.

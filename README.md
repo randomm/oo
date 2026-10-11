@@ -300,13 +300,13 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 
 **What if oo doesn't recognize my command?**
 Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
-is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
+is indexed in full for later retrieval via `oo recall` until the retention period passes (7 days by default; see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
 Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for
-`oo recall` (nothing is lost). For commands with built-in patterns, you can override with
+`oo recall` until the retention period passes (7 days by default; see [configuration](docs/configuration.md#store-section)). For commands with built-in patterns, you can override with
 a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 
 **Does oo work in CI?**
