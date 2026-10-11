@@ -169,7 +169,7 @@ oo sh -c 'git log --oneline | head -20'
 ```
 
 See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for how the
-`[saved N KiB]` figure on the indicator line works.
+`[saved N]` figure on the indicator line works.
 
 ---
 
@@ -182,7 +182,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
-| `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
+| `oo init` | Set up hooks for agent frameworks (`--format claude` or `--format generic`; or `--agent pi` or `--agent claude-code`, with optional `--global`) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
@@ -302,7 +302,7 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
 is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
-Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label [saved N KiB]` line (the savings suffix is appended when the saving exceeds 4 KiB) and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
+Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for

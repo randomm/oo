@@ -2,9 +2,14 @@
 //!
 //! Single source of the canonical pattern precedence order: project-local,
 //! then user config, then builtins (first-match-wins). Imports `pattern`
-//! (loading and builtins), `learn::patterns_dir` (user config directory) and
-//! `init::find_root` (git root for project-local patterns). Used by the
-//! dispatch layer (`commands`) and `rewrite`, so both share one pattern set.
+//! (loading and builtins), `learn` (user config directory via
+//! `learn::patterns_dir`) and `init::find_root` (git root for project-local
+//! patterns). Used by the dispatch layer (`commands`) and `rewrite`, so both
+//! share one pattern set.
+//!
+//! Exception: the foreground classification in `commands::cmd_learn` (issue
+//! #151) deliberately uses `pattern::builtins()` only, not this set, so the
+//! `oo learn` display does not consult project or user patterns.
 
 use std::sync::LazyLock;
 
