@@ -60,7 +60,7 @@ fn validate_and_compile_regex(pattern: &str) -> Result<Regex, Error> {
 /// TOML representation of a pattern file.
 ///
 /// This struct deserializes from user-defined TOML pattern files
-/// loaded from `~/.config/oo/patterns/`. Each file defines a single pattern
+/// loaded from the user patterns directory (see `oo patterns` for the path). Each file defines a single pattern
 /// with optional success and failure configurations.
 #[derive(Deserialize)]
 pub struct PatternFile {

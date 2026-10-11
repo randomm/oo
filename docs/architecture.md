@@ -76,7 +76,7 @@ Patterns define how to compress command output using regex.
 **Components**:
 - `mod.rs` — Pattern struct, matching logic
 - `builtins.rs` — built-in patterns for common tools (list with `oo patterns`)
-- `toml.rs` — Load user-defined patterns from `~/.config/oo/patterns/`
+- `toml.rs` — Load user-defined patterns from the user patterns directory (`dirs::config_dir()/oo/patterns/`)
 
 **Pattern structure**:
 ```rust
@@ -87,7 +87,7 @@ Pattern {
 }
 ```
 
-**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`~/.config/oo/patterns/`) → built-in patterns → category defaults
+**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`dirs::config_dir()/oo/patterns/`) → built-in patterns → category defaults
 
 ### 4. Category Detection
 
@@ -106,7 +106,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 Large outputs that don't match patterns are stored for full-text retrieval.
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS, `%LOCALAPPDATA%\.oo\` on Windows; override with `OO_DATA_DIR`)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS, `%LOCALAPPDATA%\.oo\` on Windows; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:
@@ -129,7 +129,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 3. Spawn background process
 4. Send to Anthropic API (requires `ANTHROPIC_API_KEY`)
 5. Parse response as TOML pattern
-6. Write to `~/.config/oo/patterns/<label>.toml`
+6. Write to the user patterns directory as `<label>.toml`
 
 **Status tracking**: Background learn results are written to a status file and displayed on the next `oo` invocation.
 
@@ -165,7 +165,7 @@ Small outputs (≤4 KiB) pass through unchanged for every category. Large Conten
 
 ### 2. Patterns are opt-in overrides
 
-User patterns in `~/.config/oo/patterns/` always take priority over built-ins. This lets users customize behavior without modifying oo itself.
+User patterns in the user patterns directory always take priority over built-ins. This lets users customize behavior without modifying oo itself.
 
 ### 3. Category-based fallbacks
 

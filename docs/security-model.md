@@ -44,7 +44,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `~/.local/share/.oo/oo.db` on Linux (`$XDG_DATA_HOME/.oo/oo.db` when `XDG_DATA_HOME` is set; `~/Library/Application Support/.oo/oo.db` on macOS; `OO_DATA_DIR` overrides the directory)
+- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added)
 - Permissions: the file is created with the default mode from the process umask (`0644` under the common umask `022`); oo does not set a restrictive mode. For sensitive environments, run `chmod 600` on the file or use a restrictive umask (e.g. `umask 077`) before running oo
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
 - Other local users can read it if the file and its parent directory permit it
@@ -77,7 +77,7 @@ You must trust:
 **When it runs**:
 - Only when you explicitly run `oo learn <command>`
 - In the background after the command completes
-- Results are written locally to `~/.config/oo/patterns/`
+- Results are written locally to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS)
 
 **Anthropic's data policy**: See [Anthropic's data usage policy](https://www.anthropic.com/legal/privacy). Anthropic may store API inputs for service improvement.
 
@@ -116,7 +116,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-User patterns in `~/.config/oo/patterns/` are trusted by design:
+User patterns in the user patterns directory (see Read Access) are trusted by design:
 
 - Patterns are loaded from a user-owned directory
 - No privilege escalation
@@ -131,18 +131,18 @@ User patterns in `~/.config/oo/patterns/` are trusted by design:
 oo reads from:
 - Standard input (commands)
 - Environment variables (runtime only)
-- Configuration directory (`~/.config/oo/`)
-- Pattern directory (`~/.config/oo/patterns/`)
-- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS)
+- Configuration directory (`~/.config/oo/` on Linux, `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides)
+- Pattern directory (`patterns/` inside the configuration directory)
+- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides)
 
 All are within your user home directory.
 
 ### Write Access
 
 oo writes to:
-- Storage directory (`~/.local/share/.oo/`): Indexed outputs
-- Pattern directory (`~/.config/oo/patterns/`): Learned patterns (via `oo learn`)
-- Status file (`~/.config/oo/learn-status.log`): Background learn results
+- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS): Indexed outputs
+- Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
+- Status file (`learn-status.log` inside the configuration directory): Background learn results
 
 No writes outside your user home directory.
 
@@ -224,7 +224,7 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 
 ### For Users
 
-1. **Review your patterns**: Check `~/.config/oo/patterns/` for unknown or suspicious files
+1. **Review your patterns**: Check the user patterns directory (`oo patterns` prints its path) for unknown or suspicious files
 2. **Use `oo forget`**: Clear indexed output for a project when done
 3. **Protect API keys**: Use environment variables, not config files
 4. **Audit your PATH**: Ensure commands in PATH are from trusted sources
@@ -257,8 +257,8 @@ This section is for compliance assessments.
 
 ### Data Location
 
-- **Command output**: Local-only, stored in `~/.local/share/.oo/`
-- **Patterns**: Local-only, stored in `~/.config/oo/patterns/`
+- **Command output**: Local-only, stored in the storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS)
+- **Patterns**: Local-only, stored in the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS)
 - **LLM data**: Sent to Anthropic (US-based), subject to Anthropic's privacy policy
 
 ### Data Access
@@ -275,7 +275,7 @@ This section is for compliance assessments.
 
 ### Right to Delete
 
-- **Local data**: Delete `~/.local/share/.oo/` and `~/.config/oo/patterns/`
+- **Local data**: Delete the storage directory and the user patterns directory (paths above)
 - **LLM data**: No mechanism; contact Anthropic directly if needed
 
 ## Further Reading

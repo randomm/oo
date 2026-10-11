@@ -15,7 +15,7 @@
 //! - **Patterns**: Regular expressions define how to extract summaries from command output.
 //!   Built-in patterns exist for common tools (pytest, cargo test, npm test, etc.).
 //!   Custom patterns can be loaded from project-local `<git-root>/.oo/patterns/` or
-//!   user-global `~/.config/oo/patterns/` TOML files (project patterns take precedence).
+//!   user-global TOML files in the user patterns directory (project patterns take precedence).
 //! - **Storage**: Large unpatterned outputs are stored in a searchable database (SQLite by
 //!   default, with optional Vipune semantic search). Stored outputs can be recalled with
 //!   full-text search.

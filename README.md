@@ -292,7 +292,7 @@ oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO
 | `bun build` | quiet | head 20 lines |
 
 Add your own patterns with `oo learn <cmd>` (generates a TOML pattern file via
-LLM) or write one manually in `~/.config/oo/patterns/`.
+LLM) or write one manually in the user patterns directory (`oo patterns` prints the path).
 
 ---
 
@@ -325,7 +325,7 @@ Ensure `~/.cargo/bin` is in your PATH, or use the full path to the binary.
 
 **Pattern not matching my command**
 Run `oo patterns` to see all loaded patterns and their command regexes.
-Custom patterns in `~/.config/oo/patterns/` override built-ins.
+Custom patterns in the user patterns directory override built-ins.
 
 **`oo learn` fails or produces bad patterns**
 Ensure `ANTHROPIC_API_KEY` is set. Run the command normally first so oo has

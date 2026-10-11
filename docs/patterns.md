@@ -4,7 +4,7 @@ Patterns are `.toml` files — one per command. They are loaded from two locatio
 in order, with the first regex match winning:
 
 1. **Project:** `<git-root>/.oo/patterns/` — repo-specific, checked in with the project
-2. **User:** `~/.config/oo/patterns/` — personal patterns across all projects
+2. **User:** the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS) — personal patterns across all projects
 
 Both layers are checked before built-in patterns, so custom patterns always override.
 

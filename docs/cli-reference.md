@@ -221,7 +221,7 @@ oo learn --hint "compact test summary" pytest tests/
 
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
-3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml` (the config directory is platform-specific; see [configuration.md](configuration.md#directories))
+3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
 4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form, but only when the config directory already exists; see Exit codes
 
 `--hint <text>` (before the command) passes extra context to the pattern generator.
@@ -230,7 +230,7 @@ oo learn --hint "compact test summary" pytest tests/
 
 - `ANTHROPIC_API_KEY` environment variable must be set
 - Optional: `ANTHROPIC_API_URL` for custom endpoints
-- Configured in `~/.config/oo/config.toml` (optional, uses defaults if absent)
+- Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent)
 
 ### Pattern file naming
 
@@ -242,7 +242,7 @@ The filename is derived from the command:
 
 ### Overwrite behavior
 
-Running `oo learn` for the same command overwrites the existing pattern file without warning. To preserve a pattern, rename or move the TOML file in `~/.config/oo/patterns/` before re-running.
+Running `oo learn` for the same command overwrites the existing pattern file without warning. To preserve a pattern, rename or move the TOML file in the user patterns directory before re-running.
 
 ### Exit codes
 
@@ -415,7 +415,7 @@ Always returns 0.
 
 ## `oo patterns`
 
-List all loaded patterns: built-in patterns, project-local patterns, and user patterns from `~/.config/oo/patterns/`.
+List all loaded patterns: built-in patterns, project-local patterns, and user patterns from the user patterns directory (`oo patterns` prints its path).
 
 ### Usage
 

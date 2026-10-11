@@ -71,7 +71,7 @@ pub const HOOKS_JSON: &str = r#"{
 /// Resolve the project-local patterns directory: `<git-root>/.oo/patterns`.
 ///
 /// Used by the pattern loader to pick up repo-specific patterns before
-/// user-global ones (`~/.config/oo/patterns`).
+/// user-global ones (the user patterns directory; see `oo patterns`).
 pub fn project_patterns_dir(cwd: &Path) -> PathBuf {
     find_root(cwd).join(".oo").join("patterns")
 }

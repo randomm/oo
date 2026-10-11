@@ -9,11 +9,11 @@ oo learn cargo test --release
 
 The command executes normally. After it finishes, a background process sends
 the command, output, and exit code to the configured LLM and writes a TOML
-pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux; platform-specific, see [configuration.md](configuration.md#directories)).
+pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories)).
 
 ## Config
 
-`~/.config/oo/config.toml`:
+`config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS):
 
 ```toml
 [learn]
@@ -56,7 +56,7 @@ config directory already exists; otherwise the failure is silent (see
 
 ## Where patterns are saved
 
-`<user patterns dir>/<label>.toml` — `~/.config/oo/patterns/` on Linux (platform-specific, see [configuration.md](configuration.md#directories)); `<label>` is derived from the command name.
+`<user patterns dir>/<label>.toml` — `~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS (see [configuration.md](configuration.md#directories)); `<label>` is derived from the command name.
 
 Existing files are overwritten, so running `oo learn` again refines the pattern.
 See [Custom Patterns](patterns.md) for the TOML format the generated files use, and
@@ -76,7 +76,7 @@ is not a flag (e.g. `cargo-test.toml` for `cargo test --release`). This means re
 `oo learn cargo test` after updating oo or switching LLM providers will silently
 replace the previous pattern.
 
-To preserve a pattern, rename or move the TOML file in `~/.config/oo/patterns/`
+To preserve a pattern, rename or move the TOML file in the user patterns directory
 before re-running learn.
 
 ## Command Categories & Pattern Value

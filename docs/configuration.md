@@ -10,7 +10,7 @@ oo uses standard per-OS base directories (via the `dirs` crate): `dirs::config_d
 | Data (SQLite index) | `~/.local/share/.oo/oo.db` | `~/Library/Application Support/.oo/oo.db` | `%LOCALAPPDATA%\.oo\oo.db` (e.g. `C:\Users\<user>\AppData\Local\.oo\oo.db`) |
 | Patterns (user-defined) | `~/.config/oo/patterns/` | `~/Library/Application Support/oo/patterns/` | `%APPDATA%/oo/patterns/` |
 
-Override the config directory with the `OO_CONFIG_DIR` environment variable:
+Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it:
 
 ```bash
 export OO_CONFIG_DIR=/custom/path
@@ -22,11 +22,11 @@ Override the data directory with the `OO_DATA_DIR` environment variable (used pr
 export OO_DATA_DIR=/custom/data/path
 ```
 
-The SQLite database is always created at `<data dir>/oo.db`.
+The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`); otherwise it is the platform data directory plus `.oo/` (the Data row above, e.g. `~/.local/share/.oo/oo.db` on Linux, `~/Library/Application Support/.oo/oo.db` on macOS).
 
 ## Config File
 
-Location: `~/.config/oo/config.toml`
+Location: `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; see [Directories](#directories)).
 
 The config file is optional. If it doesn't exist, oo uses defaults.
 
@@ -50,7 +50,7 @@ If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults t
 
 Overrides the configuration directory.
 
-- **Default**: `~/.config/oo/`
+- **Default**: the platform configuration directory plus `oo/` (see the [Directories](#directories) table)
 - **Purpose**: Specify a custom location for `config.toml` and `patterns/`
 
 ```bash
