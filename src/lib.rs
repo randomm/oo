@@ -62,6 +62,8 @@ pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod commands;
+/// Config directory resolution (`OO_CONFIG_DIR` or the platform config dir).
+mod config;
 /// Error types for oo operations.
 pub mod error;
 /// Command execution and output capture.

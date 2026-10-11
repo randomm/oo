@@ -47,11 +47,6 @@ fn parse_missing_store_section_uses_default() {
 }
 
 #[test]
-fn parse_default_is_seven_days() {
-    assert_eq!(DEFAULT_RETENTION_SECS, 7 * 24 * 60 * 60);
-}
-
-#[test]
 fn parse_custom_value() {
     assert_eq!(
         parse_retention("[store]\nretention = 3600\n").unwrap(),
@@ -67,6 +62,33 @@ fn parse_zero_disables_purge() {
 #[test]
 fn parse_negative_is_rejected() {
     assert!(parse_retention("[store]\nretention = -1\n").is_err());
+}
+
+#[test]
+fn parse_value_beyond_i64_is_rejected() {
+    assert!(parse_retention("[store]\nretention = 18446744073709551615\n").is_err());
+}
+
+#[test]
+fn parse_unknown_key_in_store_is_rejected() {
+    assert!(parse_retention("[store]\nretension = 0\n").is_err());
+}
+
+#[test]
+fn unknown_key_in_store_warns_and_falls_back_to_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[store]\nretension = 0\n").unwrap();
+    assert!(read_retention(&path).is_err());
+    assert_eq!(load_retention_from(&path), DEFAULT_RETENTION_SECS);
+}
+
+#[test]
+fn unknown_top_level_section_is_still_ignored() {
+    assert_eq!(
+        parse_retention("[other]\nretension = 0\n[store]\nretention = 60\n").unwrap(),
+        60
+    );
 }
 
 #[test]

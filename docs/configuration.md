@@ -54,9 +54,12 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged lazily, the next time oo indexes output in the same project. Other projects and idle projects keep their old entries until they index again. `0` disables purging. Must be `>= 0`. |
+| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged. `0` disables purging. Must be `>= 0`. |
 
-An absent `[store]` section or `retention` key uses the default. An invalid value (negative, non-integer, or malformed `config.toml`) prints a warning on stderr and uses the default; indexing is never blocked by config. `oo forget` still clears a project's entries at any time.
+- **When purging happens:** lazily and per project. A purge runs when a project next indexes output, and removes only that project's entries older than `retention`. Other projects, and a project that never indexes again, keep their entries until then.
+- **Vipune store backend:** with `--features vipune-store`, the purge is bounded for projects over 10,000 entries and may leave some behind (#182).
+- **Invalid config:** an absent `[store]` section or `retention` key uses the default. A negative or non-integer value, an unknown key in `[store]` (for example a typo such as `retension`), or a `config.toml` that fails TOML parsing prints a warning on stderr and uses the default. Indexing is never blocked by config. Unknown top-level sections such as `[learn]` do not affect retention.
+- `oo forget` clears a project's indexed entries immediately, regardless of retention.
 
 ## Environment Variables
 

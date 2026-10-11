@@ -288,8 +288,9 @@ pub fn render_classification(classification: &Classification, command: &str, ori
 }
 
 pub fn try_index(command: &str, content: &str) -> bool {
-    let Ok(mut store) = store::open() else {
-        return false;
+    let mut store = match store::open() {
+        Ok(s) => s,
+        Err(_) => return false,
     };
 
     let project_id = session::project_id();
