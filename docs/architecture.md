@@ -56,14 +56,14 @@ The classification engine decides how to present output to the agent:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
 - **Passthrough** (success, ≤4 KiB): Verbatim output
 - **Success** (success, >4 KiB, pattern summary): Compressed summary
-- **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N KiB]` line (no parentheses), not indexed
+- **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N KiB|MiB]` line (no parentheses), not indexed
 - **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
 - **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
 2. Output ≤ 4 KiB? Yes → Passthrough
-3. Pattern matches and its success strategy yields a summary? Yes → Success. If the matching pattern's success strategy extracts nothing (for example a regex that does not match, or a grep with no matching line), step 4 runs as if no pattern matched. A success template that is the empty string yields a Success with an empty summary: the indicator is `✓ label [saved N KiB]` with no parentheses, the same line shape as Status.
+3. Pattern matches and its success strategy yields a summary? Yes → Success. If the matching pattern's success strategy extracts nothing (for example a regex that does not match, or a grep with no matching line), step 4 runs as if no pattern matched. A success template that is the empty string yields a Success with an empty summary: the indicator is `✓ label [saved N KiB|MiB]` with no parentheses, the same line shape as Status.
 4. Detect category → apply category defaults
 
 The **savings indicator** (the `[saved N]` suffix on compressed output) is specified in [docs/cli-reference.md](cli-reference.md#savings-indicator) (canonical).

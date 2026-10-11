@@ -36,13 +36,13 @@ oo classifies command output into five tiers:
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
-| **Success** | `✓ label (summary) [saved N KiB]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
-| **Status** | `✓ label [saved N KiB]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
-| **Failure** | `✗ label [saved N KiB]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
+| **Success** | `✓ label (summary) [saved N KiB|MiB]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
+| **Status** | `✓ label [saved N KiB|MiB]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
+| **Failure** | `✗ label [saved N KiB|MiB]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
 | **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
 | **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
-Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
+The `saved` figure uses binary units: `KiB` below 1 MiB (1,048,576 bytes), `MiB` from 1 MiB upward, with two decimal places. Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
 display is only the indicator line. If indexing fails, the display falls back to
 `smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
 Output of 81 to 120 lines has all of its lines present and no truncation marker, except that
