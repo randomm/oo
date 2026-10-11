@@ -70,7 +70,7 @@ indicator line itself:
 The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
 the existing line content, using `humansize::format_size(saved, BINARY)` (the same
 binary-unit idiom the Large tier's `indexed N` figure uses; no new formatter, no new
-dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the indicator line EXCLUDING the savings suffix — call sites measure the line before the suffix is appended, so the figure overstates displayed bytes by the suffix's own length (~15 B, immaterial at the sizes where a suffix can appear). The subtracted amount, per arm, is the indicator line only; printed text beyond it is never subtracted:
+dependency). The metric is `saved = merged_lossy().len() - rendered_indicator_line_bytes`, where the rendered line is the indicator line EXCLUDING the savings suffix — call sites measure the line before the suffix is appended, so the figure overstates displayed bytes by the suffix's own length (about 14 to 20 bytes, immaterial at the sizes where a suffix can appear). The subtracted amount, per arm, is the indicator line only; printed text beyond it is never subtracted:
 
 - **Success** and **Status** (`✓` line): the indicator line is the whole displayed output, so `saved` is the merged output size minus the displayed text.
 - **Failure** (`✗` line): `render_classification` passes the full merged output size (`original_size`) and subtracts only the `✗ label` line. The filtered error output printed after it is not subtracted, so the figure overstates the saving: a failure with 8,893 bytes of output shows `[saved 8.68 KiB]` while its filtered error body is still printed.
