@@ -96,7 +96,7 @@ Optional custom endpoint for Anthropic API.
 export ANTHROPIC_API_URL="https://your-proxy.example.com/v1/messages"
 ```
 
-> **Security warning:** HTTP URLs only allowed for `localhost` or `127.0.0.1`. All other hosts must use HTTPS.
+> **Security warning:** `https://` URLs are accepted for any host. `http://` URLs are accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is currently bypassable with URL userinfo such as `http://localhost:@host/`, which sends requests to `host` in plaintext (known defect, #190).
 
 ## Runtime Thresholds
 

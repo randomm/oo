@@ -30,8 +30,10 @@ pub static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
 
 /// Load all patterns in the canonical precedence order — project-local, then
 /// user config, then builtins — so first-match-wins gives project patterns
-/// priority over user patterns over builtins. Reads from disk on every call
-/// (no caching); called by `oo <cmd>` and by the [`PATTERNS`] initializer.
+/// priority over user patterns over builtins. Reads the project and user pattern
+/// directories from disk on every call (no caching); built-in patterns are a
+/// `&'static` slice and are not re-read. Called by `oo <cmd>` and by the
+/// [`PATTERNS`] initializer.
 pub fn all_patterns() -> Vec<Pattern> {
     let mut all_patterns = load_project_patterns();
     all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));

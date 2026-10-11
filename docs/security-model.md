@@ -72,7 +72,7 @@ You must trust:
 - **Required**: `ANTHROPIC_API_KEY` environment variable
 - **Model**: `claude-haiku-4-5` (default, configurable)
 - **Endpoint**: `https://api.anthropic.com`
-- **URL validation**: oo validates that the API URL uses HTTPS; plain HTTP is accepted only for `localhost` and `127.0.0.1`, other non-HTTPS URLs are rejected with an error
+- **URL validation**: oo accepts the API URL only if it starts with `https://`, or with `http://` followed by a host (the text before the first `:` or `/`) that is exactly `localhost` or `127.0.0.1`; other URLs are rejected with an error. This check is bypassable with URL userinfo such as `http://localhost:@host/` (known defect, #190; see Pattern Files)
 
 **When it runs**:
 - Only when you explicitly run `oo learn <command>`
@@ -90,7 +90,7 @@ You must trust:
 
 **Transmission**:
 - Keys are sent only to the configured API endpoint (Anthropic)
-- HTTPS is enforced; plain HTTP is accepted only for `localhost` and `127.0.0.1`
+- HTTPS is required for every host; plain `http://` is accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is bypassable with URL userinfo such as `http://localhost:@host/` (known defect, #190)
 - Keys are never logged or printed in output
 
 **Best practice**: Use shell environment or a secret manager:
@@ -116,7 +116,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` also writes its LLM-generated patterns into that same directory. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and, when it can be read, deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V` and the internal background-learn entry point) and `config.toml`. A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`: a repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`), and `oo learn` accepts a URL only if it starts with `https://`, or with `http://` followed by a host that is exactly `localhost` or `127.0.0.1` (the host is the text before the first `:` or `/`). This check is a known defect (no tracking issue yet): it is bypassable, because `http://localhost:@host.example/` passes the check while the HTTP client sends the request to `host.example` in plaintext, with the API key. Only the environment variable controls the URL, so a repository cannot set it, but a user who sets `ANTHROPIC_API_URL` to such a value sends the key to that host. Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` also writes its LLM-generated patterns into that same directory. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and, when it can be read, deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V` and the internal background-learn entry point) and `config.toml`. A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`: a repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`), and `oo learn` accepts a URL only if it starts with `https://`, or with `http://` followed by a host that is exactly `localhost` or `127.0.0.1` (the host is the text before the first `:` or `/`). This check is a known defect (tracked in #190): it is bypassable, because `http://localhost:@host.example/` passes the check while the HTTP client sends the request to `host.example` in plaintext, with the API key. Only the environment variable controls the URL, so a repository cannot set it, but a user who sets `ANTHROPIC_API_URL` to such a value sends the key to that host. Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -182,7 +182,7 @@ oo executes commands using your shell environment:
 ### When oo makes network calls
 
 **Only via `oo learn`**:
-- To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1)
+- To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1; the check is bypassable with userinfo such as `http://localhost:@host/`, see #190)
 - With your command output and API key
 - In the background, after command completes
 
@@ -255,7 +255,7 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 ### For Contributors
 
 1. **No secret storage**: Never implement API key caching or persistence
-2. **Validate URLs**: Enforce HTTPS for all network connections
+2. **Validate URLs**: Enforce HTTPS for all network connections (plain HTTP only to `localhost`/`127.0.0.1`; the `ANTHROPIC_API_URL` check is currently bypassable, #190)
 3. **Sanitize inputs**: Use `clap` for argument parsing
 4. **Test for injection**: Ensure malformed input doesn't cause crashes or security issues
 5. **Document assumptions**: Be clear about what is trusted and what is not
