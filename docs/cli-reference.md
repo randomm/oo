@@ -96,7 +96,7 @@ When no pattern matches, oo uses command category to determine behavior:
 | **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KB |
 | **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 
-Patterns always take priority over category defaults.
+Patterns take priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins.
 
 ### Exit codes
 

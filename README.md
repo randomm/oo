@@ -325,7 +325,7 @@ Ensure `~/.cargo/bin` is in your PATH, or use the full path to the binary.
 
 **Pattern not matching my command**
 Run `oo patterns` to see all loaded patterns and their command regexes.
-Project patterns (`.oo/patterns/` in the git root) and user patterns override built-ins; project patterns are checked first.
+Project patterns (`.oo/patterns/` in the git root, or the current directory when there is no git root) and user patterns are checked before built-ins: project first, then user, then built-in; the first match wins. The foreground display in `oo learn` uses built-ins only (#151).
 
 **`oo learn` fails or produces bad patterns**
 Ensure `ANTHROPIC_API_KEY` is set. Run the command normally first so oo has

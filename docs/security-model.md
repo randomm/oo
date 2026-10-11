@@ -131,12 +131,12 @@ User patterns in the user patterns directory (see Read Access) are trusted by de
 oo reads from:
 - Standard input (commands)
 - Environment variables (runtime only)
-- Configuration directory (`~/.config/oo/` on Linux, `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
-- Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), read once per process
+- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), loaded each time oo classifies a command
 
-By default the configuration and storage directories are under your user home directory (on Linux, the storage directory moves to `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path). The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
+By default the configuration and storage directories are under your user home directory (on Linux, they move under `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` when those are absolute paths). The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
 
 ### Write Access
 
@@ -152,9 +152,13 @@ Writes made by `oo init` (only when you run it):
 - `oo init --agent pi`: `.pi/extensions/oo.ts` in the git root (same fallback)
 - `oo init --agent pi --global`: `$OO_PI_EXTENSIONS_DIR/oo.ts`, or `~/.pi/agent/extensions/oo.ts` when `OO_PI_EXTENSIONS_DIR` is unset
 
-By default these writes stay under your user home directory (global installs) or the repository root (project installs). The `OO_CONFIG_DIR`, `OO_DATA_DIR`, `OO_CLAUDE_DIR`, and `OO_PI_EXTENSIONS_DIR` overrides can point anywhere.
+By default these writes stay under your user home directory (global installs) or the repository root, falling back to the current directory when there is no git root (project installs). The `OO_CONFIG_DIR`, `OO_DATA_DIR`, `OO_CLAUDE_DIR`, and `OO_PI_EXTENSIONS_DIR` overrides can point anywhere.
 
-User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. oo itself only writes the paths listed above.
+Temporary files (not listed above):
+- `oo init --agent claude-code` writes `<settings.json>.tmp` next to the target settings file and renames it over the target, for both the project and `--global` paths.
+- `oo learn` writes the command, its output, exit code, and any hint as JSON to a named temporary file in the system temp directory (`$TMPDIR`), which the background process reads.
+
+User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. Apart from the paths and temporary files listed here, oo does not write files.
 
 ### Execution Access
 
@@ -170,7 +174,7 @@ oo executes commands using your shell environment:
 ### When oo makes network calls
 
 **Only via `oo learn`**:
-- To Anthropic API (HTTPS enforced)
+- To the Anthropic API (`https://api.anthropic.com/v1/messages` by default; `ANTHROPIC_API_URL` may override it and must use HTTPS, except `http://` to localhost/127.0.0.1)
 - With your command output and API key
 - In the background, after command completes
 
@@ -222,7 +226,7 @@ oo does not check if a command is safe. `rm -rf /` is executed without warning.
 
 When running `oo learn`, the API key is in the environment and may be visible in your process list (`ps`, `top`). This is a known limitation of environment variables.
 
-**Mitigation**: Use `ANTHROPIC_API_URL` instead (if supported by the provider) or ensure your environment is not exposed.
+**Mitigation**: Ensure your environment is not exposed to other users or processes.
 
 ### No encryption at rest
 

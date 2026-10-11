@@ -87,7 +87,7 @@ Pattern {
 }
 ```
 
-**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`dirs::config_dir()/oo/patterns/`) → built-in patterns → category defaults
+**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`patterns/` in the config directory) → built-in patterns → category defaults
 
 ### 4. Category Detection
 
@@ -165,7 +165,7 @@ Small outputs (≤4 KiB) pass through unchanged for every category. Large Conten
 
 ### 2. Patterns are opt-in overrides
 
-Project and user patterns always take priority over built-ins (project patterns are checked before user patterns). This lets users customize behavior without modifying oo itself.
+For normal command classification, project and user patterns take priority over built-ins: project first, then user, then built-in, with the first matching pattern winning. The foreground display in `oo learn` classifies with built-in patterns only (#151). This lets users customize behavior without modifying oo itself.
 
 ### 3. Category-based fallbacks
 

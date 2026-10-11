@@ -6,7 +6,7 @@ in order, with the first regex match winning:
 1. **Project:** `<git-root>/.oo/patterns/` — repo-specific, checked in with the project
 2. **User:** the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS) — personal patterns across all projects
 
-Both layers are checked before built-in patterns, so custom patterns always override.
+Both layers are checked before built-in patterns, so custom patterns override built-ins for normal command classification. The order is project, then user, then built-in, and the first matching pattern wins. (The foreground display in `oo learn` uses built-in patterns only; see #151.)
 
 ## TOML format
 
