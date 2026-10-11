@@ -76,10 +76,10 @@ export OO_DATA_DIR="/some/custom/data/dir"
 
 ### `ANTHROPIC_API_KEY`
 
-Required for `oo learn`.
+The environment variable named by `api_key_env` in `[learn]` must be set for `oo learn`.
 
 - **Required**: Only when using `oo learn`
-- **Default**: None
+- **Default**: no value is set; the variable name defaults to `ANTHROPIC_API_KEY`
 
 Set this to enable LLM-assisted pattern learning:
 
@@ -109,7 +109,7 @@ These constants are built into the binary and cannot be configured.
 | `SMALL_THRESHOLD` | 4096 bytes | Output below this size passes through unchanged |
 | `TRUNCATION_THRESHOLD` | 80 lines | Failure output truncation starts after this many lines |
 | `MAX_LINES` | 120 lines | Hard cap on lines shown after smart truncation |
-| Entry TTL | 86400 seconds (24 hours) | Stale indexed entries are auto-cleaned |
+| Entry TTL | 86400 seconds (24 hours) | Indexed entries older than this are deleted by the cleanup at the next indexing run of their project |
 
 ## Feature Flags
 

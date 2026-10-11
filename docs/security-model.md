@@ -37,9 +37,9 @@ You must trust:
 - **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally for recall, in the SQLite index by default or in Vipune's database with `vipune-store` (see Storage Backends)
 
 **Data retention**:
-- Indexed outputs persist until you run `oo forget` or delete them manually
+- Indexed outputs are removed by a cleanup that runs in the project's next indexing run (a command whose output is stored for recall) after they are more than 24 hours old, or earlier by `oo forget` or manual deletion. Age is the `timestamp` in the entry's metadata, set when the output was stored; `oo recall` does not change it. The cleanup deletes only the current project's entries whose metadata has `source` `oo`, and runs before the new output is stored. Entries with NULL or unparseable metadata are not removed by it. Nothing is removed between indexing runs, so an expired entry stays until then. The cleanup is best-effort: its errors are ignored and the new output is still stored
 - No automatic syncing to remote services
-- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#177)
+- Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store it deletes every entry with that project id. With `--features vipune-store` it pages through the project's entries, up to 10,000 per call, and lists again only after a full page in which at least one deletion succeeded. It stops after a short page, or after a full page with no successful deletion: it returns an error only if a deletion failed (reporting partial progress), and a full page with no successful and no failed deletion stops silently. So a project of 10,000 or more entries can keep entries after `oo forget` and still report success (#177). On the vipune store, the 24-hour cleanup looks only at the first page of up to 10,000 entries that Vipune lists for the project
 
 ### Storage Backends
 
@@ -70,7 +70,7 @@ You must trust:
 - Other projects' indexed output (storage is scoped per project)
 
 **Provider**: Anthropic only (currently supported)
-- **Required**: `ANTHROPIC_API_KEY` environment variable
+- **API key variable**: the environment variable named by `api_key_env` in the `[learn]` config (default `ANTHROPIC_API_KEY`); it must be set for `oo learn`
 - **Model**: `claude-haiku-4-5` (default, configurable)
 - **Endpoint**: `https://api.anthropic.com`
 - **URL validation**: oo accepts the API URL only if it starts with `https://`, or with `http://` followed by a host (the text before the first `:` or `/`) that is exactly `localhost` or `127.0.0.1`; other URLs are rejected with an error. This check is bypassable with URL userinfo such as `http://localhost:@host/` (known defect, #190; see Pattern Files)
@@ -215,7 +215,7 @@ Commands you run via `oo` may make network calls (e.g., `git fetch`, `curl`, `ca
 Indexed output is keyed by a project id. In the default build the id is the last path segment of the `origin` remote URL (`.git` stripped; an empty last segment, e.g. from a trailing `/`, falls through to the next step), falling back to the git root directory name, then the current directory name. With `--features vipune-store` the id comes from vipune's own project detection instead: `VIPUNE_PROJECT` is honoured first, then vipune uses the git remote in `owner/repo` form for common https/ssh URLs (vipune 0.1.2, the locked version).
 
 - `oo recall` searches indexed output whose project id matches the current project, regardless of which session stored it
-- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, projects over 10,000 entries may keep entries after `oo forget` (#177)
+- `oo forget` deletes every indexed entry with that project id on the default SQLite store. With `--features vipune-store`, it can report success while entries remain; see Data retention above (#177)
 - The project id is an organisational key, **not a security boundary**. Two repositories with the same remote name or directory name (for example two checkouts of `app`) share one partition: each can recall the other's indexed output, and `oo forget` in either one clears both (SQLite store).
 
 Use `oo forget` to clear a project's index when done.
@@ -306,7 +306,7 @@ This section is for compliance assessments.
 
 ### Data Retention
 
-- **Indexed outputs**: Until manually deleted or `oo forget` runs
+- **Indexed outputs**: Removed by the 24-hour cleanup at the project's first indexing run after they are more than 24 hours old, or earlier by `oo forget` or manual deletion (see Data retention above)
 - **Patterns**: Permanent (until manually deleted)
 - **LLM data**: Per Anthropic's retention policy (typically undefined, may be used for service improvement)
 

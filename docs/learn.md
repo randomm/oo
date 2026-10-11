@@ -33,7 +33,7 @@ model `claude-haiku-4-5`, and `api_key_env` `ANTHROPIC_API_KEY`.
 |----------|---------|---------------|
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 
-The `provider` value must be `anthropic`. Any other value fails with `unknown provider` when the `api_key_env` variable is set; if that variable is unset, oo first reports it as missing.
+The `provider` value must be `anthropic`. Any other value fails with `unknown provider`, but only after oo reads the `api_key_env` variable (an unset variable is reported as missing first) and `ANTHROPIC_API_URL` passes its URL check.
 
 > **Note:** `api_key_env` must name the environment variable that holds your provider's key. The
 > default model is `claude-haiku-4-5` (see [Configuration — `[learn]` section](configuration.md#learn-section)).
