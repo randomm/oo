@@ -36,18 +36,18 @@ oo classifies command output into five tiers:
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
-| **Success** | `✓ label (summary)` | Output > 4 KB with pattern summary |
-| **Status** | `✓ label` (no summary) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
-| **Failure** | `✗ label` followed by error output | Non-zero exit code |
+| **Success** | `✓ label (summary) [saved N KiB]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
+| **Status** | `✓ label [saved N KiB]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
+| **Failure** | `✗ label [saved N KiB]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
 | **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
 | **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
 Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
 display is only the indicator line. If indexing fails, the display falls back to
 `smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
-Output of 81 to 120 lines is printed with no marker, and its last head line and first tail
-line are joined without a newline (e.g. `seq 1 81` shows `4950` for lines 49 and 50); it is
-not printed in full. Longer output keeps its first 72 and last 48 lines around a
+Output of 81 to 120 lines has all of its lines present and no truncation marker, except that
+its last head line and first tail line are joined into one line with no newline between them
+(e.g. `seq 1 81` shows `4950` for lines 49 and 50). Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as

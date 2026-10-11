@@ -302,7 +302,7 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
 is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
-Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓` line and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
+Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label [saved N KiB]` line (the savings suffix is appended when the saving exceeds 4 KiB) and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for
