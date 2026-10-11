@@ -116,13 +116,20 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-User patterns in the user patterns directory (see Read Access) are trusted by design:
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them or placed them there yourself.
 
-- User patterns are loaded from the user patterns directory; project patterns are loaded from `<git-root>/.oo/patterns/` and can come from any repository you work in
-- No privilege escalation
-- Invalid patterns are silently discarded (not crashed)
+**Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` classifies a command.
 
-**Risk**: Malicious patterns could hide output. Trust pattern sources (don't download arbitrary TOML files into your patterns directory).
+What a pattern can do (from `src/pattern/mod.rs` and `src/classify.rs`):
+
+- **Failure (exit code ≠ 0)**: the failure strategy (`tail`, `head`, `grep`, or `between`) selects which lines of the output are printed. Any other lines are omitted from the display, at any output size.
+- **Success (exit code 0)**: only when the merged output is larger than 4 KB. The success strategy (`tail`, `head`, `grep`, or a regex with a summary template) replaces the displayed output with the extracted text, shown in parentheses on the `✓ label (...)` line. Template text is printed as written, so a pattern can display arbitrary text. If the strategy extracts nothing, the category default applies; categories are fixed in code and a pattern cannot set them.
+- **Command selection (`oo rewrite`, `oo hook claude`)**: a command is routed through `oo` when any loaded pattern's `command_match` matches it, so a project pattern can add commands to that set.
+- **Precedence**: project, then user, then built-in; first match wins. `command_match` is an unanchored regex on the full command, so a broad project pattern can shadow user and built-in patterns for the commands it matches.
+
+What a pattern cannot do: run commands or any other process, read or write files, change the exit code `oo` returns, or change the command that is executed. The `✓`/`✗` status comes from the real exit code. Invalid pattern files are silently skipped, not reported.
+
+**Consequence**: a project pattern can hide or replace the output you see, including failure lines, and the full output of a pattern-matched run is not stored for `oo recall`. For an untrusted repository, review `.oo/patterns/` (or run `oo patterns`, which lists project patterns under a `Project` header) before relying on `oo` output from it. Deleting the directory or the offending `.toml` file removes the effect. `oo <cmd>` still executes the command exactly as you gave it; patterns affect only what `oo` prints and which commands are routed through it.
 
 ## File System Access
 
@@ -156,7 +163,8 @@ By default these writes stay under your user home directory (global installs) or
 
 Temporary files (not listed above):
 - `oo init --agent claude-code` writes `<settings.json>.tmp` next to the target settings file and renames it over the target, for both the project and `--global` paths.
-- `oo learn` writes the command, its output, exit code, and any hint as JSON to a named temporary file in the system temp directory (`$TMPDIR`), which the background process reads and removes only after it has read, parsed, and range-checked the exit code. If the background process fails before that point (the JSON does not parse, or the exit code is out of range) or never starts, the file is left in the temp directory.
+- `oo learn` writes a JSON file to a named temporary file in the system temp directory (`std::env::temp_dir()`, which is `$TMPDIR` on macOS and Linux). The JSON holds the full command line, the complete captured command output (stdout and stderr merged, which may contain secrets or other sensitive data), the exit code, and the hint if one was given. The file is created by the `tempfile` crate with mode `0600` (owner read/write only, before the umask is applied), so other local users cannot read it. Its name is `.tmp` followed by random characters, for example `.tmpAbC123`. The background process deletes it after its learn attempt ends, whether that attempt succeeded or failed (including the Anthropic API calls, which can take up to 30 seconds each and are retried), so the output stays on disk for that whole period. If the background process fails before that point (the JSON does not parse, or the exit code is out of range), or never starts, the file is left behind. If spawning the process itself fails, the file is deleted immediately.
+- Manual cleanup of leftover files: list the `.tmp*` files in `$TMPDIR` that you own, check their contents, and delete them. The name is shared with other programs that use the `tempfile` crate, so do not delete files you have not checked.
 
 User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. Apart from the paths, temporary files, and directories it creates (`create_dir_all` for the configuration, storage, pattern, `.claude/`, and `.pi/extensions/` directories) listed here, oo does not write files.
 
@@ -238,7 +246,7 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 
 ### For Users
 
-1. **Review your patterns**: Check the user patterns directory (`oo patterns` prints its path) for unknown or suspicious files
+1. **Review your patterns**: Check the user patterns directory (`oo patterns` prints its path) and, for any repository you did not write, its `.oo/patterns/` directory (`oo patterns` lists project patterns) for unknown or suspicious files
 2. **Use `oo forget`**: Clear indexed output for a project when done
 3. **Protect API keys**: Use environment variables, not config files
 4. **Audit your PATH**: Ensure commands in PATH are from trusted sources
