@@ -11,7 +11,7 @@ const USAGE: &[(&str, &str)] = &[
          \n\
          Search output indexed by earlier oo runs in this project.\n\
          \n\
-         Options:\n  --full    Print full matching entries instead of summaries\n\
+         Options:\n  --full    Print the full stored output instead of a bounded excerpt\n\
          \n\
          Note: --full is stripped from anywhere in the query, so it cannot be searched for literally.\n",
     ),

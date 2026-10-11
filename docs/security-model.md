@@ -45,9 +45,9 @@ You must trust:
 
 **SQLite (default)**:
 - Database file: `~/.local/share/.oo/oo.db` on Linux (`~/Library/Application Support/.oo/oo.db` on macOS; `OO_DATA_DIR` overrides the directory)
-- Permissions: User-only (rw-------)
+- Permissions: the file is created with the default mode from the process umask (`0644` under the common umask `022`); oo does not set a restrictive mode. For sensitive environments, run `chmod 600` on the file or use a restrictive umask (e.g. `umask 077`) before running oo
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
-- Accessible only by your user account
+- Other local users can read it if the file and its parent directory permit it
 
 **Vipune (optional, feature flag)**:
 - Stores outputs in Vipune's database
@@ -264,7 +264,7 @@ This section is for compliance assessments.
 ### Data Access
 
 - **Owner**: User account running oo
-- **Permissions**: User-only (rw-------) for storage files
+- **Permissions**: Storage files use the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments
 - **Sharing**: No data sharing or syncing capabilities
 
 ### Data Retention

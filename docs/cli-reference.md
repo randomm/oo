@@ -222,7 +222,7 @@ oo learn --hint "compact test summary" pytest tests/
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
 3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml` (the config directory is platform-specific; see [configuration.md](configuration.md#directories))
-4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`)
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported the same way, but only when the config directory already exists; see Exit codes
 
 `--hint <text>` (before the command) passes extra context to the pattern generator.
 
@@ -246,7 +246,7 @@ Running `oo learn` for the same command overwrites the existing pattern file wit
 
 ### Exit codes
 
-Returns the exit code of the wrapped command. Learning failures are reported in stderr on the next invocation.
+Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation, but only if that config directory already exists when the failure occurs (`oo learn` does not create it on failure). If it does not exist, the failure is silent.
 
 ---
 
@@ -436,13 +436,9 @@ User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 
-If the user directory doesn't exist or contains no valid TOML files:
+If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
 
-```
-no learned patterns yet
-```
-
-Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` headers are always printed.
+Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 
