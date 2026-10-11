@@ -64,6 +64,8 @@ pub mod classify;
 pub mod commands;
 /// Config directory resolution (`OO_CONFIG_DIR` or the platform config dir).
 mod config;
+/// Savings suffix for compressed indicator lines (shared by the render arms).
+mod display;
 /// Error types for oo operations.
 pub mod error;
 /// Command execution and output capture.
@@ -73,6 +75,8 @@ mod failure_display;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod help;
+/// Indexing of raw command output for `oo recall` (shared by the render arms).
+mod indexing;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod init;

@@ -4,7 +4,8 @@
 
 use humansize::{BINARY, format_size};
 
-use crate::commands::{savings_suffix, try_index};
+use crate::display::savings_suffix;
+use crate::indexing::index_or_warn;
 
 /// Print a Failure classification: the `✗` indicator (with optional savings
 /// suffix), a blank line, the displayed slice, and — only when the slice
@@ -24,7 +25,7 @@ pub fn render(label: &str, command: &str, original_size: usize, output: &str, fu
     // raw merged output so `oo recall` can reach what the display dropped.
     if !shows_all_lines(full_output, output) {
         let human_size = format_size(full_output.len(), BINARY);
-        if try_index(command, full_output) {
+        if index_or_warn(command, full_output) {
             // SECURITY (residual risk, same as the Bounded arm): this line is
             // host-authored but printed after attacker-controlled `output`,
             // which can embed a byte-identical copy of it. Its text alone
@@ -33,9 +34,6 @@ pub fn render(label: &str, command: &str, original_size: usize, output: &str, fu
                 "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
             );
         } else {
-            eprintln!(
-                "oo: warning: could not index output for recall — full output LOST (not recoverable); what follows is a truncated slice only"
-            );
             println!(
                 "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
             );
@@ -52,16 +50,30 @@ pub fn render(label: &str, command: &str, original_size: usize, output: &str, fu
 /// The 81–120-line `smart_truncate` join removes a line break, so it is
 /// correctly "not shown".
 fn shows_all_lines(full_output: &str, output: &str) -> bool {
-    trimmed_lines(full_output).eq(trimmed_lines(output))
+    trim_trailing_empty_lines(full_output)
+        .lines()
+        .eq(trim_trailing_empty_lines(output).lines())
 }
 
-fn trimmed_lines(text: &str) -> impl Iterator<Item = &str> {
-    let lines: Vec<&str> = text.lines().collect();
-    let end = lines
-        .iter()
-        .rposition(|l| !l.is_empty())
-        .map_or(0, |i| i + 1);
-    lines.into_iter().take(end)
+/// Drop the trailing run of empty lines without allocating.
+///
+/// Strips only whole line terminators (`\n` or `\r\n`), so a whitespace-only
+/// line stays put. Afterwards the text ends in a non-terminator character, so
+/// `lines()` yields no trailing empty line — the same result as collecting the
+/// lines and dropping empties from the end.
+fn trim_trailing_empty_lines(text: &str) -> &str {
+    let mut end = text.len();
+    loop {
+        let head = &text[..end];
+        if let Some(rest) = head
+            .strip_suffix("\r\n")
+            .or_else(|| head.strip_suffix('\n'))
+        {
+            end = rest.len();
+        } else {
+            return head;
+        }
+    }
 }
 
 #[cfg(test)]

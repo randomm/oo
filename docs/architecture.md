@@ -145,6 +145,8 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/exec.rs`](../src/exec.rs) | Shell command execution, output capture | `run()`, `CommandOutput` |
 | [`src/classify.rs`](../src/classify.rs) | Classification engine, category detection | `classify()`, `detect_category()` |
 | [`src/failure_display.rs`](../src/failure_display.rs) | Failure-tier display and the recall notice for failed commands | `render()` |
+| [`src/indexing.rs`](../src/indexing.rs) | Index raw output for `oo recall`; shared index-or-warn path | `try_index()`, `index_or_warn()` |
+| [`src/display.rs`](../src/display.rs) | Savings suffix for compressed indicator lines | `savings_suffix()` |
 | [`src/pattern/mod.rs`](../src/pattern/mod.rs) | Pattern matching, extraction logic | `find_matching()`, `extract_summary()` |
 | [`src/pattern/builtins.rs`](../src/pattern/builtins.rs) | Built-in patterns for common tools (list with `oo patterns`) | `BUILTINS`, `builtin_patterns()` |
 | [`src/pattern/toml.rs`](../src/pattern/toml.rs) | Load/parse user patterns from TOML | `load_user_patterns()`, `parse_pattern_str()` |
