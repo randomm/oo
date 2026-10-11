@@ -32,7 +32,7 @@ You must trust:
 
 **Where it goes**:
 
-- **Small outputs (<4 KiB)**: Displayed directly, never stored
+- **Small successful outputs (<4 KiB)**: Displayed directly, never stored (failed-command output is handled by the failure bullet below, at any size)
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
 - **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
 - **Failed-command outputs (exit code ≠ 0)**: when the displayed slice differs from the full merged output (byte comparison), the full merged output is stored in the same index for recall

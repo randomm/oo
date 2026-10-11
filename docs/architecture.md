@@ -104,7 +104,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 
 **Module**: [`src/store.rs`](../src/store.rs)
 
-Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval.
+Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval, as are the full merged outputs of failed commands whose displayed slice differs from them (see Failure above).
 
 **Storage backends**:
 - `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
@@ -226,7 +226,7 @@ Everything else is treated as a shell command to execute.
 
 ## Performance Considerations
 
-- **Output size**: Only outputs >4 KiB are considered for compression/indexing. Small outputs pass through immediately.
+- **Output size**: For successful commands, only outputs >4 KiB are considered for compression/indexing; small ones pass through immediately. Failed commands are classified at any size, and are indexed when their displayed slice differs from the full output.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
 - **Storage**: SQLite uses an FTS5 index over `content`; the `project` column is filtered with a plain predicate (no index on `project`).
 - **LLM learning**: Runs in background; doesn't block command execution.
