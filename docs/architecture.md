@@ -10,7 +10,7 @@ oo wraps shell commands, analyzes their output, and provides context-efficient r
 flowchart TD
     A[User runs: oo cargo test] --> B[Parse Action]
     B --> C{Is reserved subcommand?}
-    C -->|Yes| D[Execute subcommand<br/>recall/forget/learn/help/init/version]
+    C -->|Yes| D[Execute subcommand<br/>recall/forget/learn/help/init/patterns/rewrite/hook/version]
     C -->|No| E[Execute shell command]
     E --> F[Capture output<br/>stdout + stderr + exit code]
     F --> G[Classify output]
@@ -55,14 +55,15 @@ The classification engine decides how to present output to the agent:
 **Possible outcomes**:
 - **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
 - **Passthrough** (success, ≤4 KiB): Verbatim output
-- **Success** (success, >4 KiB, pattern match): Compressed summary
-- **Large** (success, >4 KiB, no pattern, Data category): Full output indexed, head+tail slice displayed
-- **Bounded** (success, >4 KiB, no pattern, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
+- **Success** (success, >4 KiB, pattern summary): Compressed summary
+- **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N KiB]` line (no parentheses), not indexed
+- **Large** (success, >4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
+- **Bounded** (success, >4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:
 1. Exit code zero? No → Failure
-2. Output < 4 KiB? Yes → Passthrough
-3. Pattern matches? Yes → Success (extract summary)
+2. Output ≤ 4 KiB? Yes → Passthrough
+3. Pattern matches and its success strategy yields a summary? Yes → Success. If the matching pattern's success strategy extracts nothing (for example a regex that does not match, or a grep with no matching line), step 4 runs as if no pattern matched. A success template that is the empty string yields a Success with an empty summary: the indicator is `✓ label [saved N KiB]` with no parentheses, the same line shape as Status.
 4. Detect category → apply category defaults
 
 The **savings indicator** (the `[saved N]` suffix on compressed output) is specified in [docs/cli-reference.md](cli-reference.md#savings-indicator) (canonical).
@@ -76,7 +77,7 @@ Patterns define how to compress command output using regex.
 **Components**:
 - `mod.rs` — Pattern struct, matching logic
 - `builtins.rs` — built-in patterns for common tools (list with `oo patterns`)
-- `toml.rs` — Load user-defined patterns from `~/.config/oo/patterns/`
+- `toml.rs` — Load user-defined patterns from the user patterns directory (see `oo patterns` for its path)
 
 **Pattern structure**:
 ```rust
@@ -87,7 +88,7 @@ Pattern {
 }
 ```
 
-**Matching priority**: User patterns → Built-in patterns → Category defaults
+**Matching priority**: Project patterns (`<git-root>/.oo/patterns/`) → user patterns (`patterns/` in the config directory) → built-in patterns → category defaults
 
 ### 4. Category Detection
 
@@ -103,10 +104,10 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 
 **Module**: [`src/store.rs`](../src/store.rs)
 
-Large outputs that don't match patterns are stored for full-text retrieval.
+Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval.
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS, `%LOCALAPPDATA%\.oo\` on Windows; override with `OO_DATA_DIR`)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:
@@ -115,7 +116,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 - `delete_project()` — Delete all indexed outputs for the current project
 
 **Project identification**:
-- [`src/session.rs`](../src/session.rs) — Project ID (git remote or directory name)
+- [`src/session.rs`](../src/session.rs) — Project ID (git remote last segment, git root directory name, or current directory name)
 
 ### 6. LLM Learning
 
@@ -129,7 +130,7 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 3. Spawn background process
 4. Send to Anthropic API (requires `ANTHROPIC_API_KEY`)
 5. Parse response as TOML pattern
-6. Write to `~/.config/oo/patterns/<label>.toml`
+6. Write to the user patterns directory as `<label>.toml`
 
 **Status tracking**: Background learn results are written to a status file and displayed on the next `oo` invocation.
 
@@ -147,27 +148,29 @@ Large outputs that don't match patterns are stored for full-text retrieval.
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
 | [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
-| [`src/commands.rs`](../src/commands.rs) | CLI command handlers (private) | `cmd_run()`, `cmd_recall()`, etc. |
+| [`src/commands.rs`](../src/commands.rs) | CLI command handlers | `cmd_run()`, `cmd_recall()`, etc. |
 | [`src/rewrite.rs`](../src/rewrite.rs) | Pure rewriter for `oo rewrite` (agent hooks): quote-aware segment splitting, pattern-based prefixing | `rewrite()` |
-| [`src/help.rs`](../src/help.rs) | Help text generation | Help templates |
+| [`src/help.rs`](../src/help.rs) | cheat.sh lookup for `oo help <cmd>` (URL encoding, HTML/error detection) | `lookup()`, `encode_cmd()` |
+| [`src/usage.rs`](../src/usage.rs) | Static usage text for reserved subcommands (`oo <sub> --help` and `oo help <sub>`) | `for_subcommand()` |
+| [`src/pattern_load.rs`](../src/pattern_load.rs) | Canonical pattern set: project, then user, then builtins | `all_patterns()`, `PATTERNS` |
 | [`src/init.rs`](../src/init.rs) | `oo init` hook generation (Claude / generic formats) | Hook file creation |
 | [`src/init_pi.rs`](../src/init_pi.rs) | `oo init --agent pi` — embedded pi extension (`OO_TS_EXTENSION`) + idempotent installer (project / global paths) | `run()` |
-| [`src/hook.rs`](src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
-| [`src/util.rs`](../src/util.rs) | Utilities (truncation, formatting) | `truncate_lines()`, human-readable sizes |
+| [`src/hook.rs`](../src/hook.rs) | `oo hook claude` stdin-JSON PreToolUse processor + `settings.json` merge installer for `oo init --agent claude-code` (tests in [`src/hook_tests.rs`](../src/hook_tests.rs)) | `cmd_hook_claude()`, `merge_oo_hook()` |
+| [`src/util.rs`](../src/util.rs) | Utilities (time helpers) | `now_epoch()`, `format_age()` |
 
 ## Key Design Decisions
 
 ### 1. Bounded passthrough by default
 
-Small outputs (≤4 KiB) pass through unchanged for every category. Large Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a machine-detectable truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
+Small outputs (≤4 KiB) pass through unchanged for every category. Bounded Content and Unknown outputs are never dumped verbatim: the full output is indexed for `oo recall` and only a byte-bounded head+tail slice (with a truncation marker) is displayed, so a large `cat`, `git diff`, `jq`, or `sh -c` can no longer blow an agent's context window.
 
 ### 2. Patterns are opt-in overrides
 
-User patterns in `~/.config/oo/patterns/` always take priority over built-ins. This lets users customize behavior without modifying oo itself.
+For normal command classification, project and user patterns take priority over built-ins: project first, then user, then built-in, with the first matching pattern winning. The foreground display in `oo learn` classifies with built-in patterns only (#151). This lets users customize behavior without modifying oo itself.
 
 ### 3. Category-based fallbacks
 
-When no pattern matches, category detection provides sensible defaults. Content commands (git show, diff, cat) and Unknown commands (curl, sh -c, custom scripts) all route large unpatterned output through the bounded Large tier — the agent keeps a bounded head+tail view of the actual output while the full content stays recoverable via `oo recall`.
+When no pattern matches, category detection provides sensible defaults. Content commands (git show, diff, cat) and Unknown commands (curl, sh -c, custom scripts) all route large unpatterned output through the Bounded tier — the agent keeps a bounded head+tail view of the actual output while the full content stays recoverable via `oo recall`.
 
 ### 4. SQLite by default
 
@@ -179,7 +182,7 @@ Pattern learning runs in the background after the command completes. This doesn'
 
 ### 6. Project-scoped storage
 
-Indexed outputs are scoped to the project (git remote or directory name). `oo recall` searches all output indexed for the current project, and `oo forget` clears all of it — output from other projects is never visible.
+Indexed outputs are keyed by a project id. In the default build it is derived from the git remote (last path segment; an empty one falls through), else the git root directory name, else the current directory name. In the `vipune-store` build it comes from vipune's own project detection (`VIPUNE_PROJECT` is honoured first). `oo recall` searches all output with the current project's id, and `oo forget` clears all of it. The id is not a security boundary: repositories that share an id share a partition (see [Security Model](security-model.md#project-scoped-storage)).
 
 ## Reserved Subcommands
 
@@ -188,11 +191,11 @@ These are built-in commands (not shell commands):
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `recall` | `cmd_recall()` | Search indexed outputs via full-text query |
-| `forget` | `cmd_forget()` | Clear all indexed outputs for the current project |
+| `forget` | `cmd_forget()` | Clear indexed outputs for the current project (complete for the SQLite store; bounded for `vipune-store` projects over 10,000 entries, #182) |
 | `learn` | `cmd_learn()` | Run command and generate pattern via LLM |
 | `help` | `cmd_help()` | Show help text or fetch cheat sheet |
 | `init` | `cmd_init()` | Set up agent-framework hooks: `.claude/hooks.json` (formats), the pi extension (`--agent pi`), or the Claude Code `settings.json` hook (`--agent claude-code`) |
-| `version` | Built-in to clap | Print version |
+| `version` | `parse_action()` → `Action::Version` (`oo --version` is handled by clap) | Print version |
 | `rewrite` | `cmd_rewrite()` | Print `oo`-prefixed form of a command for agent hooks (never executes) |
 | `hook` | `cmd_hook()` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `_learn_bg` | `run_background()` | Internal command for background learning |
@@ -223,7 +226,7 @@ Everything else is treated as a shell command to execute.
 
 - **Output size**: Only outputs >4 KiB are considered for compression/indexing. Small outputs pass through immediately.
 - **Pattern matching**: Compiled regexes are cached. Pattern matching is O(n) where n is the number of loaded patterns (built-ins listed by `oo patterns`, plus user patterns).
-- **Storage**: SQLite indexes on `project_id` for fast queries.
+- **Storage**: SQLite uses an FTS5 index over `content`; the `project` column is filtered with a plain predicate (no index on `project`).
 - **LLM learning**: Runs in background; doesn't block command execution.
 
 ## Security Considerations

@@ -96,9 +96,17 @@ pub trait Store {
 
     /// Delete all entries for a project.
     ///
-    /// Removes every entry stored for `project_id`, regardless of the session
-    /// that indexed it, and including entries with NULL or unparseable
-    /// metadata — exactly the set `search` can return.
+    /// Removes every entry the backend can enumerate under `project_id`,
+    /// regardless of the session that indexed it, including entries with NULL
+    /// or unparseable metadata. Completeness is backend-dependent:
+    ///
+    /// - `SqliteStore` deletes by the same `project` predicate that `search`
+    ///   uses, so `recall` finds nothing afterwards.
+    /// - `VipuneStore` enumerates the project with repeated `list` calls capped at
+    ///   10,000 entries, and its search is similarity-based. Completeness for very
+    ///   large projects is therefore backend-dependent and bounded by that
+    ///   stopping rule (see the `VipuneStore` impl docs in `store_vipune.rs`). A
+    ///   failed individual deletion is reported as an error.
     ///
     /// Returns the number of entries deleted.
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
@@ -151,7 +159,8 @@ fn map_err(e: rusqlite::Error) -> Error {
 }
 
 impl SqliteStore {
-    /// Open the default SQLite store at `~/.local/share/.oo/oo.db`.
+    /// Open the default SQLite store: `oo.db` in `OO_DATA_DIR` when set, otherwise
+    /// in `<platform data dir>/.oo/` (see docs/configuration.md#directories).
     ///
     /// Creates the database and tables if they don't exist.
     pub fn open() -> Result<Self, Error> {

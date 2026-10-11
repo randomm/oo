@@ -98,7 +98,9 @@ fn config_dir() -> PathBuf {
 
 /// Get the directory containing user-defined patterns.
 ///
-/// Returns `~/.config/oo/patterns` or the overridden `OO_CONFIG_DIR/patterns`.
+/// Returns `<config dir>/oo/patterns` (`~/.config/oo/patterns` on Linux,
+/// `~/Library/Application Support/oo/patterns` on macOS), or `OO_CONFIG_DIR/patterns`
+/// when `OO_CONFIG_DIR` is set.
 pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }
@@ -108,7 +110,8 @@ pub fn learn_status_path() -> PathBuf {
     config_dir().join("learn-status.log")
 }
 
-/// Load learn configuration from `~/.config/oo/config.toml`.
+/// Load learn configuration from `config.toml` in the config directory
+/// (see `patterns_dir` for the platform paths).
 ///
 /// Returns the default configuration if the file doesn't exist.
 pub fn load_learn_config() -> Result<LearnConfig, Error> {
@@ -294,7 +297,7 @@ pub fn spawn_background(
     // Prevent the parent from deleting the temp file on drop. On a loaded
     // system the child process may not have opened the file yet by the time
     // the parent exits this function. `keep()` makes the file persist on disk
-    // until the child cleans it up at run_background (line ~218 below).
+    // until the child cleans it up in `run_background` (below).
     tmp_path.keep().map_err(|e| Error::Learn(e.to_string()))?;
 
     Ok(())

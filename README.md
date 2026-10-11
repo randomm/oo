@@ -88,11 +88,11 @@ $ oo gh issue list
 ● gh (indexed 47.2 KiB → use `oo recall` to query)
 ```
 Query indexed output with `oo recall "<terms>"`. Small outputs (≤4 KB) pass through
-unchanged. Larger unpatterned output — whether from data commands like `git log` and
-`ls` or content commands like `git show` and `git diff` — is indexed in full, and only a
-byte-bounded head+tail slice is displayed with a truncation marker (`... [N bytes
-truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or `sh -c` output
-cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
+unchanged. Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
+`git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
+and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
+marker (`... [N bytes truncated → use `oo recall` to query] ...`), so large `cat`, `jq`, or
+`sh -c` output cannot blow an agent's context window. See the [patterns guide](docs/patterns.md#command-categories)
 for details.
 
 ---
@@ -178,11 +178,14 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall <query>` | Search indexed output for this project |
+| `oo recall [--full] <query>` | Search indexed output for this project |
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
+| `oo patterns` | List loaded output patterns (built-in, project and user) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
+| `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 
 > **Note:** Any reserved subcommand accepts `--help` / `-h` as its first argument to print its usage with no side effects (e.g. `oo init --help`).
@@ -227,8 +230,10 @@ oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_
 - Disable for a session: `OO_DISABLE=1`.
 - Uninstall: delete the installed `oo.ts` file.
 
-Claude Code is also supported via `oo init` (writes `.claude/hooks.json`); see
-the [CLI reference](docs/cli-reference.md#oo-init) for the full option matrix.
+Plain `oo init` (the `--format claude` default) only writes the legacy
+`.claude/hooks.json`; for the rewriting Claude Code hook use `--agent claude-code`
+(below). See
+the [CLI reference](docs/cli-reference.md#oo-init---format-format---agent-agent---global) for the full option matrix.
 
 ### Use with Claude Code
 
@@ -287,16 +292,17 @@ oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO
 | `bun build` | quiet | head 20 lines |
 
 Add your own patterns with `oo learn <cmd>` (generates a TOML pattern file via
-LLM) or write one manually in `~/.config/oo/patterns/`.
+LLM) or write one manually in the user patterns directory (`oo patterns` prints the path).
 
 ---
 
 ## FAQ
 
 **What if oo doesn't recognize my command?**
-Unknown commands pass through unchanged under 4 KB. Larger output is indexed in full for
-later retrieval via `oo recall`, with only a byte-bounded head+tail slice displayed (marked
-with a truncation line). Use `oo learn <command>` to teach oo a compression pattern.
+Unknown commands pass through unchanged under 4 KB. Larger Data, Content, and Unknown output
+is indexed in full for later retrieval via `oo recall`. Data commands show only an indicator
+line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
+Successful Status commands such as `make` with more than 4 KB of output and no pattern summary print only a `✓ label [saved N KiB]` line (the savings suffix is appended when the saving exceeds 4 KiB) and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Unknown commands already show a bounded head+tail slice with the full output stored for
@@ -320,7 +326,7 @@ Ensure `~/.cargo/bin` is in your PATH, or use the full path to the binary.
 
 **Pattern not matching my command**
 Run `oo patterns` to see all loaded patterns and their command regexes.
-Custom patterns in `~/.config/oo/patterns/` override built-ins.
+Project patterns (`.oo/patterns/` in the git root, or the current directory when there is no git root) and user patterns are checked before built-ins: project first, then user, then built-in; the first match wins. The foreground display in `oo learn` uses built-ins only (#151).
 
 **`oo learn` fails or produces bad patterns**
 Ensure `ANTHROPIC_API_KEY` is set. Run the command normally first so oo has

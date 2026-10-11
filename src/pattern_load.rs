@@ -1,10 +1,10 @@
 //! Pattern-set assembly for `oo <cmd>`, `oo rewrite`, and the hook processors.
 //!
 //! Single source of the canonical pattern precedence order: project-local,
-//! then user config, then builtins (first-match-wins). Leaf module — depends
-//! only on `pattern`, `learn`, and `init` — so both the dispatch layer
-//! (`commands`) and the feature modules (`rewrite`) depend on it without
-//! cycling.
+//! then user config, then builtins (first-match-wins). Imports `pattern`
+//! (loading and builtins), `learn::patterns_dir` (user config directory) and
+//! `init::find_root` (git root for project-local patterns). Used by the
+//! dispatch layer (`commands`) and `rewrite`, so both share one pattern set.
 
 use std::sync::LazyLock;
 

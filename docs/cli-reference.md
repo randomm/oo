@@ -12,7 +12,7 @@
 | `oo init` | Set up hooks for agent frameworks (`--format claude|generic`, or `--agent pi|claude-code [--global]`) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
-| `oo patterns` | List all loaded patterns (built-in + user) |
+| `oo patterns` | List all loaded patterns (built-in, project, and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
 
 ---
@@ -36,18 +36,25 @@ oo classifies command output into five tiers:
 | Tier | Indicator | Condition |
 |------|-----------|-----------|
 | **Passthrough** | None | Output ≤ 4 KB (unchanged) |
-| **Success** | `✓ label (summary)` | Output > 4 KB with pattern match |
-| **Failure** | `✗ label` followed by error output | Non-zero exit code |
-| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without pattern, Data category |
-| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without pattern, Content or Unknown category (full output indexed; display is bounded) |
+| **Success** | `✓ label (summary) [saved N KiB]` (suffix when the saving exceeds 4 KiB) | Output > 4 KB with pattern summary |
+| **Status** | `✓ label [saved N KiB]` (no parentheses; savings suffix as for Success) | Output > 4 KB, success, Status category (test runners, builds, linters), no pattern summary; not indexed |
+| **Failure** | `✗ label [saved N KiB]` (suffix when the saving exceeds 4 KiB), then a blank line and the filtered error output | Non-zero exit code |
+| **Large** | `● label (indexed N → use oo recall)` | Output > 4 KB without a pattern summary, Data category |
+| **Bounded** | `● label (output truncated: N total → use oo recall)` then a byte-bounded head+tail slice | Output > 4 KB without a pattern summary, Content or Unknown category (full output indexed; display is always the bounded slice) |
 
-Large unpatterned output (Data, Content, or Unknown category) is indexed in full and
-retrievable via `oo recall`. The display is a byte-bounded head+tail slice separated by a
-truncation marker of the form `... [N bytes truncated → use `oo recall` to query] ...` —
-the marker is a single machine-detectable line, present exactly once, so agents can tell
-with certainty when content was withheld. The head and tail shown are an exact prefix and
-suffix of the indexed content. If indexing fails, the same byte-bounded slice is displayed
-without a false indexing promise.
+Large unpatterned Data output is indexed in full and retrievable via `oo recall`; the
+display is only the indicator line. If indexing fails, the display falls back to
+`smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
+Output of 81 to 120 lines has all of its lines present and no truncation marker, except that
+its last head line and first tail line are joined into one line with no newline between them
+(e.g. `seq 1 81` shows `4950` for lines 49 and 50). Longer output keeps its first 72 and last 48 lines around a
+`... [N lines truncated] ...` marker.
+
+Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as
+a byte-bounded head+tail slice of at most 4 KB of output, separated by a truncation marker of
+the form `... [N bytes truncated → use `oo recall` to query] ...`. The truncation marker is inserted once, between the head and tail pieces (the output itself may contain identical text). It is not necessarily on a line of its own: the head is cut at a byte offset, so it can end partway through a line and the marker then follows that partial line. The tail can likewise start partway through a line. The head and tail shown are an exact prefix and suffix of the full
+output. If indexing fails, the indicator line says the output was NOT indexed, a warning is
+written to stderr, and the slice is still displayed.
 
 ### Savings indicator
 
@@ -96,7 +103,7 @@ When no pattern matches, oo uses command category to determine behavior:
 | **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KB |
 | **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KB |
 
-Patterns always take priority over category defaults.
+A pattern whose success strategy yields a summary takes priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins. Within one directory, pattern files are loaded in unsorted directory-listing order, so when two patterns in the same directory match a command, which one wins is not defined; keep their `command_match` values disjoint.
 
 ### Exit codes
 
@@ -214,36 +221,39 @@ Run a command and teach oo a new output pattern via LLM.
 oo learn terraform plan
 oo learn make -j4
 oo learn npm test -- --coverage
+oo learn --hint "compact test summary" pytest tests/
 ```
 
 ### Behavior
 
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
-3. Generates a TOML pattern file and saves it to `~/.config/oo/patterns/<label>.toml`
-4. On the next invocation, prints status: `oo: learned pattern for "<cmd>" -> <path>`
+3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form, but only when the config directory already exists; see Exit codes
+
+`--hint <text>` (before the command) passes extra context to the pattern generator.
 
 ### Requirements
 
 - `ANTHROPIC_API_KEY` environment variable must be set
 - Optional: `ANTHROPIC_API_URL` for custom endpoints
-- Configured in `~/.config/oo/config.toml` (optional, uses defaults if absent)
+- Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent)
 
 ### Pattern file naming
 
 The filename is derived from the command:
 
 - `cargo test` → `cargo-test.toml`
-- `gh issue list` → `gh-issue-list.toml`
+- `gh issue list` → `gh-issue.toml` (only the first two words are used)
 - `npm --version` → `npm.toml` (flags don't affect naming)
 
 ### Overwrite behavior
 
-Running `oo learn` for the same command overwrites the existing pattern file without warning. To preserve a pattern, rename or move the TOML file in `~/.config/oo/patterns/` before re-running.
+Running `oo learn` for the same command overwrites the existing pattern file without warning. To preserve a pattern, rename or move the TOML file in the user patterns directory before re-running.
 
 ### Exit codes
 
-Returns the exit code of the wrapped command. Learning failures are reported in stderr on the next invocation.
+Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation, but only if that config directory already exists when the failure occurs (`oo learn` does not create it on failure). If it does not exist, the failure is silent.
 
 ---
 
@@ -252,7 +262,7 @@ Returns the exit code of the wrapped command. Learning failures are reported in 
 `oo help <reserved-subcommand>` (for example `oo help init`) prints the local
 usage text instead of a cheat sheet. Other names still come from cheat.sh.
 
-Every reserved subcommand (`recall`, `forget`, `learn`, `init`, `patterns`,
+Every reserved subcommand (`recall`, `forget`, `learn`, `help`, `init`, `patterns`,
 `rewrite`, `hook`, `version`) accepts `--help` or `-h` as its **first**
 argument after the name: it prints that subcommand's usage, exits 0, and has no
 side effects. `oo recall --help` therefore does not search for the text
@@ -287,7 +297,7 @@ oo help docker
 
 Set up hooks for agent frameworks and print the AGENTS.md integration snippet.
 `--agent` and `--format` are mutually exclusive — passing both is an error
-(`oo init: --agent and --format cannot be used together`, exit 1, nothing
+(`oo: --agent and --format cannot be used together`, exit 1, nothing
 written). `--agent` alone selects the agent installer; `--format` alone and
 plain `oo init` behave exactly as before.
 
@@ -298,9 +308,14 @@ unknown option '--bogus' (try: oo init --help)`, exit 1, nothing written).
 Each flag may be given once; a repeated `--agent`, `--format` or `--global` is an
 error, in any order.
 
-**CLI contract change (since 0.8.0):** unknown options and unsupported `--format`
-values are now errors. Earlier releases warned and fell back to the default
-format or ignored the option.
+**CLI contract change (unreleased, after v0.7.0):** these inputs were accepted in v0.7.0 and now
+exit 1 with nothing written: an unknown option such as `--bogus` (silently ignored), including
+`--format=<value>` and `--agent=<value>` (the `=` form was ignored, so the claude format was written);
+a stray positional argument (silently ignored); a repeated `--format`, `--agent` or `--global` (silently
+accepted, the first `--format` or the last `--agent` won); an unknown `--format` value (a warning on
+stderr, then the claude format); a bare `--format` with no value (the claude format, silently); and
+`--format` followed by a flag-like token such as `--bogus` (the token was taken as the value, with
+the unknown-value warning, then the claude format).
 
 ### Usage
 
@@ -369,12 +384,15 @@ Install is idempotent: an existing identical file is a no-op ("already installed
 ### Output format
 
 ```
-Generated .claude/hooks.json
+Created /path/to/project/.claude/hooks.json
 
 Add this to your AGENTS.md:
 
-Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs.
+## Shell commands
+Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs (use `--full` for the complete output).
 ```
+
+If `.claude/hooks.json` already exists it is left untouched: an `oo init: <path> already exists — skipping (delete it to regenerate)` line goes to stderr, the AGENTS.md snippet is still printed, and the exit code is 0.
 
 ### Exit codes
 
@@ -409,7 +427,7 @@ Always returns 0.
 
 ## `oo patterns`
 
-List all loaded patterns: built-in patterns, project-local patterns, and user patterns from `~/.config/oo/patterns/`.
+List all loaded patterns: built-in patterns, project-local patterns, and user patterns from the user patterns directory (`oo patterns` prints its path).
 
 ### Usage
 
@@ -426,17 +444,13 @@ Built-in (N patterns):
   \\bcargo\\s+test\\b  [success] [failure]
   \\bpytest\\b
 
-User (~/.config/oo/patterns):
+User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 
-If the user directory doesn't exist or contains no valid TOML files:
+If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
 
-```
-no learned patterns yet
-```
-
-Invalid or corrupt TOML files are skipped silently. The `Built-in` and `User` headers are always printed.
+Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 

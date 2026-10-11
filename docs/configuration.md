@@ -2,15 +2,19 @@
 
 ## Directories
 
-oo uses standard per-OS base directories (via the `dirs` crate): `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. These match XDG paths on Linux and the platform conventions on macOS and Windows.
+oo uses the per-OS base directories from the `dirs` crate: `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. The table lists the default values on macOS and Linux. On Linux the values follow the XDG base directory rules as implemented by the `dirs` crate:
 
-| Purpose | Linux | macOS | Windows |
-|---------|-------|-------|---------|
-| Configuration | `~/.config/oo/` | `~/Library/Application Support/oo/` | `%APPDATA%/oo/` (e.g. `C:\Users\<user>\AppData\Roaming\oo\`) |
-| Data (SQLite index) | `~/.local/share/.oo/oo.db` | `~/Library/Application Support/.oo/oo.db` | `%LOCALAPPDATA%\.oo\oo.db` (e.g. `C:\Users\<user>\AppData\Local\.oo\oo.db`) |
-| Patterns (user-defined) | `~/.config/oo/patterns/` | `~/Library/Application Support/oo/patterns/` | `%APPDATA%/oo/patterns/` |
+| Purpose | Linux | macOS |
+|---------|-------|-------|
+| Configuration | `$XDG_CONFIG_HOME/oo/` (default `~/.config/oo/`) | `~/Library/Application Support/oo/` |
+| Data (SQLite index) | `$XDG_DATA_HOME/.oo/oo.db` (default `~/.local/share/.oo/oo.db`) | `~/Library/Application Support/.oo/oo.db` |
+| Patterns (user-defined) | `<config dir>/patterns/` (default `~/.config/oo/patterns/`) | `~/Library/Application Support/oo/patterns/` |
 
-Override the config directory with the `OO_CONFIG_DIR` environment variable:
+On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are absolute paths; otherwise the defaults above apply. On macOS the XDG variables are ignored. Windows is untested.
+
+If the `dirs` crate cannot determine a base directory, the config directory falls back to `/tmp/oo` and the data directory falls back to `$HOME/.oo` (then `/tmp/.oo`).
+
+Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it. A relative value is resolved against the current working directory, and an empty value (`OO_CONFIG_DIR=`) means the current working directory itself:
 
 ```bash
 export OO_CONFIG_DIR=/custom/path
@@ -22,11 +26,11 @@ Override the data directory with the `OO_DATA_DIR` environment variable (used pr
 export OO_DATA_DIR=/custom/data/path
 ```
 
-The SQLite database is always created at `<data dir>/oo.db`.
+The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`). A relative value is resolved against the current working directory (`OO_DATA_DIR=rel` gives `./rel/oo.db`), and an empty value gives `./oo.db`. Otherwise it is the platform data directory plus `.oo/` (the Data row above).
 
 ## Config File
 
-Location: `~/.config/oo/config.toml`
+Location: `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; see [Directories](#directories)).
 
 The config file is optional. If it doesn't exist, oo uses defaults.
 
@@ -50,7 +54,7 @@ If the `[learn]` section is absent or `config.toml` doesn't exist, oo defaults t
 
 Overrides the configuration directory.
 
-- **Default**: `~/.config/oo/`
+- **Default**: the platform configuration directory plus `oo/` (see the [Directories](#directories) table)
 - **Purpose**: Specify a custom location for `config.toml` and `patterns/`
 
 ```bash
@@ -127,4 +131,4 @@ The configuration directory (see the [Directories](#directories) table) contains
 - `patterns/` - User-defined pattern files (`.toml`) — see [Custom Patterns](patterns.md)
 - `learn-status.log` - Transient status from background learn processes (auto-cleaned)
 
-User patterns in the config directory's `patterns/` directory override the built-in patterns (see `oo patterns` for the full list).
+Project patterns (`<git-root>/.oo/patterns/`) and user patterns in the config directory's `patterns/` directory are checked before the built-in patterns; the order is project, then user, then built-in, and the first match wins. The foreground display in `oo learn` uses built-ins only (#151). See `oo patterns` for the full list.

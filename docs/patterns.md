@@ -4,9 +4,9 @@ Patterns are `.toml` files — one per command. They are loaded from two locatio
 in order, with the first regex match winning:
 
 1. **Project:** `<git-root>/.oo/patterns/` — repo-specific, checked in with the project
-2. **User:** `~/.config/oo/patterns/` — personal patterns across all projects
+2. **User:** the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS) — personal patterns across all projects
 
-Both layers are checked before built-in patterns, so custom patterns always override.
+Both layers are checked before built-in patterns, so custom patterns override built-ins for normal command classification. The order is project, then user, then built-in, and the first matching pattern wins. Files within one directory are loaded in unsorted directory-listing order, so if two patterns in the same directory match a command, which one wins is not defined; keep their `command_match` values disjoint. (The foreground display in `oo learn` uses built-in patterns only; see #151.)
 
 ## TOML format
 
@@ -116,7 +116,7 @@ oo categorizes commands to determine default behavior when no pattern matches:
 | **Data** | `git log`, `git status`, `gh api`, `ls`, `find` | Index for recall if output > 4 KB and unpatterned |
 | **Unknown** | Anything else (curl, docker, `sh -c`, etc.) | Full output indexed, bounded head+tail slice displayed if output > 4 KB |
 
-**Important:** Patterns always take priority over category defaults. If a pattern matches, it determines the output classification regardless of category.
+**Important:** A pattern whose success strategy yields a summary takes priority over category defaults, regardless of category. If a pattern has no success strategy, or its extraction yields nothing, the category default applies. A failure strategy, if present, selects the lines shown for failing runs; without one, the default truncation applies.
 
 The full set of detected binaries and their categories is defined by `detect_category()` in [`src/classify.rs`](../src/classify.rs) — the code is the source of truth; the table above shows representative examples per category.
 

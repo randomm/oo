@@ -11,7 +11,7 @@ const USAGE: &[(&str, &str)] = &[
          \n\
          Search output indexed by earlier oo runs in this project.\n\
          \n\
-         Options:\n  --full    Print full matching entries instead of summaries\n\
+         Options:\n  --full    Print the full stored output instead of a bounded excerpt\n\
          \n\
          Note: --full is stripped from anywhere in the query, so it cannot be searched for literally.\n",
     ),
@@ -26,7 +26,8 @@ const USAGE: &[(&str, &str)] = &[
         "Usage: oo learn [--hint <text>] <command> [args...]\n\
          \n\
          Run <command>, then ask an LLM (in the background) to generate an output\n\
-         compression pattern for it. The pattern is saved under ~/.config/oo/patterns/.\n\
+         compression pattern for it. The pattern is saved in the user patterns\n\
+         directory (see `oo patterns`; override with OO_CONFIG_DIR).\n\
          \n\
          Options:\n  --hint <text>    Extra context for the pattern generator\n",
     ),
@@ -77,7 +78,7 @@ const USAGE: &[(&str, &str)] = &[
     ),
     (
         "rewrite",
-        "Usage: oo rewrite <command>\n\
+        "Usage: oo rewrite <command...>\n\
          \n\
          Print the oo-prefixed form of <command> for agent hooks. Does not run the command.\n",
     ),

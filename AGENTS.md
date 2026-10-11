@@ -115,7 +115,7 @@ Orientation for agents new to the codebase:
 | `src/classify.rs` | Classification engine — touch carefully, well-tested |
 | `src/pattern/` | Built-in patterns (list with `oo patterns`), user TOML loading, pattern matching (split into `mod.rs`, `builtins.rs`, `toml.rs`) |
 | `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag |
-| `src/session.rs` | Session tracking and context management |
+| `src/session.rs` | Project id detection (the session id is informational only) |
 | `src/learn.rs` | LLM integration, background re-exec, Anthropic only |
 | `src/error.rs` | Unified error types via `thiserror` |
 

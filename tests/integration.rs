@@ -874,7 +874,7 @@ fn test_recall_no_results() {
 // ---------------------------------------------------------------------------
 //
 // These tests use OO_DATA_DIR to isolate the store so they don't touch the
-// developer's real ~/.local/share/.oo/oo.db (or vice versa).
+// developer's real data-directory oo.db (or vice versa).
 // ---------------------------------------------------------------------------
 
 /// Seed a large indexed blob and return (temp_dir, blob_content).
