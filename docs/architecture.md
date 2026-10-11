@@ -14,19 +14,19 @@ flowchart TD
     C -->|No| E[Execute shell command]
     E --> F[Capture output<br/>stdout + stderr + exit code]
     F --> X{Exit code ≠ 0?}
-    X -->|Yes| FL[Failure: filter output<br/>index full output if the slice does not match it]
-    FL --> O
-    X -->|No| G[Classify output]
-    G --> H{Find matching pattern?}
-    H -->|Yes| I[Apply pattern<br/>success/failure logic]
-    H -->|No| J[Detect command category<br/>Status/Content/Data/Unknown]
-    J --> K[Apply category defaults]
-    I --> L{Output size > 4 KiB?}
-    K --> L
-    L -->|Yes| M[Store/index for recall]
-    L -->|No| N[Pass through]
-    M --> O[Return compressed output]
-    N --> O
+    X -->|Yes| FL["Failure: show filtered slice<br/>(pattern failure strategy or smart_truncate)"]
+    FL --> FI{"Slice drops content?<br/>(line comparison)"}
+    FI -->|Yes| FX["Index full output<br/>→ recall line"]
+    FI -->|No| FN[Return slice]
+    X -->|No| S{"Output ≤ 4 KiB?"}
+    S -->|Yes| P["Passthrough verbatim<br/>not indexed"]
+    S -->|No| G{"Success pattern matches<br/>and yields a summary?"}
+    G -->|Yes| SU["Success: ✓ summary<br/>not indexed"]
+    G -->|No| J{Command category}
+    J -->|Status| ST["Quiet ✓ line<br/>not indexed"]
+    J -->|Data| LA["Large: index full output<br/>indicator line"]
+    LA -->|index fails| LT["smart_truncate display"]
+    J -->|Content / Unknown| BO["Bounded: index full output<br/>head + tail slice"]
 ```
 
 ## Core Flow
