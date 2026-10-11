@@ -45,7 +45,7 @@
 //!     Classification::Success { label, summary } => {
 //!         println!("✓ {}: {}", label, summary);
 //!     }
-//!     Classification::Failure { label, output } => {
+//!     Classification::Failure { label, output, .. } => {
 //!         println!("✗ {}: {}", label, output);
 //!     }
 //!     Classification::Bounded { label, size, .. } => {

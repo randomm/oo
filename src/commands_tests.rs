@@ -433,7 +433,7 @@ fn test_classify_failure_with_pattern() {
     let fail_output: String = (0..50).map(|i| format!("error line {i}\n")).collect();
     let out = make_output(1, &fail_output);
     match classify::classify(&out, "pytest -x", patterns) {
-        Classification::Failure { label, output } => {
+        Classification::Failure { label, output, .. } => {
             assert_eq!(label, "pytest");
             assert!(output.contains("error line 49"));
         }

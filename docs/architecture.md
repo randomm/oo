@@ -53,7 +53,7 @@ The classification engine decides how to present output to the agent:
 **Input**: `CommandOutput` + command string + patterns
 
 **Possible outcomes**:
-- **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between)
+- **Failure** (exit code ≠ 0): Filtered error output (tail/head/grep/between). When the displayed slice differs from the full merged output, the full output is indexed for recall and a `● label (output truncated: …)` line follows the slice
 - **Passthrough** (success, ≤4 KiB): Verbatim output
 - **Success** (success, >4 KiB, pattern summary): Compressed summary
 - **Status** (success, >4 KiB, no pattern summary, Status category): quiet `✓ label [saved N]` line (no parentheses), not indexed

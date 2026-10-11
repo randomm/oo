@@ -1842,3 +1842,99 @@ fn test_clap_short_help_lists_all_subcommands() {
         .stdout(predicate::str::contains("hook ("))
         .stdout(predicate::str::contains("version ("));
 }
+
+// ---------------------------------------------------------------------------
+// Failure tier recall (issue #185): failed-command output beyond the displayed
+// slice must be indexed so `oo recall` can reach it.
+// ---------------------------------------------------------------------------
+
+const FAIL_MARKER: &str = "oo185hiddenmarker4c1d";
+
+#[test]
+fn test_failure_slice_dropped_lines_are_recallable() {
+    // Marker sits at line 150 of 300: smart_truncate keeps head+tail only, so
+    // the marker is absent from the displayed slice but present in the output.
+    let script = format!(
+        "#!/bin/sh\nfor i in $(seq 1 300); do if [ $i -eq 150 ]; then echo {FAIL_MARKER}; else echo \"line $i\"; fi; done\nexit 1\n"
+    );
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        !stdout.contains(FAIL_MARKER),
+        "marker must be outside the displayed slice; got: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("use `oo recall` to query"),
+        "recall must be advertised after the slice; got: {stdout:?}"
+    );
+
+    assert_recall_contains(&data_dir, FAIL_MARKER);
+}
+
+#[test]
+fn test_failure_fully_displayed_is_not_indexed() {
+    // 10 lines is below the truncation threshold: the slice equals the full
+    // output, so nothing is indexed and recall is not advertised.
+    let script =
+        format!("#!/bin/sh\nfor i in $(seq 1 10); do echo \"{FAIL_MARKER} $i\"; done\nexit 1\n");
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        !stdout.contains("oo recall"),
+        "no recall advertisement for fully displayed output; got: {stdout:?}"
+    );
+
+    oo().args(["recall", FAIL_MARKER])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No results found"));
+}
+
+#[test]
+fn test_failure_index_failure_warns_and_does_not_advertise_recall() {
+    // OO_DATA_DIR pointing at a regular file makes the store unopenable.
+    let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"line $i\"; done\nexit 1\n";
+    let (_bin, path) = make_fake_bin("zfailtool", script);
+    let file_dir = TempDir::new().unwrap();
+    let bogus = file_dir.path().join("not-a-dir");
+    std::fs::write(&bogus, b"x").unwrap();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &bogus)
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    assert!(
+        stderr.contains("could not index output for recall"),
+        "stderr must carry the index-failure warning; got: {stderr:?}"
+    );
+    assert!(
+        stdout.contains("NOT indexed, recall unavailable"),
+        "stdout must say recall is unavailable; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("use `oo recall` to query"),
+        "must not advertise recall when indexing failed; got: {stdout:?}"
+    );
+}

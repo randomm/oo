@@ -3,7 +3,7 @@
 //! This module is the core of `oo`'s context-efficient output handling. It analyzes
 //! command results and produces one of five [`Classification`] outcomes:
 //!
-//! - **Failure**: Non-zero exit codes → filtered error output
+//! - **Failure**: Non-zero exit codes → filtered error output (full output kept for recall)
 //! - **Passthrough**: Small successful outputs (<4KB) → verbatim
 //! - **Success**: Large successful outputs with pattern match → compressed summary
 //! - **Bounded**: Large Content/Unknown output → full output indexed, byte-bounded display
@@ -74,7 +74,7 @@ pub enum CommandCategory {
 ///
 /// # Variants
 ///
-/// - **Failure**: Command exited non-zero. Contains filtered error output.
+/// - **Failure**: Command exited non-zero. Contains filtered error output and the full merged output.
 /// - **Passthrough**: Command succeeded with small output. Contains verbatim output.
 /// - **Success**: Command succeeded with large output and pattern match. Contains compressed summary.
 /// - **Bounded**: Content/Unknown command with large output. Full output is indexed; `display` is a byte-bounded head+tail slice.
@@ -88,12 +88,16 @@ pub enum Classification {
     /// # Fields
     ///
     /// * `label` - Short label derived from the command (e.g., "cargo", "pytest").
-    /// * `output` - Filtered error output, truncated if large.
+    /// * `output` - Filtered error output shown to the user, truncated if large.
+    /// * `full_output` - Complete merged stdout+stderr, indexed for recall when
+    ///   it differs from `output`.
     Failure {
         /// Short label derived from the command (e.g., "cargo", "pytest").
         label: String,
-        /// Filtered error output, truncated if large.
+        /// Filtered error output shown to the user, truncated if large.
         output: String,
+        /// Complete merged stdout+stderr, indexed for recall when it differs from `output`.
+        full_output: String,
     },
 
     /// Exit 0, output ≤ threshold. Verbatim.
@@ -375,6 +379,7 @@ pub fn classify(output: &CommandOutput, command: &str, patterns: &[Pattern]) -> 
         return Classification::Failure {
             label: lbl,
             output: filtered,
+            full_output: merged,
         };
     }
 
