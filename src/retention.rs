@@ -30,8 +30,7 @@ struct StoreSection {
 /// content does not affect retention. A file that fails TOML parsing, or a
 /// `[store]` section with an unknown key or an invalid value, is an error.
 pub(crate) fn parse_retention(content: &str) -> Result<i64, String> {
-    let cf: ConfigFile =
-        toml::from_str(content).map_err(|e| format!("cannot parse config.toml: {e}"))?;
+    let cf: ConfigFile = toml::from_str(content).map_err(|e| format!("cannot parse: {e}"))?;
     match cf.store.and_then(|s| s.retention) {
         None => Ok(DEFAULT_RETENTION_SECS),
         Some(n) => i64::try_from(n).map_err(|_| format!("[store] retention {n} is too large")),
