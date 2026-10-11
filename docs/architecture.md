@@ -106,7 +106,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 Large outputs that don't match patterns are stored for full-text retrieval.
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` on Linux, `~/Library/Application Support/.oo/` on macOS, `%LOCALAPPDATA%\.oo\` on Windows; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:

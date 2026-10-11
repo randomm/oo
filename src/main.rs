@@ -67,7 +67,7 @@ fn main() {
                 "  init [--format claude|generic | --agent pi|claude-code [--global]]   Set up hooks for agent frameworks (see: oo init --help)"
             );
             println!("  patterns                   List output compression patterns");
-            println!("  rewrite <command>          Print oo-prefixed form for agent hooks");
+            println!("  rewrite <command...>       Print oo-prefixed form for agent hooks");
             println!(
                 "  hook <agent>               Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin)"
             );

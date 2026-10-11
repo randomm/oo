@@ -90,8 +90,8 @@ impl Store for VipuneStore {
         //
         // The vipune API has no bulk-delete, so we enumerate via `list` and
         // delete one-by-one. Because `list` is capped at 10 000 entries per
-        // call, we page until a short page arrives to delete beyond the first
-        // 10 000; completeness is bounded (see the impl doc).
+        // call, we page until a short page or a full page with no successful
+        // deletion (see the impl doc for the resulting completeness bound).
         const PAGE: usize = 10_000;
         let mut deleted = 0;
         let mut failed = 0usize;

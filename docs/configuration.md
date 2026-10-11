@@ -2,13 +2,17 @@
 
 ## Directories
 
-oo uses standard per-OS base directories (via the `dirs` crate): `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. These match XDG paths on Linux and the platform conventions on macOS and Windows.
+oo uses the per-OS base directories from the `dirs` crate: `dirs::config_dir()` for configuration and `dirs::data_dir()` for indexed data. The table lists the values on macOS (verified) and Linux (verified against `dirs` 6.0.0 source):
 
-| Purpose | Linux | macOS | Windows |
-|---------|-------|-------|---------|
-| Configuration | `~/.config/oo/` | `~/Library/Application Support/oo/` | `%APPDATA%/oo/` (e.g. `C:\Users\<user>\AppData\Roaming\oo\`) |
-| Data (SQLite index) | `~/.local/share/.oo/oo.db` | `~/Library/Application Support/.oo/oo.db` | `%LOCALAPPDATA%\.oo\oo.db` (e.g. `C:\Users\<user>\AppData\Local\.oo\oo.db`) |
-| Patterns (user-defined) | `~/.config/oo/patterns/` | `~/Library/Application Support/oo/patterns/` | `%APPDATA%/oo/patterns/` |
+| Purpose | Linux | macOS |
+|---------|-------|-------|
+| Configuration | `$XDG_CONFIG_HOME/oo/` (default `~/.config/oo/`) | `~/Library/Application Support/oo/` |
+| Data (SQLite index) | `$XDG_DATA_HOME/.oo/oo.db` (default `~/.local/share/.oo/oo.db`) | `~/Library/Application Support/.oo/oo.db` |
+| Patterns (user-defined) | `<config dir>/patterns/` (default `~/.config/oo/patterns/`) | `~/Library/Application Support/oo/patterns/` |
+
+On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are absolute paths; otherwise the defaults above apply. On macOS the XDG variables are ignored. Windows is not tested and is not documented here.
+
+If the `dirs` crate cannot determine a base directory, the config directory falls back to `/tmp/oo` and the data directory falls back to `$HOME/.oo` (then `/tmp/.oo`).
 
 Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it:
 
@@ -22,7 +26,7 @@ Override the data directory with the `OO_DATA_DIR` environment variable (used pr
 export OO_DATA_DIR=/custom/data/path
 ```
 
-The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`); otherwise it is the platform data directory plus `.oo/` (the Data row above, e.g. `~/.local/share/.oo/oo.db` on Linux, `~/Library/Application Support/.oo/oo.db` on macOS).
+The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`); otherwise it is the platform data directory plus `.oo/` (the Data row above).
 
 ## Config File
 
