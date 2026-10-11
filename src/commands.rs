@@ -288,9 +288,8 @@ pub fn render_classification(classification: &Classification, command: &str, ori
 }
 
 pub fn try_index(command: &str, content: &str) -> bool {
-    let mut store = match store::open() {
-        Ok(s) => s,
-        Err(_) => return false,
+    let Ok(mut store) = store::open() else {
+        return false;
     };
 
     let project_id = session::project_id();
@@ -301,11 +300,7 @@ pub fn try_index(command: &str, content: &str) -> bool {
         timestamp: now_epoch(),
     };
 
-    // Lazy retention cleanup (best-effort); `retention = 0` disables purging.
-    let retention = crate::retention::load_retention();
-    if retention > 0 {
-        let _ = store.cleanup_stale(&project_id, retention);
-    }
+    crate::retention::purge_stale(store.as_mut(), &project_id);
 
     store.index(&project_id, content, &meta).is_ok()
 }

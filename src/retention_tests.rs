@@ -12,6 +12,15 @@ fn env_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Unsets OO_CONFIG_DIR on drop, so a panicking test cannot leave it dangling.
+struct ConfigDirVar;
+
+impl Drop for ConfigDirVar {
+    fn drop(&mut self) {
+        unsafe { std::env::remove_var("OO_CONFIG_DIR") };
+    }
+}
+
 /// Run `f` with OO_CONFIG_DIR pointing at a temp dir holding `config` (if any).
 fn with_config<F: FnOnce()>(config: Option<&str>, f: F) {
     let _lock = env_guard();
@@ -20,8 +29,8 @@ fn with_config<F: FnOnce()>(config: Option<&str>, f: F) {
         std::fs::write(cfg_dir.path().join("config.toml"), content).unwrap();
     }
     unsafe { std::env::set_var("OO_CONFIG_DIR", cfg_dir.path()) };
+    let _var = ConfigDirVar;
     f();
-    unsafe { std::env::remove_var("OO_CONFIG_DIR") };
 }
 
 #[test]
@@ -78,6 +87,15 @@ fn load_missing_file_uses_default() {
         load_retention_from(&dir.path().join("config.toml")),
         DEFAULT_RETENTION_SECS
     );
+}
+
+#[test]
+fn load_unreadable_path_falls_back_to_default() {
+    // A directory named config.toml fails read_to_string (not NotFound).
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::create_dir(&path).unwrap();
+    assert_eq!(load_retention_from(&path), DEFAULT_RETENTION_SECS);
 }
 
 #[test]

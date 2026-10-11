@@ -40,8 +40,8 @@ fn survives(data_dir: &Path, marker: &str) -> bool {
 }
 
 /// Run `oo` with the given config (None = no config.toml) and a large output
-/// that gets indexed, which triggers the retention purge. Returns stderr.
-fn run_index(config: Option<&str>, data_dir: &Path) -> String {
+/// that gets indexed, which triggers the retention purge. Returns (stdout, stderr).
+fn run_index(config: Option<&str>, data_dir: &Path) -> (String, String) {
     let cfg_dir = TempDir::new().unwrap();
     if let Some(content) = config {
         std::fs::write(cfg_dir.path().join("config.toml"), content).unwrap();
@@ -53,7 +53,10 @@ fn run_index(config: Option<&str>, data_dir: &Path) -> String {
         .env("OO_DATA_DIR", data_dir)
         .output()
         .unwrap();
-    String::from_utf8_lossy(&out.stderr).into_owned()
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
 #[test]
@@ -80,7 +83,9 @@ fn custom_retention_purges_entry_older_than_it() {
 fn zero_retention_never_purges() {
     let data = TempDir::new().unwrap();
     seed(data.path(), "zqxclizero30", 30 * DAY);
-    run_index(Some("[store]\nretention = 0\n"), data.path());
+    let (stdout, _) = run_index(Some("[store]\nretention = 0\n"), data.path());
+    // Prove oo reached the index path, so the survival below is not vacuous.
+    assert!(stdout.contains("use `oo recall`"), "stdout: {stdout}");
     assert!(survives(data.path(), "zqxclizero30"));
 }
 
@@ -88,7 +93,7 @@ fn zero_retention_never_purges() {
 fn invalid_retention_warns_and_uses_default() {
     let data = TempDir::new().unwrap();
     seed(data.path(), "zqxcliinvalid25", 25 * 3600);
-    let stderr = run_index(Some("[store]\nretention = -1\n"), data.path());
+    let (_, stderr) = run_index(Some("[store]\nretention = -1\n"), data.path());
     assert!(
         stderr.contains("invalid [store] retention"),
         "stderr: {stderr}"

@@ -37,7 +37,7 @@ You must trust:
 - **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally in the SQLite index (see Storage Backends) for recall
 
 **Data retention**:
-- Indexed outputs are purged automatically once older than the retention period: 7 days by default, configurable via `[store] retention` in `config.toml` (seconds; `0` disables automatic purging). Run `oo forget` or delete the database to remove them sooner
+- Indexed outputs older than the retention period are purged lazily, the next time oo indexes output in the same project (7 days by default; `[store] retention` in `config.toml`, seconds, `0` disables). Until then they remain recallable. `oo forget` or deleting the database removes them sooner
 - No automatic syncing to remote services
 - Project-scoped — `oo forget` clears indexed output for the current project. With the default SQLite store this is complete; with `--features vipune-store` it is bounded for projects over 10,000 entries and may leave entries behind (#182)
 
@@ -291,7 +291,7 @@ This section is for compliance assessments.
 
 ### Data Retention
 
-- **Indexed outputs**: Purged after the retention period (default 7 days, `[store] retention` in `config.toml`; `0` disables automatic purging), or sooner via `oo forget` or manual deletion
+- **Indexed outputs**: Purged lazily once older than the retention period (default 7 days, `[store] retention` in `config.toml`; `0` disables), on the next indexing run in the same project; sooner via `oo forget` or manual deletion
 - **Patterns**: Permanent (until manually deleted)
 - **LLM data**: Per Anthropic's retention policy (typically undefined, may be used for service improvement)
 

@@ -1,9 +1,11 @@
 //! Retention of indexed command output, configured by `[store] retention`
-//! in `config.toml` (seconds; `0` disables automatic purging).
+//! in `config.toml` (seconds; `0` disables purging).
 
 use std::path::Path;
 
 use serde::Deserialize;
+
+use crate::store::Store;
 
 /// Default retention: 7 days, in seconds.
 pub const DEFAULT_RETENTION_SECS: i64 = 604_800;
@@ -23,10 +25,11 @@ struct StoreSection {
 /// Unrelated sections (e.g. `[learn]`) are ignored, so a broken `[learn]`
 /// block does not affect retention and vice versa.
 pub(crate) fn parse_retention(content: &str) -> Result<i64, String> {
-    let cf: ConfigFile = toml::from_str(content).map_err(|e| e.to_string())?;
+    let cf: ConfigFile =
+        toml::from_str(content).map_err(|e| format!("cannot parse config.toml: {e}"))?;
     match cf.store.and_then(|s| s.retention) {
         None => Ok(DEFAULT_RETENTION_SECS),
-        Some(n) if n < 0 => Err(format!("retention must be >= 0, got {n}")),
+        Some(n) if n < 0 => Err(format!("invalid [store] retention: must be >= 0, got {n}")),
         Some(n) => Ok(n),
     }
 }
@@ -55,11 +58,21 @@ pub(crate) fn load_retention_from(path: &Path) -> i64 {
         Ok(n) => n,
         Err(reason) => {
             eprintln!(
-                "oo: warning: {}: invalid [store] retention ({reason}); using default {DEFAULT_RETENTION_SECS}s",
+                "oo: warning: {}: {reason}; using default {DEFAULT_RETENTION_SECS}s",
                 path.display()
             );
             DEFAULT_RETENTION_SECS
         }
+    }
+}
+
+/// Lazy, per-project purge run when `project_id` indexes output. Entries of
+/// other projects are untouched; `retention = 0` skips the purge entirely.
+/// Best-effort: a failed purge never blocks indexing.
+pub(crate) fn purge_stale(store: &mut dyn Store, project_id: &str) {
+    let retention = load_retention();
+    if retention > 0 {
+        let _ = store.cleanup_stale(project_id, retention);
     }
 }
 

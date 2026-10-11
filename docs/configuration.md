@@ -54,7 +54,7 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged the next time oo indexes output. `0` disables automatic purging. Must be `>= 0`. |
+| `retention` | integer (seconds) | `604800` (7 days) | Indexed entries older than this are purged lazily, the next time oo indexes output in the same project. Other projects and idle projects keep their old entries until they index again. `0` disables purging. Must be `>= 0`. |
 
 An absent `[store]` section or `retention` key uses the default. An invalid value (negative, non-integer, or malformed `config.toml`) prints a warning on stderr and uses the default; indexing is never blocked by config. `oo forget` still clears a project's entries at any time.
 

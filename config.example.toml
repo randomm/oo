@@ -17,6 +17,6 @@ api_key_env = "ANTHROPIC_API_KEY"
 
 # Retention for indexed command output (used by `oo recall`).
 [store]
-# Purge indexed entries older than this many seconds (default: 604800 = 7 days).
-# Set to 0 to disable automatic purging. Must be >= 0.
+# Entries older than this many seconds are purged lazily, the next time the same
+# project indexes output (default: 604800 = 7 days). 0 disables purging. Must be >= 0.
 retention = 604800
