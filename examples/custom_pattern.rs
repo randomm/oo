@@ -81,7 +81,7 @@ Result: 50 tests passed, 55 failed"
     let fail_classification = classify(&failure_output, "myapp test", &patterns);
     println!("\n✓ Failure classification:");
     match &fail_classification {
-        double_o::Classification::Failure { label, output } => {
+        double_o::Classification::Failure { label, output, .. } => {
             println!("  Label: {}", label);
             println!("  Filtered output (last 20 lines):\n{}", output);
         }
@@ -118,7 +118,7 @@ Build failed"
         let build_classification = classify(&build_output, "myapp build", &[pat]);
         println!("\n✓ Failure classification with grep strategy:");
         match &build_classification {
-            double_o::Classification::Failure { label, output } => {
+            double_o::Classification::Failure { label, output, .. } => {
                 println!("  Label: {}", label);
                 println!("  Filtered output (only Error: lines):\n{}", output);
             }

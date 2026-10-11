@@ -28,7 +28,7 @@ fn main() {
             println!("  Label: {}", label);
             println!("  Summary: {}", summary);
         }
-        double_o::Classification::Failure { label, output } => {
+        double_o::Classification::Failure { label, output, .. } => {
             println!("  Type: Failure");
             println!("  Label: {}", label);
             println!("  Output: {}", output);
@@ -61,7 +61,7 @@ fn main() {
     let fail_classification = classify(&fail_output, "cargo test", patterns);
     println!("\nFailed command classification:");
     match &fail_classification {
-        double_o::Classification::Failure { label, output } => {
+        double_o::Classification::Failure { label, output, .. } => {
             println!("  Type: Failure");
             println!("  Label: {}", label);
             println!("  Filtered output:\n{}", output);

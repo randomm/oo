@@ -45,7 +45,7 @@
 //!     Classification::Success { label, summary } => {
 //!         println!("✓ {}: {}", label, summary);
 //!     }
-//!     Classification::Failure { label, output } => {
+//!     Classification::Failure { label, output, .. } => {
 //!         println!("✗ {}: {}", label, output);
 //!     }
 //!     Classification::Bounded { label, size, .. } => {
@@ -64,13 +64,19 @@ pub mod classify;
 pub mod commands;
 /// Config directory resolution (`OO_CONFIG_DIR` or the platform config dir).
 mod config;
+/// Savings suffix for compressed indicator lines (shared by the render arms).
+mod display;
 /// Error types for oo operations.
 pub mod error;
 /// Command execution and output capture.
 pub mod exec;
+/// Failure-tier display and recall notice (used by `render_classification`).
+mod failure_display;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod help;
+/// Indexing of raw command output for `oo recall` (shared by the render arms).
+mod indexing;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod init;

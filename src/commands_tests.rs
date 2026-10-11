@@ -433,7 +433,7 @@ fn test_classify_failure_with_pattern() {
     let fail_output: String = (0..50).map(|i| format!("error line {i}\n")).collect();
     let out = make_output(1, &fail_output);
     match classify::classify(&out, "pytest -x", patterns) {
-        Classification::Failure { label, output } => {
+        Classification::Failure { label, output, .. } => {
             assert_eq!(label, "pytest");
             assert!(output.contains("error line 49"));
         }
@@ -802,7 +802,7 @@ fn test_cmd_run_cargo_nextest_run_quiet_success() {
             assert_ne!(code, 0, "Failure arm implies non-zero exit code");
         }
         Classification::Passthrough { .. } => {
-            // Small output (≤4KB) — e.g. a "command not found" or similar
+            // Small output (≤ 4 KiB) — e.g. a "command not found" or similar
             // short error. Still not Bounded/Large, so acceptable.
             assert_ne!(
                 code, 0,
