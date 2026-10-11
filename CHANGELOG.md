@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-11
+
+### ⚠ Breaking Changes
+
+- *(#185)* `Classification::Failure` has a new public field `full_output: String`. Code that destructures or constructs this variant without `..` must be updated (add `..` to patterns, supply `full_output` in literals). The library API is pre-1.0, so this is a minor-version bump.
+- *(#178)* `oo init` rejects unknown options, unsupported `--format` values, stray positional arguments, and repeated `--agent`, `--format` or `--global` (these were previously ignored or warned about and fell back to the default).
+
+### Features
+
+- *(#184)* Make recall retention configurable via [store] retention (#191). The default retention for indexed output changes from 24 hours to 7 days; `retention = 0` disables purging, and invalid or unknown `[store]` keys warn and fall back to the default.
+
+### Bug Fixes
+
+- *(#178)* Handle --help on reserved subcommands
+- *(#185)* Index the full output of failed commands for oo recall (#192)
+
+### Documentation
+
+- *(#181)* Correct known inaccuracies and align docs with observed CLI behavior (#183)
+- *(#181)* Correct savings indicator rules, learn temp file lifecycle and pattern source statements (#187)
+
 ## [0.7.0] - 2026-10-08
 
 ### Bug Fixes
