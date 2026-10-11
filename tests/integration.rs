@@ -1945,6 +1945,32 @@ fn test_failure_pattern_slice_showing_all_lines_is_not_indexed() {
 }
 
 #[test]
+fn test_failure_pattern_slice_with_trailing_blank_line_is_not_indexed() {
+    // The tail pattern keeps the trailing blank line in its slice, so the
+    // slice and the full output differ only by trailing blank lines: nothing
+    // was dropped and recall must not be advertised.
+    let script = "#!/bin/sh\nprintf 'oo185blank1\\noo185blank2\\nl3\\n\\n'\nexit 1\n";
+    let (_bin, path) = make_fake_bin("cargo", script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["cargo", "test"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("oo185blank2"),
+        "shown lines must be displayed; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("output truncated") && !stdout.contains("oo recall"),
+        "fully shown failure must not advertise recall; got: {stdout:?}"
+    );
+}
+
+#[test]
 fn test_failure_index_failure_warns_and_does_not_advertise_recall() {
     // OO_DATA_DIR pointing at a regular file makes the store unopenable.
     let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"line $i\"; done\nexit 1\n";

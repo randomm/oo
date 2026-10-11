@@ -82,7 +82,7 @@ before re-running learn.
 ## Command Categories & Pattern Value
 
 Patterns are most useful for Status commands (tests, linters, builds). Content commands
-(git show, git diff, cat) always pass through regardless of pattern, and Data commands
+(git show, git diff, cat) are shown verbatim only when small (a larger one is a bounded slice whatever the pattern), and Data commands
 (git log, ls, gh) are indexed when large. See [Patterns: Command Categories](patterns.md#command-categories)
 for category definitions.
 

@@ -45,10 +45,21 @@ pub fn render(label: &str, command: &str, original_size: usize, output: &str, fu
 
 /// Whether the displayed slice shows every line of the full output.
 ///
-/// Compares line content rather than raw bytes: `extract_failure` joins its
-/// lines without a trailing newline, and `lines()` ignores CRLF endings, so a
-/// slice that dropped nothing must still compare equal. The 81–120-line
-/// `smart_truncate` join removes a line break, so it is correctly "not shown".
+/// Compares lines rather than raw bytes: `extract_failure` joins its lines
+/// without a final newline, and `lines()` ignores CRLF endings. Trailing empty
+/// lines are dropped from both sides, because a slice that keeps or loses only
+/// trailing blank lines (or the final newline) omits nothing a reader needs.
+/// The 81–120-line `smart_truncate` join removes a line break, so it is
+/// correctly "not shown".
 fn shows_all_lines(full_output: &str, output: &str) -> bool {
-    full_output.lines().eq(output.lines())
+    trimmed_lines(full_output).eq(trimmed_lines(output))
+}
+
+fn trimmed_lines(text: &str) -> impl Iterator<Item = &str> {
+    let lines: Vec<&str> = text.lines().collect();
+    let end = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(0, |i| i + 1);
+    lines.into_iter().take(end)
 }

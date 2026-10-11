@@ -116,7 +116,7 @@ oo categorizes commands to determine default behavior when no pattern matches:
 | **Data** | `git log`, `git status`, `gh api`, `ls`, `find` | Index for recall if output > 4 KB and unpatterned |
 | **Unknown** | Anything else (curl, docker, `sh -c`, etc.) | Full output indexed, bounded head+tail slice displayed if output > 4 KB |
 
-**Important:** A pattern whose success strategy yields a summary takes priority over category defaults, regardless of category. If a pattern has no success strategy, or its extraction yields nothing, the category default applies. A failure strategy, if present, selects the lines shown for failing runs; without one, the default truncation applies.
+**Important:** A pattern whose success strategy yields a summary takes priority over category defaults, regardless of category. If a pattern has no success strategy, or its extraction yields nothing, the category default applies. A failure strategy, if present, selects the lines shown for failing runs; without one, the default truncation applies. Failed runs are indexed for `oo recall` whenever the displayed slice differs from the full output (see the [security model](security-model.md#pattern-files)).
 
 The full set of detected binaries and their categories is defined by `detect_category()` in [`src/classify.rs`](../src/classify.rs) — the code is the source of truth; the table above shows representative examples per category.
 
