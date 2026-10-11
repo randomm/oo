@@ -211,3 +211,77 @@ fn test_call_anthropic_malformed_response() {
     );
     mock.assert();
 }
+
+// ---------------------------------------------------------------------------
+// call_anthropic: redirects are refused and never forwarded
+// ---------------------------------------------------------------------------
+
+fn assert_redirect_refused(status: usize) {
+    let mut origin = mockito::Server::new();
+    let mut target = mockito::Server::new();
+    let target_mock = target
+        .mock("POST", mockito::Matcher::Any)
+        .with_status(200)
+        .expect(0)
+        .create();
+    let origin_mock = origin
+        .mock("POST", "/v1/messages")
+        .with_status(status)
+        .with_header("location", &format!("{}/steal", target.url()))
+        .expect(1)
+        .create();
+
+    let result = call_anthropic(
+        &format!("{}/v1/messages", origin.url()),
+        "test-key",
+        "test-model",
+        "test prompt",
+    );
+    let err = result.expect_err("a redirect must be refused");
+    assert!(
+        err.to_string()
+            .contains(&format!("unexpected redirect (status {status})")),
+        "wrong error for {status}: {err}"
+    );
+    assert!(
+        !err.to_string().contains("/steal"),
+        "error must not echo the Location value"
+    );
+    origin_mock.assert();
+    target_mock.assert();
+}
+
+#[test]
+fn test_call_anthropic_refuses_301() {
+    assert_redirect_refused(301);
+}
+
+#[test]
+fn test_call_anthropic_refuses_302() {
+    assert_redirect_refused(302);
+}
+
+#[test]
+fn test_call_anthropic_refuses_303() {
+    assert_redirect_refused(303);
+}
+
+#[test]
+fn test_call_anthropic_refuses_304() {
+    assert_redirect_refused(304);
+}
+
+#[test]
+fn test_call_anthropic_refuses_305() {
+    assert_redirect_refused(305);
+}
+
+#[test]
+fn test_call_anthropic_refuses_307() {
+    assert_redirect_refused(307);
+}
+
+#[test]
+fn test_call_anthropic_refuses_308() {
+    assert_redirect_refused(308);
+}

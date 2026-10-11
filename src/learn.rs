@@ -351,19 +351,32 @@ fn call_anthropic(
     use std::time::Duration;
 
     // Configure Agent with explicit timeout to prevent hanging on API calls
+    // Redirects are refused: ureq would replay x-api-key to the Location target.
+    // Returning 3xx as a response (not an error) lets the status check below run.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
         .timeout_connect(Some(Duration::from_secs(10)))
+        .max_redirects(0)
+        .max_redirects_will_error(false)
         .build()
         .into();
 
-    let response: serde_json::Value = agent
+    let mut response = agent
         .post(base_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
         .send_json(&body)
-        .map_err(|e| Error::Learn(format!("Anthropic API error: {e}")))?
+        .map_err(|e| Error::Learn(format!("Anthropic API error: {e}")))?;
+
+    let status = response.status().as_u16();
+    if (300..400).contains(&status) {
+        return Err(Error::Learn(format!(
+            "unexpected redirect (status {status})"
+        )));
+    }
+
+    let response: serde_json::Value = response
         .body_mut()
         .read_json()
         .map_err(|e| Error::Learn(format!("response parse error: {e}")))?;
@@ -423,22 +436,28 @@ fn truncate_for_prompt(output: &str) -> &str {
     crate::learn_utils::truncate_utf8(output, 4000)
 }
 
-/// Validate ANTHROPIC_API_URL uses HTTPS (with localhost exceptions).
+/// Validate ANTHROPIC_API_URL: https for any host, http only for loopback.
+///
+/// The URL is parsed with the `http` crate (re-exported by ureq), so the host is
+/// the one the HTTP client actually connects to. Userinfo is rejected explicitly
+/// because `http://localhost:@evil.com/` would otherwise pass a prefix check.
 fn validate_anthropic_url(url: &str) -> Result<(), Error> {
-    if url.starts_with("https://") {
-        return Ok(());
+    let reject = || {
+        Error::Learn(format!(
+            "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1/[::1]."
+        ))
+    };
+    let uri: ureq::http::Uri = url.parse().map_err(|_| reject())?;
+    let authority = uri.authority().ok_or_else(reject)?;
+    if authority.as_str().contains('@') {
+        return Err(reject());
     }
-    // HTTP only allowed for localhost/127.0.0.1
-    // Extract host portion: "http://HOST:port/path" or "http://HOST/path"
-    if let Some(rest) = url.strip_prefix("http://") {
-        let host = rest.split([':', '/']).next().unwrap_or("");
-        if host == "localhost" || host == "127.0.0.1" {
-            return Ok(());
-        }
+    let host = authority.host().to_ascii_lowercase();
+    match uri.scheme_str().map(str::to_ascii_lowercase).as_deref() {
+        Some("https") => Ok(()),
+        Some("http") if matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]") => Ok(()),
+        _ => Err(reject()),
     }
-    Err(Error::Learn(format!(
-        "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1."
-    )))
 }
 
 /// Validate a TOML pattern string using the same regex limits as TOML loading.
@@ -457,3 +476,7 @@ mod tests;
 #[cfg(test)]
 #[path = "learn_prompt_tests.rs"]
 mod prompt_tests;
+
+#[cfg(test)]
+#[path = "learn_url_tests.rs"]
+mod url_tests;
