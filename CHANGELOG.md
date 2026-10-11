@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-11
+
+### Bug Fixes
+
+- *(#178)* Handle --help on reserved subcommands and make oo init strict
+- *(#184)* Make recall retention configurable via [store] retention (#191)
+- *(#185)* Index the full output of failed commands for oo recall (#192)
+
+### Documentation
+
+- *(#181)* Correct known inaccuracies and align docs with observed CLI behavior (#183)
+- *(#181)* Correct savings indicator rules, learn temp file lifecycle and pattern source statements (#187)
+
+
 ## [0.7.0] - 2026-10-08
 
 ### Bug Fixes
