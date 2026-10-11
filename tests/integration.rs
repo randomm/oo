@@ -1949,7 +1949,7 @@ fn test_failure_pattern_slice_with_trailing_empty_line_is_not_indexed() {
     // The tail pattern keeps the trailing empty line in its slice, so the
     // slice and the full output differ only by trailing empty lines: nothing
     // was dropped and recall must not be advertised.
-    let script = "#!/bin/sh\nprintf 'oo185blank1\\noo185blank2\\nl3\\n\\n'\nexit 1\n";
+    let script = "#!/bin/sh\nprintf 'oo185empty1\\noo185empty2\\nl3\\n\\n'\nexit 1\n";
     let (_bin, path) = make_fake_bin("cargo", script);
     let (_guard, data_dir) = isolated_store();
 
@@ -1961,7 +1961,7 @@ fn test_failure_pattern_slice_with_trailing_empty_line_is_not_indexed() {
         .failure();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stdout.contains("oo185blank2"),
+        stdout.contains("oo185empty2"),
         "shown lines must be displayed; got: {stdout:?}"
     );
     assert!(

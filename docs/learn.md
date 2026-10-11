@@ -81,9 +81,7 @@ before re-running learn.
 
 ## Command Categories & Pattern Value
 
-Patterns are most useful for Status commands (tests, linters, builds). Content commands
-(git show, git diff, cat) are shown verbatim only when small; a larger one shows its pattern summary if a success pattern matches, otherwise a bounded slice, and Data commands
-(git log, ls, gh) are indexed when large. See [Patterns: Command Categories](patterns.md#command-categories)
+Patterns are most useful for Status commands (tests, linters, builds). Content and Data commands are shown verbatim only when the output is at most 4 KiB (4096 bytes; git show, git diff, cat, git log, ls, gh and the like). Above that, a matching success pattern shows its summary and nothing is indexed. Without a matching success pattern, Data output is indexed and shows an indicator line, and Content output shows a bounded head+tail slice with the full output indexed. Unknown commands follow the Content rule. See [Patterns: Command Categories](patterns.md#command-categories)
 for category definitions.
 
 ## Best-effort semantics

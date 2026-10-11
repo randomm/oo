@@ -300,7 +300,7 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 
 **What if oo doesn't recognize my command?**
 Successful unknown commands pass through unchanged at up to 4 KiB; failed ones are always filtered. Larger Data, Content, and Unknown output
-is indexed in full for later retrieval via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
+is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
 Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 

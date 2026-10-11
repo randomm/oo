@@ -132,10 +132,10 @@ oo categorizes commands to determine default behavior when no pattern matches:
 
 | Category | Examples | Default Behavior |
 |----------|----------|------------------|
-| **Status** | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success (empty summary) if output > 4 KB |
+| **Status** | `cargo test`, `pytest`, `eslint`, `cargo build` | Quiet success (empty summary) if output > 4 KiB and no success pattern summary matches |
 | **Content** | `git show`, `git diff`, `cat`, `bat` | Pass through if ≤ 4 KiB; larger shows pattern summary if matched, else bounded head+tail slice with full output indexed |
-| **Data** | `git log`, `git status`, `gh api`, `ls`, `find` | Index for recall if output > 4 KB and unpatterned |
-| **Unknown** | Anything else (curl, docker, etc.) | Pass through if ≤ 4 KiB; larger: bounded head+tail slice with full output indexed |
+| **Data** | `git log`, `git status`, `gh api`, `ls`, `find` | Index for recall if output > 4 KiB and no success pattern summary matches (otherwise the summary is shown and nothing is indexed) |
+| **Unknown** | Anything else (curl, docker, etc.) | Pass through if ≤ 4 KiB; larger: a matching success pattern summary if any, else bounded head+tail slice with full output indexed |
 
 Patterns always take priority over category defaults. If a pattern matches, it
 determines the output classification regardless of category.

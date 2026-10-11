@@ -104,10 +104,10 @@ When no pattern matches, oo uses command category to determine behavior:
 
 | Category | Examples | Behavior |
 |----------|----------|----------|
-| **Status** | `cargo test`, `cargo build`, `cargo nextest run`, `pytest`, `eslint` | Quiet success if output > 4 KiB (empty summary) |
-| **Content** | `git show`, `git diff`, `cat`, `bat` | Full output indexed; bounded head+tail slice displayed if output > 4 KiB |
-| **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KiB |
-| **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KiB |
+| **Status** | `cargo test`, `cargo build`, `cargo nextest run`, `pytest`, `eslint` | Quiet success if output > 4 KiB and no success pattern summary matches (empty summary) |
+| **Content** | `git show`, `git diff`, `cat`, `bat` | Full output indexed; bounded head+tail slice displayed if output > 4 KiB and no success pattern summary matches |
+| **Data** | `git log`, `gh issue list`, `ls` | Index for recall if output > 4 KiB and no success pattern summary matches |
+| **Unknown** | `curl`, `docker`, `sh -c`, custom scripts | Full output indexed; bounded head+tail slice displayed if output > 4 KiB and no success pattern summary matches |
 
 A pattern whose success strategy yields a summary takes priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins. Within one directory, pattern files are loaded in unsorted directory-listing order, so when two patterns in the same directory match a command, which one wins is not defined; keep their `command_match` values disjoint.
 
