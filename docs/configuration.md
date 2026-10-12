@@ -98,7 +98,7 @@ export OO_DATA_DIR="/some/custom/data/dir"
 
 ### `ANTHROPIC_API_KEY`
 
-The environment variable named by `api_key_env` in `[learn]` must be set for `oo learn`.
+The environment variable named by `api_key_env` in `[learn]` must be set to a non-empty value for `oo learn`. An empty or whitespace-only value is treated as unset.
 
 - **Required**: Only when using `oo learn`
 - **Default**: no value is set; the variable name defaults to `ANTHROPIC_API_KEY`

@@ -238,7 +238,7 @@ oo learn --hint "compact test summary" pytest tests/
 
 ### Requirements
 
-- The environment variable named by `api_key_env` must be set (default `ANTHROPIC_API_KEY`)
+- The environment variable named by `api_key_env` must be set to a non-empty value (default `ANTHROPIC_API_KEY`); an empty or whitespace-only value is treated as unset
 - Optional: `ANTHROPIC_API_URL` for custom endpoints
 - Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent; a present `[learn]` table must set `provider`, `model` and `api_key_env`)
 
@@ -455,7 +455,7 @@ User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 
-If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
+If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is printed followed by the line `  no learned patterns yet` (two-space indent) instead of pattern lines.
 
 Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 

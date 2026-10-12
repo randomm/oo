@@ -32,6 +32,15 @@ struct Cli {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Rust ignores SIGPIPE by default, so a write to a closed pipe (`oo patterns | head -1`)
+    // returns EPIPE and `println!` panics. Restoring the default makes the process exit
+    // quietly like other Unix tools. Must run before any output.
+    #[cfg(unix)]
+    // SAFETY: signal(2) with SIG_DFL only changes the disposition for this process.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     // Before any dispatch, so the warning appears once on every code path,
     // including the background learn child.
     warn_ignored_overrides();
