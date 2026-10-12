@@ -49,3 +49,38 @@ jobs:
 
       - name: Coverage
         run: cargo tarpaulin --fail-under 70 --timeout 120 --skip-clean --exclude-files src/main.rs
+
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # keep equal to rust-version in Cargo.toml
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-msrv-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check on MSRV
+        run: cargo check --locked --all-targets
+
+      - name: Compile tests on MSRV
+        run: cargo test --locked --no-run
