@@ -62,7 +62,7 @@ pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod commands;
-/// Config directory resolution (`OO_CONFIG_DIR` or the platform config dir).
+/// Config and data directory resolution (`OO_CONFIG_DIR`, `OO_DATA_DIR`, or the platform dirs).
 mod config;
 /// Savings suffix for compressed indicator lines (shared by the render arms).
 mod display;

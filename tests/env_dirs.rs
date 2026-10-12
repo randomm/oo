@@ -2,11 +2,21 @@
 //! never makes files in the current directory act as oo's configuration, status
 //! or database. Each case runs the `oo` binary from a temp directory that holds
 //! repository-style files, so a cwd-relative resolution would be visible.
+//!
+//! Every child process also gets a temp `HOME` and XDG base directories. An
+//! ignored value falls back to the platform default, and without this the
+//! fallback would point at the developer's real config directory, where `oo`
+//! consumes pending learn-status messages on every run.
 
+use std::ffi::OsStr;
 use std::path::Path;
+use std::process::Output;
 use tempfile::TempDir;
 
 const STATUS_LINE: &str = "FAILED repo-fake: planted by the repository\n";
+
+/// Values that oo must ignore for both variables: empty, and relative.
+const IGNORED_VALUES: [&str; 2] = ["", "relative-dir"];
 
 /// A temp directory laid out like a repository that ships oo config files.
 fn repo_with_planted_files() -> TempDir {
@@ -16,53 +26,62 @@ fn repo_with_planted_files() -> TempDir {
     repo
 }
 
-fn oo(cwd: &Path) -> assert_cmd::Command {
+/// An `oo` command whose platform directories all point inside `home`.
+fn oo(cwd: &Path, home: &Path) -> assert_cmd::Command {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("oo");
-    cmd.current_dir(cwd);
+    cmd.current_dir(cwd)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join("xdg-config"))
+        .env("XDG_DATA_HOME", home.join("xdg-data"));
     cmd
 }
 
-#[test]
-fn empty_config_dir_does_not_read_or_clear_repo_status_file() {
-    let repo = repo_with_planted_files();
-    let out = oo(repo.path())
-        .arg("version")
-        .env("OO_CONFIG_DIR", "")
+/// Runs `oo seq 1 3000`, which reads the config and data directories in one run.
+fn run_seq(
+    cwd: &Path,
+    home: &Path,
+    config_dir: impl AsRef<OsStr>,
+    data_dir: impl AsRef<OsStr>,
+) -> Output {
+    oo(cwd, home)
+        .args(["seq", "1", "3000"])
+        .env("OO_CONFIG_DIR", config_dir)
+        .env("OO_DATA_DIR", data_dir)
         .output()
-        .unwrap();
-    assert!(out.status.success());
-    assert!(
-        repo.path().join("learn-status.log").exists(),
-        "repo learn-status.log must not be consumed"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!stderr.contains("planted by the repository"), "{stderr}");
+        .unwrap()
 }
 
 #[test]
-fn relative_config_dir_does_not_read_repo_status_file() {
-    let repo = repo_with_planted_files();
-    let out = oo(repo.path())
-        .arg("version")
-        .env("OO_CONFIG_DIR", "relative-cfg")
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    assert!(repo.path().join("learn-status.log").exists());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!stderr.contains("planted by the repository"), "{stderr}");
+fn ignored_config_dir_does_not_read_repo_status_file() {
+    for value in IGNORED_VALUES {
+        let repo = repo_with_planted_files();
+        let home = TempDir::new().unwrap();
+        let out = oo(repo.path(), home.path())
+            .arg("version")
+            .env("OO_CONFIG_DIR", value)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "OO_CONFIG_DIR={value:?}");
+        assert!(
+            repo.path().join("learn-status.log").exists(),
+            "OO_CONFIG_DIR={value:?}: repo learn-status.log must not be consumed"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("planted by the repository"), "{stderr}");
+    }
 }
 
 #[test]
 fn relative_config_dir_warns_once_per_process() {
     let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
     // Indexing output reads the config directory from several places in one run.
-    let out = oo(repo.path())
-        .args(["seq", "1", "3000"])
-        .env("OO_CONFIG_DIR", "relative-cfg")
-        .env("OO_DATA_DIR", repo.path().join("data"))
-        .output()
-        .unwrap();
+    let out = run_seq(
+        repo.path(),
+        home.path(),
+        "relative-cfg",
+        home.path().join("data"),
+    );
     assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
@@ -73,45 +92,38 @@ fn relative_config_dir_warns_once_per_process() {
 }
 
 #[test]
-fn empty_data_dir_does_not_create_database_in_cwd() {
-    let repo = TempDir::new().unwrap();
-    let cfg = TempDir::new().unwrap();
-    let out = oo(repo.path())
-        .args(["seq", "1", "3000"])
-        .env("OO_CONFIG_DIR", cfg.path())
-        .env("OO_DATA_DIR", "")
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    assert!(!repo.path().join("oo.db").exists(), "oo.db created in cwd");
-}
-
-#[test]
-fn relative_data_dir_does_not_create_database_in_cwd() {
-    let repo = TempDir::new().unwrap();
-    let cfg = TempDir::new().unwrap();
-    let out = oo(repo.path())
-        .args(["seq", "1", "3000"])
-        .env("OO_CONFIG_DIR", cfg.path())
-        .env("OO_DATA_DIR", "rel-data")
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    assert!(!repo.path().join("rel-data").join("oo.db").exists());
-    assert!(!repo.path().join("oo.db").exists());
+fn ignored_data_dir_does_not_create_database_in_cwd() {
+    for value in IGNORED_VALUES {
+        let repo = TempDir::new().unwrap();
+        let home = TempDir::new().unwrap();
+        let cfg = TempDir::new().unwrap();
+        let out = run_seq(repo.path(), home.path(), cfg.path(), value);
+        assert!(out.status.success(), "OO_DATA_DIR={value:?}");
+        assert!(
+            !repo.path().join("oo.db").exists(),
+            "OO_DATA_DIR={value:?}: oo.db created in cwd"
+        );
+        assert!(
+            !repo.path().join(value).join("oo.db").exists(),
+            "OO_DATA_DIR={value:?}: oo.db created under cwd"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let expected_warnings = usize::from(!value.is_empty());
+        assert_eq!(
+            stderr.matches("ignoring OO_DATA_DIR").count(),
+            expected_warnings,
+            "OO_DATA_DIR={value:?}: {stderr}"
+        );
+    }
 }
 
 #[test]
 fn absolute_data_dir_still_holds_database() {
     let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
     let cfg = TempDir::new().unwrap();
     let data = TempDir::new().unwrap();
-    let out = oo(repo.path())
-        .args(["seq", "1", "3000"])
-        .env("OO_CONFIG_DIR", cfg.path())
-        .env("OO_DATA_DIR", data.path())
-        .output()
-        .unwrap();
+    let out = run_seq(repo.path(), home.path(), cfg.path(), data.path());
     assert!(out.status.success());
     assert!(data.path().join("oo.db").exists());
     assert!(!String::from_utf8_lossy(&out.stderr).contains("ignoring OO_DATA_DIR"));
