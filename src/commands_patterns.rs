@@ -1,14 +1,23 @@
 //! Pattern listing functionality for `oo patterns` commands.
 
+use std::io::{self, Write};
 use std::path::Path;
 
 use crate::{init, learn, pattern};
 
-/// Print a single pattern entry with flags.
+/// Line printed under the `User (<dir>):` header when no user pattern is listable.
+const EMPTY_USER_PATTERNS_LINE: &str = "  no learned patterns yet";
+
+/// Write a single pattern entry with flags.
 ///
 /// Helper function to reduce duplication in pattern listing code.
-/// Prints the command_match with optional success/failure flags.
-fn print_pattern_entry(cmd_match: &str, has_success: bool, has_failure: bool) {
+/// Writes the command_match with optional success/failure flags.
+fn write_pattern_entry<W: Write>(
+    out: &mut W,
+    cmd_match: &str,
+    has_success: bool,
+    has_failure: bool,
+) -> io::Result<()> {
     if has_success || has_failure {
         let mut flags = Vec::new();
         if has_success {
@@ -17,19 +26,20 @@ fn print_pattern_entry(cmd_match: &str, has_success: bool, has_failure: bool) {
         if has_failure {
             flags.push("failure");
         }
-        println!("  {cmd_match}  [{}]", flags.join("] ["));
+        writeln!(out, "  {cmd_match}  [{}]", flags.join("] ["))
     } else {
-        println!("  {cmd_match}");
+        writeln!(out, "  {cmd_match}")
     }
 }
 
-/// Print pattern entries from a single directory, returning true if any were found.
+/// Write pattern entries from a single directory, returning true if any were found.
 ///
-/// Each line is printed with a two-space indent so callers can add section headers.
-pub fn list_patterns_in(dir: &Path) -> bool {
+/// Each line is written with a two-space indent so callers can add section headers.
+/// A missing directory or one with no parseable `.toml` files writes nothing.
+fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return false,
+        Err(_) => return Ok(false),
     };
 
     let mut found = false;
@@ -42,21 +52,28 @@ pub fn list_patterns_in(dir: &Path) -> bool {
             .ok()
             .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
 
-        let cmd_match = parsed
-            .as_ref()
-            .and_then(|v| v.get("command_match")?.as_str().map(str::to_string));
-        let has_success = parsed.as_ref().and_then(|v| v.get("success")).is_some();
-        let has_failure = parsed.as_ref().and_then(|v| v.get("failure")).is_some();
-
-        if parsed.is_none() {
+        let Some(parsed) = parsed else {
             continue;
-        }
+        };
         found = true;
-        let cmd_match = cmd_match.unwrap_or_else(|| "(unknown)".into());
 
-        print_pattern_entry(&cmd_match, has_success, has_failure);
+        let cmd_match = parsed
+            .get("command_match")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(unknown)");
+        let has_success = parsed.get("success").is_some();
+        let has_failure = parsed.get("failure").is_some();
+
+        write_pattern_entry(out, cmd_match, has_success, has_failure)?;
     }
-    found
+    Ok(found)
+}
+
+/// Print pattern entries from a single directory, returning true if any were found.
+///
+/// Each line is printed with a two-space indent so callers can add section headers.
+pub fn list_patterns_in(dir: &Path) -> bool {
+    write_patterns_in(&mut io::stdout().lock(), dir).unwrap_or(false)
 }
 
 /// List learned pattern files from a single directory (legacy test helper).
@@ -67,47 +84,58 @@ pub fn cmd_patterns_in(dir: &Path) -> i32 {
     0
 }
 
-/// List built-in patterns.
-fn list_builtins_in() -> bool {
-    let patterns = pattern::builtins();
-    if patterns.is_empty() {
-        return false;
+/// Write the `User (<dir>):` section, with the empty-state line when nothing is listed.
+fn write_user_section<W: Write>(out: &mut W, dir: &Path) -> io::Result<()> {
+    writeln!(out, "User ({}):", dir.display())?;
+    if !write_patterns_in(out, dir)? {
+        writeln!(out, "{EMPTY_USER_PATTERNS_LINE}")?;
     }
+    Ok(())
+}
 
-    for pat in patterns {
+/// Write the built-in patterns.
+fn write_builtins<W: Write>(out: &mut W) -> io::Result<()> {
+    for pat in pattern::builtins() {
         let cmd_match = pat.command_match.as_str();
         let has_success = pat.success.is_some();
         let has_failure = pat.failure.is_some();
 
-        print_pattern_entry(cmd_match, has_success, has_failure);
+        write_pattern_entry(out, cmd_match, has_success, has_failure)?;
     }
-    true
+    Ok(())
 }
 
-/// List patterns from both project-local and user config directories.
-pub fn cmd_patterns() -> i32 {
+/// Write the full `oo patterns` listing.
+fn write_all_patterns<W: Write>(out: &mut W) -> io::Result<()> {
     let project_dir = std::env::current_dir()
         .map(|cwd| init::project_patterns_dir(&cwd))
         .ok();
     let user_dir = learn::patterns_dir();
 
     // Show built-in patterns first
-    println!("Built-in ({} patterns):", pattern::builtins().len());
-    list_builtins_in();
-    println!();
+    writeln!(out, "Built-in ({} patterns):", pattern::builtins().len())?;
+    write_builtins(out)?;
+    writeln!(out)?;
 
     if let Some(ref pdir) = project_dir {
         if pdir.exists() {
-            println!("Project ({}):", pdir.display());
-            list_patterns_in(pdir);
-            println!();
+            writeln!(out, "Project ({}):", pdir.display())?;
+            write_patterns_in(out, pdir)?;
+            writeln!(out)?;
         }
     }
 
-    println!("User ({}):", user_dir.display());
-    if !list_patterns_in(&user_dir) {
-        println!("  no learned patterns yet");
-    }
-
-    0
+    write_user_section(out, &user_dir)
 }
+
+/// List patterns from both project-local and user config directories.
+pub fn cmd_patterns() -> i32 {
+    match write_all_patterns(&mut io::stdout().lock()) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+#[cfg(test)]
+#[path = "patterns_empty_tests.rs"]
+mod tests;
