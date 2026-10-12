@@ -111,7 +111,7 @@ Optional custom endpoint for Anthropic API.
 export ANTHROPIC_API_URL="https://your-proxy.example.com/v1/messages"
 ```
 
-> **Security warning:** `https://` URLs are accepted for any host. `http://` URLs are accepted only when the host (the text before the first `:` or `/`) is `localhost` or `127.0.0.1`. This check is currently bypassable with URL userinfo such as `http://localhost:@host/`, which sends requests to `host` in plaintext (known defect, #190). The check applies only to the configured URL. The HTTP client follows redirects (up to 10 by default) and redirect targets are not checked. On a 3xx response other than 304 that has a `Location` header, the request is repeated against the new URL: for 307 and 308 a POST cannot be repeated and fails with an error; for the other codes (for example 301, 302, 303) it becomes a GET without a body. The `x-api-key` header (the API key) is sent to the redirect target, including to another host, and the target is not re-validated (known defect, #193; 302 observed with two local 127.0.0.1 servers, which is the same host; 307 fails before the target is contacted; other hosts and the other codes are from source). Because `https_only` is off, an `https://` endpoint can redirect to `http://`, and the key is then sent in plaintext (from source: `ureq-3.2.0/src/config.rs:872`, `run.rs:149`). A 3xx other than 304 without a `Location` header is an error.
+> **Security warning:** the URL rules (HTTPS except for `localhost`, `127.0.0.1` and `[::1]`, no userinfo) and the rule that redirects are never followed are in [When oo makes network calls](security-model.md#when-oo-makes-network-calls).
 
 ## Runtime Thresholds
 

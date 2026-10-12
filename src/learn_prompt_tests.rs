@@ -81,12 +81,8 @@ fn test_call_anthropic_success() {
         .with_body(include_str!("../tests/fixtures/anthropic_success.json"))
         .create();
 
-    let result = call_anthropic(
-        &format!("{}/v1/messages", server.url()),
-        "test-key",
-        "test-model",
-        "test prompt",
-    );
+    let url = ApiUrl::parse(&format!("{}/v1/messages", server.url())).expect("valid URL");
+    let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
     assert!(result.is_ok(), "expected Ok, got: {result:?}");
     assert!(
         result.unwrap().contains("command_match"),
@@ -198,16 +194,76 @@ fn test_call_anthropic_malformed_response() {
         .with_body(r#"{"id":"msg-test","type":"message","content":[]}"#)
         .create();
 
-    let result = call_anthropic(
-        &format!("{}/v1/messages", server.url()),
-        "test-key",
-        "test-model",
-        "test prompt",
-    );
+    let url = ApiUrl::parse(&format!("{}/v1/messages", server.url())).expect("valid URL");
+    let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
     // Empty content array → missing text field → should return Err
     assert!(
         result.is_err(),
         "expected Err on malformed response, got Ok"
     );
     mock.assert();
+}
+
+// ---------------------------------------------------------------------------
+// call_anthropic: redirects are refused and never forwarded
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_call_anthropic_refuses_every_redirect_status() {
+    for status in [300, 301, 302, 303, 304, 305, 306, 307, 308] {
+        let mut origin = mockito::Server::new();
+        let mut target = mockito::Server::new();
+        let target_mock = target
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .expect(0)
+            .create();
+        let origin_mock = origin
+            .mock("POST", "/v1/messages")
+            .with_status(status)
+            .with_header("location", &format!("{}/steal", target.url()))
+            .expect(1)
+            .create();
+
+        let url = ApiUrl::parse(&format!("{}/v1/messages", origin.url())).expect("valid URL");
+        let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
+        let msg = result.expect_err("a redirect must be refused").to_string();
+        assert_eq!(
+            msg,
+            format!(
+                "learn error: unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
+            ),
+        );
+        assert!(
+            !msg.contains("/steal"),
+            "error must not echo Location: {msg}"
+        );
+        origin_mock.assert();
+        target_mock.assert();
+    }
+}
+
+#[test]
+fn test_call_anthropic_refuses_3xx_without_location_header() {
+    for status in [302, 307, 304] {
+        let mut origin = mockito::Server::new();
+        let origin_mock = origin
+            .mock("POST", "/v1/messages")
+            .with_status(status)
+            .expect(1)
+            .create();
+
+        let url = ApiUrl::parse(&format!("{}/v1/messages", origin.url())).expect("valid URL");
+        let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
+        let msg = result
+            .expect_err("a redirect without Location must be refused")
+            .to_string();
+        assert_eq!(
+            msg,
+            format!(
+                "learn error: unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
+            ),
+        );
+        origin_mock.assert();
+    }
 }

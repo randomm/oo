@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::config::config_dir;
 use crate::error::Error;
 pub use crate::learn_prompt::SYSTEM_PROMPT;
+use crate::learn_url::ApiUrl;
 
 // ---------------------------------------------------------------------------
 // Config & Validation limits
@@ -141,6 +142,7 @@ pub(crate) fn run_learn_with_config(
         h => h,
     };
 
+    let api_url = ApiUrl::parse(params.base_url)?;
     let truncated_command = crate::learn_utils::truncate_utf8(command, MAX_COMMAND_LENGTH);
 
     let user_msg = if let Some(h) = hint {
@@ -157,9 +159,7 @@ pub(crate) fn run_learn_with_config(
 
     let get_response = |msg: &str| -> Result<String, Error> {
         match params.config.provider.as_str() {
-            "anthropic" => {
-                call_anthropic(params.base_url, params.api_key, &params.config.model, msg)
-            }
+            "anthropic" => call_anthropic(&api_url, params.api_key, &params.config.model, msg),
             other => Err(Error::Learn(format!("unknown provider: {other}"))),
         }
     };
@@ -234,8 +234,6 @@ fn run_learn_with_hint(
 
     let base_url = std::env::var("ANTHROPIC_API_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".to_string());
-
-    validate_anthropic_url(&base_url)?;
 
     let params = LearnParams {
         config: &config,
@@ -335,7 +333,7 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 // ---------------------------------------------------------------------------
 
 fn call_anthropic(
-    base_url: &str,
+    base_url: &ApiUrl,
     api_key: &str,
     model: &str,
     user_msg: &str,
@@ -350,20 +348,32 @@ fn call_anthropic(
 
     use std::time::Duration;
 
-    // Configure Agent with explicit timeout to prevent hanging on API calls
+    // Configure Agent with explicit timeout to prevent hanging on API calls.
+    // Redirects are refused: ureq would replay x-api-key to the Location target.
+    // max_redirects(0) makes ureq return a 3xx as an ordinary response, so the status check below refuses it.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
         .timeout_connect(Some(Duration::from_secs(10)))
+        .max_redirects(0)
         .build()
         .into();
 
-    let response: serde_json::Value = agent
-        .post(base_url)
+    let mut response = agent
+        .post(base_url.uri().clone())
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
         .send_json(&body)
-        .map_err(|e| Error::Learn(format!("Anthropic API error: {e}")))?
+        .map_err(|e| Error::Learn(format!("Anthropic API error: {e}")))?;
+
+    let status = response.status().as_u16();
+    if (300..400).contains(&status) {
+        return Err(Error::Learn(format!(
+            "unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
+        )));
+    }
+
+    let response: serde_json::Value = response
         .body_mut()
         .read_json()
         .map_err(|e| Error::Learn(format!("response parse error: {e}")))?;
@@ -421,24 +431,6 @@ fn label(command: &str) -> String {
 
 fn truncate_for_prompt(output: &str) -> &str {
     crate::learn_utils::truncate_utf8(output, 4000)
-}
-
-/// Validate ANTHROPIC_API_URL uses HTTPS (with localhost exceptions).
-fn validate_anthropic_url(url: &str) -> Result<(), Error> {
-    if url.starts_with("https://") {
-        return Ok(());
-    }
-    // HTTP only allowed for localhost/127.0.0.1
-    // Extract host portion: "http://HOST:port/path" or "http://HOST/path"
-    if let Some(rest) = url.strip_prefix("http://") {
-        let host = rest.split([':', '/']).next().unwrap_or("");
-        if host == "localhost" || host == "127.0.0.1" {
-            return Ok(());
-        }
-    }
-    Err(Error::Learn(format!(
-        "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1."
-    )))
 }
 
 /// Validate a TOML pattern string using the same regex limits as TOML loading.
