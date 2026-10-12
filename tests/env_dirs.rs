@@ -158,3 +158,80 @@ fn absolute_data_dir_still_holds_database() {
     assert!(data.path().join("oo.db").exists());
     assert!(!String::from_utf8_lossy(&out.stderr).contains("ignoring OO_DATA_DIR"));
 }
+
+/// Positive control for the negative cases above: the same planted layout is
+/// read when it sits in a valid absolute `OO_CONFIG_DIR`.
+#[test]
+fn absolute_config_dir_with_planted_files_is_read() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let cfg = TempDir::new().unwrap();
+    plant_oo_files(cfg.path());
+
+    // `seq` runs first: every foreground run consumes learn-status.log, so a
+    // prior `oo patterns` run would take the planted status line.
+    let seq = run_seq(
+        repo.path(),
+        home.path(),
+        cfg.path(),
+        home.path().join("data"),
+    );
+    assert!(seq.status.success());
+    let stderr = String::from_utf8_lossy(&seq.stderr);
+    assert!(
+        stderr.contains("retention"),
+        "planted config.toml not read: {stderr}"
+    );
+    assert!(stderr.contains("planted by the repository"), "{stderr}");
+    assert!(
+        !cfg.path().join("learn-status.log").exists(),
+        "planted learn-status.log was not consumed"
+    );
+
+    plant_oo_files(cfg.path());
+    let patterns = oo(repo.path(), home.path())
+        .arg("patterns")
+        .env("OO_CONFIG_DIR", cfg.path())
+        .output()
+        .unwrap();
+    assert!(patterns.status.success());
+    assert!(
+        String::from_utf8_lossy(&patterns.stdout).contains(PLANTED_PATTERN),
+        "planted user pattern not listed for an absolute OO_CONFIG_DIR"
+    );
+}
+
+/// A padded `OO_DATA_DIR` is ignored with a warning naming the variable. No
+/// database appears at the padded location, the trimmed one, or under cwd.
+#[test]
+fn padded_data_dir_is_ignored_and_creates_no_database() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let cfg = TempDir::new().unwrap();
+    let trimmed = home.path().join("data");
+    let padded_values = [
+        format!(" {}", trimmed.display()),
+        format!("{} ", trimmed.display()),
+    ];
+    for padded in &padded_values {
+        let out = run_seq(repo.path(), home.path(), cfg.path(), padded);
+        assert!(out.status.success(), "OO_DATA_DIR={padded:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            stderr.matches("ignoring OO_DATA_DIR").count(),
+            1,
+            "OO_DATA_DIR={padded:?}: {stderr}"
+        );
+        // Path::join replaces the base for an absolute argument, so this covers
+        // the padded absolute path (trailing space) and the cwd-relative one
+        // (leading space).
+        assert!(
+            !repo.path().join(padded).join("oo.db").exists(),
+            "OO_DATA_DIR={padded:?}: oo.db created at the padded location"
+        );
+        assert!(
+            !trimmed.join("oo.db").exists(),
+            "OO_DATA_DIR={padded:?}: oo.db created at the trimmed path"
+        );
+    }
+}

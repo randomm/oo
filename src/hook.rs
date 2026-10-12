@@ -5,7 +5,7 @@
 //! `hookSpecificOutput` object on stdout (rewriting the command in place via
 //! `updatedInput`); for everything else stdout stays empty and it exits 0. An
 //! ignored relative or padded `OO_CONFIG_DIR` / `OO_DATA_DIR` adds one warning
-//! line on stderr per process (see `config.rs`).
+//! line per ignored variable on stderr, per process (see `config.rs`).
 //!
 //! **Fail-open invariant:** the hook must never block or fail closed. Any
 //! parse error, empty/invalid input, missing field, or unexpected value
