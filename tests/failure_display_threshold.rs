@@ -111,3 +111,55 @@ fn test_failure_200_lines_is_indexed_and_recallable() {
         "recall must return the hidden marker; got: {recall:?}"
     );
 }
+
+#[test]
+fn test_failure_120_lines_is_displayed_in_full_without_fused_lines() {
+    let script = "#!/bin/sh\nfor i in $(seq 1 120); do echo \"line $i\"; done\nexit 1\n";
+    let (_bin, path) = make_fake_bin("zfailtool194", script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool194"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    // The 60/40 boundary (lines 72 and 73 for 120 lines) must stay on separate lines.
+    assert!(
+        !stdout.contains("line 72line 73"),
+        "boundary lines fused; got: {stdout:?}"
+    );
+    for i in 1..=120 {
+        assert!(
+            stdout.lines().any(|l| l == format!("line {i}")),
+            "line {i} must be displayed in full; got: {stdout:?}"
+        );
+    }
+    assert!(!stdout.contains("lines truncated"));
+}
+
+#[test]
+fn test_failure_121_lines_is_truncated_with_marker_and_split_at_72_48() {
+    let script = "#!/bin/sh\nfor i in $(seq 1 121); do echo \"line $i\"; done\nexit 1\n";
+    let (_bin, path) = make_fake_bin("zfailtool194", script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool194"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    // head = 72 lines (1..=72), one line dropped (73), tail = 48 lines (74..=121)
+    assert!(stdout.lines().any(|l| l == "line 72"), "got: {stdout:?}");
+    assert!(stdout.lines().any(|l| l == "line 74"), "got: {stdout:?}");
+    assert!(
+        stdout.contains("... [1 lines truncated] ..."),
+        "got: {stdout:?}"
+    );
+    assert!(!stdout.contains("line 73"), "got: {stdout:?}");
+}

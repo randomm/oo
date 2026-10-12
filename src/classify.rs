@@ -626,3 +626,9 @@ pub fn smart_truncate(output: &str) -> String {
 #[cfg(test)]
 #[path = "classify_tests.rs"]
 mod tests;
+
+/// Smart-truncation boundary tests (issue #194), kept apart from the
+/// over-cap `classify_tests.rs`.
+#[cfg(test)]
+#[path = "classify_trunc_tests.rs"]
+mod trunc_tests;
