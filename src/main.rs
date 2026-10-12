@@ -1,7 +1,7 @@
 use clap::Parser;
 use double_o::{
-    Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn,
-    cmd_patterns, cmd_recall, cmd_rewrite, cmd_run, learn, parse_action,
+    Action, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
+    cmd_rewrite, cmd_run, learn, learn_status, parse_action,
 };
 
 // ---------------------------------------------------------------------------
@@ -35,8 +35,21 @@ fn main() {
     // Intercept _learn_bg before clap parsing (it's a hidden internal command)
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
-        if let Some(path) = raw_args.get(2) {
-            let _ = learn::run_background(path);
+        let status = learn_status::learn_status_path();
+        match (raw_args.get(2), raw_args.get(3)) {
+            (Some(path), Some(dir)) => {
+                let _ = learn::run_background(path, std::path::Path::new(dir), &status);
+            }
+            // Older parents pass only the path: report it, and leave the file alone
+            // because argv is untrusted and the directory is what makes it a payload.
+            (Some(_), None) => {
+                let _ = learn_status::write_learn_status_failure(
+                    &status,
+                    "learn",
+                    "_learn_bg needs a payload directory argument",
+                );
+            }
+            _ => {}
         }
         std::process::exit(0);
     }
@@ -46,8 +59,8 @@ fn main() {
     // Show any pending learn-status message from a previous background learn.
     // Runs before command dispatch so the user sees the result on the next invocation.
     {
-        let status_path = learn::learn_status_path();
-        check_and_clear_learn_status(&status_path);
+        let status_path = learn_status::learn_status_path();
+        learn_status::check_and_clear_learn_status(&status_path);
     }
 
     let exit_code = match parse_action(&cli.args) {

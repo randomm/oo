@@ -232,7 +232,7 @@ oo learn --hint "compact test summary" pytest tests/
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
 3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
-4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form, but only when the config directory already exists; see Exit codes
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form; see Exit codes
 
 `--hint <text>` (before the command) passes extra context to the pattern generator.
 
@@ -256,7 +256,7 @@ Running `oo learn` for the same command overwrites the existing pattern file wit
 
 ### Exit codes
 
-Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation, but only if that config directory already exists when the failure occurs (`oo learn` does not create it on failure). If it does not exist, the failure is silent.
+Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation. The config directory is created when the failure is written, so a fresh setup reports failures too. If the status file cannot be written, the failure is dropped silently.
 
 ---
 

@@ -1,11 +1,13 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use crate::config::config_dir;
 use crate::error::Error;
+use crate::learn_payload::{create_payload, is_payload_shaped, payload_dir, remove_payload};
 pub use crate::learn_prompt::SYSTEM_PROMPT;
+/// Kept for callers of the published `double_o` crate; new code uses `learn_status`.
+pub use crate::learn_status::learn_status_path;
 use crate::learn_url::ApiUrl;
 
 // ---------------------------------------------------------------------------
@@ -98,11 +100,6 @@ pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }
 
-/// Path to the one-line status file written by the background learn process.
-pub fn learn_status_path() -> PathBuf {
-    config_dir().join("learn-status.log")
-}
-
 /// Load learn configuration from `config.toml` in the config directory
 /// (see `patterns_dir` for the platform paths).
 ///
@@ -173,8 +170,11 @@ pub(crate) fn run_learn_with_config(
         let filename = format!("{}.toml", label(command));
         let path = params.patterns_dir.join(&filename);
         std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
-        let _ =
-            crate::commands::write_learn_status(params.learn_status_path, &label(command), &path);
+        let _ = crate::learn_status::write_learn_status(
+            params.learn_status_path,
+            &label(command),
+            &path,
+        );
         return Ok(());
     }
     last_err = "initial TOML validation failed".to_string();
@@ -192,7 +192,7 @@ pub(crate) fn run_learn_with_config(
             let filename = format!("{}.toml", label(command));
             let path = params.patterns_dir.join(&filename);
             std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
-            let _ = crate::commands::write_learn_status(
+            let _ = crate::learn_status::write_learn_status(
                 params.learn_status_path,
                 &label(command),
                 &path,
@@ -211,7 +211,13 @@ pub(crate) fn run_learn_with_config(
 /// validates the result, and saves the pattern to disk. Retries up to 2 times
 /// if the LLM returns invalid TOML.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
-    run_learn_with_hint(command, output, exit_code, None)
+    run_learn_with_hint(
+        command,
+        output,
+        exit_code,
+        None,
+        &crate::learn_status::learn_status_path(),
+    )
 }
 
 /// Internal variant of run_learn that accepts an optional hint.
@@ -222,6 +228,7 @@ fn run_learn_with_hint(
     output: &str,
     exit_code: i32,
     hint: Option<&str>,
+    status_path: &Path,
 ) -> Result<(), Error> {
     let config = load_learn_config()?;
 
@@ -240,7 +247,7 @@ fn run_learn_with_hint(
         api_key: &api_key,
         base_url: &base_url,
         patterns_dir: &patterns_dir(),
-        learn_status_path: &learn_status_path(),
+        learn_status_path: status_path,
         hint,
     };
 
@@ -256,9 +263,9 @@ pub fn spawn_background(
 ) -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Learn(e.to_string()))?;
 
-    // Use a secure named temp file to avoid PID-based predictable filenames
-    // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
-    let mut tmp = tempfile::NamedTempFile::new().map_err(|e| Error::Learn(e.to_string()))?;
+    // A random tempfile name avoids PID-based predictable filenames
+    // (symlink/TOCTOU attacks).
+    let dir = payload_dir();
     let mut data = serde_json::json!({
         "command": command,
         "output": output,
@@ -267,17 +274,16 @@ pub fn spawn_background(
     if let Some(h) = hint {
         data["hint"] = serde_json::Value::String(h.to_string());
     }
-    tmp.write_all(data.to_string().as_bytes())
-        .map_err(|e| Error::Learn(e.to_string()))?;
-
-    // Convert to TempPath: closes the file handle but keeps the file on disk
-    // until the TempPath is dropped — after the child has been spawned.
-    let tmp_path = tmp.into_temp_path();
+    // Kept on disk (not deleted by the TempPath drop) until the child spawns;
+    // `keep()` below stops the parent deleting it.
+    let tmp_path =
+        create_payload(&dir, &data.to_string()).map_err(|e| Error::Learn(e.to_string()))?;
 
     // Spawn detached child
     std::process::Command::new(exe)
         .arg("_learn_bg")
         .arg(&tmp_path)
+        .arg(&dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -294,35 +300,71 @@ pub fn spawn_background(
 }
 
 /// Entry point for the background learn child process.
-pub fn run_background(data_path: &str) -> Result<(), Error> {
+///
+/// `payload_dir` is the directory the parent created the payload in; the name
+/// check uses it rather than this process's environment.
+pub fn run_background(
+    data_path: &str,
+    payload_dir: &Path,
+    status_path: &Path,
+) -> Result<(), Error> {
     let path = Path::new(data_path);
-    let content = std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))?;
-    let data: LearnData =
-        serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
+    // argv is untrusted: only a payload-shaped name directly in `payload_dir` is
+    // read or removed, which rejects paths like /dev/zero. It does not reject a
+    // FIFO with such a name, which would block the read. The payload can hold
+    // command output (possibly secret), so it is removed right after the read.
+    let shaped = is_payload_shaped(path, payload_dir);
+    let read = if shaped {
+        std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))
+    } else {
+        Err(Error::Learn(format!(
+            "not a learn payload: {}",
+            path.display()
+        )))
+    };
+    let removal = shaped.then(|| remove_payload(path).err()).flatten();
 
-    let command = &data.command;
-    let output = &data.output;
+    // Every failure below reaches the status log, labelled with the command once
+    // it is known; "learn" covers a payload that could not be parsed.
+    let mut cmd_label = String::from("learn");
+    let result = read.and_then(|content| {
+        let data: LearnData =
+            serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
+        cmd_label = label(&data.command);
+        // Explicit bounds check to avoid silent truncation i64→i32
+        let exit_code = i32::try_from(data.exit_code).map_err(|_| {
+            Error::Learn(format!(
+                "exit_code out of range for i32: {}",
+                data.exit_code
+            ))
+        })?;
+        run_learn_with_hint(
+            &data.command,
+            &data.output,
+            exit_code,
+            data.hint.as_deref(),
+            status_path,
+        )
+    });
 
-    // Explicit bounds check to avoid silent truncation i64→i32
-    let exit_code = i32::try_from(data.exit_code).map_err(|_| {
-        Error::Learn(format!(
-            "exit_code out of range for i32: {}",
-            data.exit_code
-        ))
-    })?;
+    let result = match removal {
+        None => result,
+        Some(e) => {
+            let msg = format!("could not remove payload {}: {e}", path.display());
+            Err(Error::Learn(match result {
+                Ok(()) => msg,
+                Err(learn_err) => format!("{msg}; {learn_err}"),
+            }))
+        }
+    };
 
-    let hint = data.hint.as_deref();
-
-    let result = run_learn_with_hint(command, output, exit_code, hint);
-
-    // Clean up temp file
-    let _ = std::fs::remove_file(path);
-
+    // Silent when the status cannot be written: the detached child has no terminal.
     if let Err(ref e) = result {
-        let cmd_label = label(command);
-        let status_path = learn_status_path();
-        let _ =
-            crate::commands::write_learn_status_failure(&status_path, &cmd_label, &e.to_string());
+        let _ = crate::learn_status::write_learn_status_failure(
+            status_path,
+            &cmd_label,
+            &e.to_string(),
+        );
     }
 
     result
