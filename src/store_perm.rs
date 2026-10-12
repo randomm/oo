@@ -3,8 +3,8 @@
 // The database holds captured command output, which can contain secrets. oo
 // therefore keeps a data directory it creates at 0700 and `oo.db` plus its
 // SQLite sidecars at 0600 (the umask can only remove bits from those). Every
-// step here is best effort: a chmod or create failure never fails `open_at`,
-// and nothing is printed.
+// creating or tightening `oo.db` and its sidecars is best effort and silent;
+// creating the data directory still returns an error (see `create_data_dir`).
 
 use std::fs;
 #[cfg(unix)]
@@ -14,7 +14,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
 
-/// Create `dir` if it is missing, returning any error other than "already exists".
+/// Create `dir` if it is missing; any other creation error is returned.
 ///
 /// Only the final component is created with mode 0700; parents come from
 /// `create_dir_all` under the process umask. A directory that already exists
@@ -46,7 +46,7 @@ fn make_private_dir(dir: &Path) -> io::Result<()> {
 
 /// Make `db` and its sidecars private before SQLite opens them.
 ///
-/// `oo.db` is created with mode 0600 first, because SQLite gives new `-wal`,
+/// `oo.db` is created with mode 0600 if missing, because SQLite gives new `-wal`,
 /// `-shm` and `-journal` files the mode of the main file. Existing files that
 /// oo's user owns are then tightened, which covers leftovers from older builds.
 #[cfg(unix)]
