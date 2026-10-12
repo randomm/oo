@@ -40,8 +40,7 @@ pub const MIN_SAVINGS: usize = 4096;
 /// ratio.
 pub const DISPLAY_CAP: usize = SMALL_THRESHOLD;
 
-/// Failure output up to this many lines is shown in full. Beyond it, smart
-/// truncation applies and caps the display at this many lines.
+/// Hard cap on total lines shown after truncation.
 const MAX_LINES: usize = 120;
 
 /// Command category — determines default output handling when no pattern matches.
@@ -600,8 +599,6 @@ pub fn smart_truncate(output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
     let total = lines.len();
 
-    // Totals up to MAX_LINES return the input byte-for-byte (trailing newline
-    // and CRLF intact). Joining head and tail here would fuse the boundary lines.
     if total <= MAX_LINES {
         return output.to_string();
     }
@@ -626,9 +623,6 @@ pub fn smart_truncate(output: &str) -> String {
 #[cfg(test)]
 #[path = "classify_tests.rs"]
 mod tests;
-
-/// Smart-truncation boundary tests (issue #194), kept apart from the
-/// over-cap `classify_tests.rs`.
 #[cfg(test)]
 #[path = "classify_trunc_tests.rs"]
 mod trunc_tests;
