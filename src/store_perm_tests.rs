@@ -23,15 +23,11 @@ impl Drop for ModeGuard {
     }
 }
 
-#[cfg(unix)]
 fn mode_of(path: &Path) -> u32 {
-    use std::os::unix::fs::PermissionsExt;
     fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-#[cfg(unix)]
 fn set_mode(path: &Path, mode: u32) {
-    use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
 }
 
@@ -243,8 +239,24 @@ fn test_open_at_through_symlink_leaves_target_mode_and_still_works() {
     let store = SqliteStore::open_at(&db).expect("open_at must succeed through a symlink");
     store
         .conn
-        .execute_batch("CREATE TABLE probe (x INTEGER); INSERT INTO probe VALUES (1);")
+        .execute_batch(
+            "BEGIN IMMEDIATE; CREATE TABLE probe (x INTEGER); INSERT INTO probe VALUES (1);",
+        )
         .unwrap();
+
+    // SQLite names the journal after the resolved target and derives its mode
+    // from the followed target, so it inherits the target's 0644 (the bundled
+    // SQLite fchmods a new file to the requested mode, so the umask does not
+    // apply). This pins the documented limit: a symlinked oo.db does not get
+    // 0600 sidecars.
+    let journal = tmp.path().join("elsewhere.db-journal");
+    assert!(journal.exists(), "journal should exist mid-transaction");
+    assert_eq!(
+        mode_of(&journal),
+        0o644,
+        "a symlinked oo.db journal takes the target's mode"
+    );
+    store.conn.execute_batch("COMMIT;").unwrap();
 
     assert_eq!(
         mode_of(&target),
