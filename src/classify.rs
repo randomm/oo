@@ -40,10 +40,7 @@ pub const MIN_SAVINGS: usize = 4096;
 /// ratio.
 pub const DISPLAY_CAP: usize = SMALL_THRESHOLD;
 
-/// Maximum lines to show in failure output before smart truncation kicks in.
-const TRUNCATION_THRESHOLD: usize = 80;
-
-/// Hard cap on total lines shown after truncation.
+/// Output up to this many lines is returned unchanged (head/tail joins would fuse lines); longer output is capped here.
 const MAX_LINES: usize = 120;
 
 /// Command category — determines default output handling when no pattern matches.
@@ -602,7 +599,7 @@ pub fn smart_truncate(output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
     let total = lines.len();
 
-    if total <= TRUNCATION_THRESHOLD {
+    if total <= MAX_LINES {
         return output.to_string();
     }
 
@@ -626,3 +623,6 @@ pub fn smart_truncate(output: &str) -> String {
 #[cfg(test)]
 #[path = "classify_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "classify_trunc_tests.rs"]
+mod trunc_tests;
