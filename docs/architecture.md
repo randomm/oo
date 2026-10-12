@@ -110,7 +110,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval, as are the full merged outputs of failed commands whose displayed slice does not match them line for line (see Failure above).
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory, so `OO_DATA_DIR=/x` gives `/x/oo.db`; a relative value is resolved against the current directory and an empty value gives `./oo.db`)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (`~/.local/share/.oo/` by default on Linux, `~/Library/Application Support/.oo/` on macOS; Windows untested; `OO_DATA_DIR` replaces the whole directory with an absolute path, so `OO_DATA_DIR=/x` gives `/x/oo.db`; empty or relative values are ignored with a warning, see `src/config.rs` `resolve_override`)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:

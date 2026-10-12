@@ -150,8 +150,8 @@ fn db_path() -> PathBuf {
         return dir.join("oo.db");
     }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
-    if let Some(data_dir) = std::env::var_os("OO_DATA_DIR") {
-        return PathBuf::from(data_dir).join("oo.db");
+    if let Some(data_dir) = crate::config::env_override(crate::config::DATA_DIR_VAR) {
+        return data_dir.join("oo.db");
     }
     dirs::data_dir()
         .or_else(dirs::home_dir)

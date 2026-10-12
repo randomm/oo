@@ -45,7 +45,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). A relative `OO_DATA_DIR` is resolved against the current working directory, and an empty `OO_DATA_DIR=` puts the database at `./oo.db`
+- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). A relative `OO_DATA_DIR` is ignored with a warning, and an empty `OO_DATA_DIR=` is treated as unset; in both cases the database uses the default `<data dir>`, never the current directory
 - Permissions (Unix):
   - A data directory oo creates is made with mode `0700` (missing parent directories keep the umask mode), and `oo.db` is created with mode `0600`. The umask can only remove bits from these modes, so they are never wider.
   - SQLite gives its `-wal`, `-shm` and `-journal` sidecars the main file's mode, so they are `0600` too when `oo.db` is a `0600` file. If `oo.db` is a symlink, SQLite opens the target and the sidecars take the target's mode, which oo does not change.
@@ -125,14 +125,14 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design:
 
 - You installed, wrote, or accepted them. This includes patterns that `oo learn` writes into that directory from LLM output, which you should review.
-- An empty or relative `OO_CONFIG_DIR` is the exception, resolving against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` writes its LLM-generated patterns into that same directory.
+- An empty or relative `OO_CONFIG_DIR` is not used: an empty value is treated as unset, and a relative value is ignored with a warning, so the default directory applies. Repository files in the current directory are never read as user patterns or configuration because of these variables.
 - A cloned repository that ships that directory (for example `./patterns/*.toml`) has its files loaded as trusted user patterns when `oo` runs in it.
-- The same config directory holds the pending learn-status file and `config.toml` (see [configuration](configuration.md#files-in-configuration-directory)). A failed background learn creates the config directory to record its status, so a relative value can create directories under the current directory.
-- `[store] retention` in `config.toml` sets how long indexed output is kept (read on every indexing run; `0` disables purging). A repository-owned `config.toml` in a relative or empty `OO_CONFIG_DIR` can therefore change that period.
+- The same config directory holds the pending learn-status file and `config.toml` (see [configuration](configuration.md#files-in-configuration-directory)). These are always read from the absolute configuration directory described above.
+- `[store] retention` in `config.toml` sets how long indexed output is kept (read on every indexing run; `0` disables purging). It is read only from the configuration directory, never from the current directory.
 - A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`. A repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`); its validation rules are in [When oo makes network calls](#when-oo-makes-network-calls).
 - A malformed `[learn]` table does not change retention, and an invalid `[store]` value does not stop `oo learn`. A TOML syntax error or an unreadable `config.toml` (a file with mode 000, or a directory named `config.toml`) affects both, except when the config directory itself is unsearchable (mode 000 on the directory): then `oo learn` silently uses its defaults while indexing still warns ([configuration](configuration.md#store-section)).
 
-Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
+Set `OO_CONFIG_DIR` to an absolute path or leave it unset.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -154,9 +154,9 @@ What a pattern cannot do: run commands or any other process, read or write files
 oo reads from:
 - Standard input (commands)
 - Environment variables (runtime only)
-- Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides with an absolute path; an empty or relative value is ignored with a warning)
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides with an absolute path; an empty or relative value is ignored with a warning)
 - With `vipune-store`, Vipune's database (`~/.vipune/memories.db` by default) and its config file (`vipune/config.toml` in the platform config directory) instead of `oo.db`
 - Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), loaded each time oo classifies a command
 
