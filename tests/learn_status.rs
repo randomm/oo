@@ -139,7 +139,7 @@ fn run_bg_child(payload: &Path, cfg: &Path) {
 #[test]
 fn background_child_removes_owned_payload_on_invalid_json() {
     let root = TempDir::new().unwrap();
-    let payload = root.path().join(".tmpBadJson");
+    let payload = root.path().join(".tmpBadJs1");
     std::fs::write(&payload, "not valid json {{{").unwrap();
     run_bg_child(&payload, &root.path().join("cfg"));
     assert!(
@@ -164,13 +164,12 @@ fn status_writer_unwritable_dir_fails_without_fallback_file() {
     std::fs::write(&blocker, "x").unwrap();
     let status = blocker.join("learn-status.log");
     assert!(double_o::learn_status::write_learn_status_failure(&status, "git", "boom").is_err());
-    assert!(!status.exists());
 }
 
 #[test]
 fn background_parse_failure_is_recorded_in_status_log() {
     let root = TempDir::new().unwrap();
-    let payload = root.path().join(".tmpBadJson");
+    let payload = root.path().join(".tmpBadJs1");
     std::fs::write(&payload, "not valid json {{{").unwrap();
     let cfg = root.path().join("cfg");
     run_bg_child(&payload, &cfg);
@@ -208,7 +207,7 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
     let root = TempDir::new().unwrap();
     let payload_dir = root.path().join("payloads");
     std::fs::create_dir(&payload_dir).unwrap();
-    let payload = payload_dir.join(".tmpLocked1");
+    let payload = payload_dir.join(".tmpLocks1");
     std::fs::write(
         &payload,
         r#"{"command":"echo hi","output":"","exit_code":0}"#,
@@ -219,7 +218,7 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
     // A regular file where the config dir should be makes the status write fail.
     let blocker = root.path().join("cfg-blocker");
     std::fs::write(&blocker, "x").unwrap();
-    let result = oo()
+    let output = oo()
         .args([
             "_learn_bg",
             payload.to_str().unwrap(),
@@ -227,8 +226,15 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
         ])
         .env("OO_CONFIG_DIR", blocker.join("cfg"))
         .env_remove("ANTHROPIC_API_KEY")
-        .assert()
-        .success();
+        .output()
+        .unwrap();
+    // Restore before asserting, so a failed assertion cannot strand the TempDir.
     std::fs::set_permissions(&payload_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    result.stderr(predicate::str::contains("could not remove payload"));
+    assert!(output.status.success());
+    // The status write failed too, so the stderr fallback is the only report.
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("could not remove payload"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

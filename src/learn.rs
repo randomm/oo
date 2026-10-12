@@ -7,8 +7,6 @@ use crate::config::config_dir;
 use crate::error::Error;
 use crate::learn_payload::{is_owned_payload, payload_dir, remove_payload};
 pub use crate::learn_prompt::SYSTEM_PROMPT;
-/// Re-exported so existing `learn::learn_status_path` callers keep compiling.
-pub use crate::learn_status::learn_status_path;
 use crate::learn_url::ApiUrl;
 
 // ---------------------------------------------------------------------------

@@ -21,13 +21,17 @@ fn absolute_temp_dir(dir: PathBuf) -> PathBuf {
     }
 }
 
-/// Only a `.tmp*` file that `spawn_background` created directly in `dir` may be
-/// deleted: `_learn_bg` takes its path from argv, so any other path is left alone.
+/// Only a file that `spawn_background` created directly in `dir`, with the exact
+/// name `tempfile` gives it (`.tmp` plus six alphanumerics), may be deleted:
+/// `_learn_bg` takes its path from argv, so any other path is left alone.
 pub fn is_owned_payload(path: &Path, dir: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
     path.parent() == Some(dir)
-        && path
-            .file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with(".tmp"))
+        && name
+            .strip_prefix(".tmp")
+            .is_some_and(|rand| rand.len() == 6 && rand.bytes().all(|b| b.is_ascii_alphanumeric()))
 }
 
 /// Delete the payload. A file that is already gone is not an error.
@@ -67,6 +71,7 @@ mod tests {
     fn is_owned_payload_rejects_other_names_and_dirs() {
         let dir = PathBuf::from("/some/tmp");
         assert!(!is_owned_payload(&dir.join("payload.json"), &dir));
+        assert!(!is_owned_payload(&dir.join(".tmpBadJson"), &dir));
         assert!(!is_owned_payload(
             &PathBuf::from("/elsewhere/.tmpAbC123"),
             &dir

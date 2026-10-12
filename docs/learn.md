@@ -42,8 +42,8 @@ The `provider` value must be `anthropic`. Any other value fails with `unknown pr
 
 If the env var named by `api_key_env` is unset, the background learn step cannot
 call the LLM. The command itself still runs and its output is not affected; the
-learn error is reported as a status line on a later `oo` invocation, but only if the
-config directory already exists; otherwise the failure is silent (see
+learn error is written to `learn-status.log` and reported as a status line on a later
+`oo` invocation. The config directory is created if it is missing (see
 [CLI reference](cli-reference.md#oo-learn-cmd-args)).
 
 ## Where patterns are saved

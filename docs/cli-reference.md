@@ -232,7 +232,7 @@ oo learn --hint "compact test summary" pytest tests/
 1. Runs the command normally and displays oo-classified output
 2. Sends command, output, and exit code to the configured LLM in the background
 3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
-4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form, but only when the config directory already exists; see Exit codes
+4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form; see Exit codes
 
 `--hint <text>` (before the command) passes extra context to the pattern generator.
 
