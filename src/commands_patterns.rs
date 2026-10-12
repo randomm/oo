@@ -73,7 +73,13 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
 ///
 /// Each line is printed with a two-space indent so callers can add section headers.
 pub fn list_patterns_in(dir: &Path) -> bool {
-    write_patterns_in(&mut io::stdout().lock(), dir).unwrap_or(false)
+    match write_patterns_in(&mut io::stdout().lock(), dir) {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("oo: {e}");
+            false
+        }
+    }
 }
 
 /// List learned pattern files from a single directory (legacy test helper).
@@ -132,7 +138,10 @@ fn write_all_patterns<W: Write>(out: &mut W) -> io::Result<()> {
 pub fn cmd_patterns() -> i32 {
     match write_all_patterns(&mut io::stdout().lock()) {
         Ok(()) => 0,
-        Err(_) => 1,
+        Err(e) => {
+            eprintln!("oo: {e}");
+            1
+        }
     }
 }
 
