@@ -25,7 +25,7 @@ flowchart TD
     G -->|No| J{Command category}
     J -->|Status| ST["Quiet ✓ line<br/>not indexed"]
     J -->|Data| LA["Large: index full output<br/>indicator line"]
-    LA -->|index fails| LT["smart_truncate display"]
+    LA -->|index fails| LT["NOT-indexed header + stderr warning<br/>smart_truncate display"]
     J -->|Content / Unknown| BO["Bounded: index full output<br/>head + tail slice"]
 ```
 
@@ -60,7 +60,7 @@ The classification engine decides how to present output to the agent:
 - **Passthrough** (success, ≤ 4 KiB): Verbatim output
 - **Success** (success, > 4 KiB, pattern summary): Compressed summary
 - **Status** (success, > 4 KiB, no pattern summary, Status category): quiet `✓ label [saved N]` line (no parentheses), not indexed
-- **Large** (success, > 4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a `smart_truncate` view is printed instead)
+- **Large** (success, > 4 KiB, no pattern summary, Data category): Full output indexed, only an indicator line displayed (if indexing fails, a NOT-indexed header, a stderr warning and a `smart_truncate` view are printed instead)
 - **Bounded** (success, > 4 KiB, no pattern summary, Content/Unknown category): Full output indexed for recall, only a byte-bounded head+tail slice displayed
 
 **Decision tree**:

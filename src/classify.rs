@@ -474,6 +474,13 @@ fn ceil_char_boundary(s: &str, idx: usize) -> usize {
 ///
 /// Returns the input unchanged when it is ≤ [`DISPLAY_CAP`] bytes.
 pub fn bounded_truncate(output: &str) -> String {
+    bounded_truncate_indexed(output, true)
+}
+
+/// [`bounded_truncate`] with the marker chosen by whether the full output was
+/// indexed. When `indexed` is false the marker must not advertise `oo recall`,
+/// because there is nothing to recall.
+pub fn bounded_truncate_indexed(output: &str, indexed: bool) -> String {
     if output.len() <= DISPLAY_CAP {
         return output.to_string();
     }
@@ -503,8 +510,11 @@ pub fn bounded_truncate(output: &str) -> String {
     );
 
     let truncated_bytes = output.len() - clamped_head - (output.len() - clamped_tail);
-    let marker =
-        format!("... [{truncated_bytes} bytes truncated → use `oo recall` to query] ...\n");
+    let marker = if indexed {
+        format!("... [{truncated_bytes} bytes truncated → use `oo recall` to query] ...\n")
+    } else {
+        format!("... [{truncated_bytes} bytes truncated] ...\n")
+    };
 
     let mut result = String::with_capacity(DISPLAY_CAP + marker.len());
     result.push_str(&output[..clamped_head]);

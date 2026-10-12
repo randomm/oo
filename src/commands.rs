@@ -173,7 +173,8 @@ pub fn cmd_run(args: &[String]) -> i32 {
 /// `original_size` is the merged output size in bytes, used to append the
 /// savings suffix to the Success and Failure indicator lines via
 /// [`savings_suffix`]. The Large tier indexes the output via [`try_index`]
-/// and falls back to [`classify::smart_truncate`] on indexing failure.
+/// and, on indexing failure, prints a NOT-indexed header and the stderr warning
+/// before the [`classify::smart_truncate`] view.
 /// Both `cmd_run` and `cmd_learn` use this so the arms cannot drift apart.
 pub fn render_classification(classification: &Classification, command: &str, original_size: usize) {
     match classification {
@@ -223,18 +224,20 @@ pub fn render_classification(classification: &Classification, command: &str, ori
             // arm) — an agent must never be told to recall data that was not
             // indexed.
             let human_size = format_size(*size, BINARY);
-            // Indexing failed: do NOT advertise `oo recall` — the display is
-            // all the agent gets; `index_or_warn` keeps the failure visible.
+            // Indexing failed: do NOT advertise `oo recall` — neither in the
+            // framing line nor in the slice marker, so the slice is rebuilt with
+            // the unindexed marker. `index_or_warn` keeps the failure visible.
             if index_or_warn(command, output) {
                 println!(
                     "\u{25CF} {label} (output truncated: {human_size} total \u{2192} use `oo recall` to query)"
                 );
+                print!("{display}");
             } else {
                 println!(
                     "\u{25CF} {label} (output truncated: {human_size} total — NOT indexed, recall unavailable)"
                 );
+                print!("{}", classify::bounded_truncate_indexed(output, false));
             }
-            print!("{display}");
         }
         Classification::Large {
             label,
@@ -242,15 +245,16 @@ pub fn render_classification(classification: &Classification, command: &str, ori
             size,
             ..
         } => {
-            // Index into store
-            let indexed = try_index(command, output);
+            // Index into store; on failure the full output is LOST, so the
+            // header says so and the stderr warning is printed (as in the Bounded arm).
+            let indexed = index_or_warn(command, output);
             let human_size = format_size(*size, BINARY);
             if indexed {
                 println!(
                     "\u{25CF} {label} (indexed {human_size} \u{2192} use `oo recall` to query)"
                 );
             } else {
-                // Couldn't index, show truncated output instead
+                println!("\u{25CF} {label} ({human_size} total — NOT indexed, recall unavailable)");
                 let truncated = classify::smart_truncate(output);
                 print!("{truncated}");
             }
