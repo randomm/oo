@@ -76,7 +76,7 @@ You must trust:
 - Other projects' indexed output (storage is scoped per project)
 
 **Provider**: Anthropic only (currently supported)
-- **API key variable**: the environment variable named by `api_key_env` in the `[learn]` config (default `ANTHROPIC_API_KEY`); it must be set for `oo learn`
+- **API key variable**: the environment variable named by `api_key_env` in the `[learn]` config (default `ANTHROPIC_API_KEY`); it must be set to a non-empty value for `oo learn`; an empty or whitespace-only value is treated as unset and no request is sent
 - **Model**: `claude-haiku-4-5` (default, configurable)
 - **Endpoint**: `https://api.anthropic.com`
 - **URL validation**: the configured `ANTHROPIC_API_URL` is checked before any request is sent, and redirects are refused; the rules are in [When oo makes network calls](#when-oo-makes-network-calls).

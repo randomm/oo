@@ -238,7 +238,7 @@ oo learn --hint "compact test summary" pytest tests/
 
 ### Requirements
 
-- The environment variable named by `api_key_env` must be set (default `ANTHROPIC_API_KEY`)
+- The environment variable named by `api_key_env` must be set to a non-empty value (default `ANTHROPIC_API_KEY`); an empty or whitespace-only value is treated as unset
 - Optional: `ANTHROPIC_API_URL` for custom endpoints
 - Configured in `config.toml` in the configuration directory (`~/.config/oo/config.toml` on Linux, `~/Library/Application Support/oo/config.toml` on macOS; optional, uses defaults if absent; a present `[learn]` table must set `provider`, `model` and `api_key_env`)
 
@@ -455,15 +455,17 @@ User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 
-If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is still printed with no pattern lines beneath it. `oo patterns` does not print a "no learned patterns" message.
+If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is printed followed by the line `  no learned patterns yet` (two-space indent) instead of pattern lines. A directory that exists but cannot be read (for example, permission denied) is an error instead: see Exit codes.
 
-Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
+Entries that are not valid TOML are skipped silently, and so are entries that are not regular files (directories or FIFOs named `*.toml`, dangling symlinks). Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` header is always printed, and the `User` header is printed unless an earlier section fails with an error (see Exit codes); the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
+| 1 | A patterns directory that exists but cannot be read (permission denied, I/O error) or a `.toml` entry in it whose metadata or contents cannot be read; the error is printed to stderr as `oo: <path>: <error>`, and the listing stops there (the `User (dir):` header may already be on stdout, but no empty-state line is printed) |
+| 1 | Writing the listing to stdout fails for a reason other than a closed pipe (for example, a full disk); the error is printed to stderr. A closed pipe ends the process with SIGPIPE instead, so no exit code is set |
 
 ---
 
