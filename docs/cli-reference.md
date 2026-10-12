@@ -256,7 +256,7 @@ Running `oo learn` for the same command overwrites the existing pattern file wit
 
 ### Exit codes
 
-Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation. The config directory is created when the failure is written, so a fresh setup reports failures too.
+Returns the exit code of the wrapped command. A background learning failure is written to `learn-status.log` in the config directory and printed to stderr on the next invocation. The config directory is created when the failure is written, so a fresh setup reports failures too. If the status file cannot be written, the failure is dropped silently.
 
 ---
 

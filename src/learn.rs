@@ -363,13 +363,13 @@ pub fn run_background(
         }
     };
 
+    // Silent when the status cannot be written: the detached child has no terminal.
     if let Err(ref e) = result {
-        if crate::learn_status::write_learn_status_failure(status_path, &cmd_label, &e.to_string())
-            .is_err()
-        {
-            // The detached child's stderr is null, so this only helps when run in the foreground.
-            eprintln!("oo: could not record learn failure for {cmd_label}: {e}");
-        }
+        let _ = crate::learn_status::write_learn_status_failure(
+            status_path,
+            &cmd_label,
+            &e.to_string(),
+        );
     }
 
     result

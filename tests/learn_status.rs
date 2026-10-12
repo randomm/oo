@@ -184,6 +184,87 @@ fn status_writer_unwritable_dir_fails_without_fallback_file() {
     std::fs::write(&blocker, "x").unwrap();
     let status = blocker.join("learn-status.log");
     assert!(double_o::learn_status::write_learn_status_failure(&status, "git", "boom").is_err());
+    assert!(!root.path().join("learn-status.log").exists());
+}
+
+#[test]
+fn unwritable_status_dir_stays_silent_for_child_and_next_invocation() {
+    let root = TempDir::new().unwrap();
+    let blocker = root.path().join("cfg-blocker");
+    std::fs::write(&blocker, "x").unwrap();
+    let cfg = blocker.join("cfg");
+    let data = TempDir::new().unwrap();
+    let payload = root.path().join(".tmpSilnt1");
+    std::fs::write(
+        &payload,
+        r#"{"command":"echo hi","output":"","exit_code":0}"#,
+    )
+    .unwrap();
+    let child = oo()
+        .args([
+            "_learn_bg",
+            payload.to_str().unwrap(),
+            root.path().to_str().unwrap(),
+        ])
+        .env("OO_CONFIG_DIR", &cfg)
+        .env("OO_DATA_DIR", data.path())
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .unwrap();
+    assert!(child.status.success());
+    assert!(child.stderr.is_empty(), "child stderr must be silent");
+    assert!(!payload.exists(), "payload is removed after the read");
+    oo().args(["echo", "hi"])
+        .env("OO_CONFIG_DIR", &cfg)
+        .env("OO_DATA_DIR", data.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn background_child_records_missing_key_and_removes_payload() {
+    let root = TempDir::new().unwrap();
+    let payload = root.path().join(".tmpValid1");
+    std::fs::write(
+        &payload,
+        r#"{"command":"echo hello","output":"hello","exit_code":0}"#,
+    )
+    .unwrap();
+    let cfg = root.path().join("cfg");
+    run_bg_child(&payload, &cfg);
+    assert!(!payload.exists(), "valid payload must be removed");
+    let status = std::fs::read_to_string(cfg.join("learn-status.log")).unwrap();
+    assert!(status.starts_with("FAILED echo-hello: "), "{status}");
+}
+
+#[test]
+fn forget_error_text_is_unchanged() {
+    // A data path below a regular file makes the store unopenable.
+    let root = TempDir::new().unwrap();
+    let blocker = root.path().join("data-blocker");
+    std::fs::write(&blocker, "x").unwrap();
+    oo().arg("forget")
+        .env("OO_CONFIG_DIR", root.path().join("cfg"))
+        .env("OO_DATA_DIR", blocker.join("data"))
+        .assert()
+        .code(1)
+        .stderr(predicate::str::starts_with("oo: store error: "))
+        .stderr(predicate::str::contains("config error").not());
+}
+
+#[test]
+fn forget_ignores_learn_config_errors() {
+    let cfg = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    std::fs::write(cfg.path().join("config.toml"), "[learn\n").unwrap();
+    oo().arg("forget")
+        .env("OO_CONFIG_DIR", cfg.path())
+        .env("OO_DATA_DIR", data.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cleared project data"))
+        .stderr(predicate::str::contains("config error").not());
 }
 
 #[test]
@@ -222,7 +303,7 @@ fn background_child_owns_payload_by_argv_dir_not_tmpdir() {
 
 #[cfg(unix)]
 #[test]
-fn undeletable_payload_is_reported_when_status_write_also_fails() {
+fn undeletable_payload_is_silent_when_status_write_also_fails() {
     use std::os::unix::fs::PermissionsExt;
     let root = TempDir::new().unwrap();
     let payload_dir = root.path().join("payloads");
@@ -257,10 +338,11 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    // The status write failed too, so the stderr fallback is the only report.
+    // Both the removal and the status write fail: nothing is printed, by design.
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("could not remove payload"),
+        output.stderr.is_empty(),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(payload.exists(), "the undeletable payload stays on disk");
 }

@@ -356,7 +356,10 @@ fn run_bg(path: &Path) -> Result<(), Error> {
 
 #[test]
 fn test_run_background_missing_file_returns_err() {
-    assert!(run_bg(Path::new("/tmp/__oo_no_such_file_xyz__.json")).is_err());
+    // Owned-shaped name in a directory that exists, so the read error path runs.
+    let dir = tempfile::TempDir::new().unwrap();
+    let missing = dir.path().join(".tmpAbC123");
+    assert!(run_bg(&missing).is_err());
 }
 
 #[test]
@@ -364,16 +367,6 @@ fn test_run_background_invalid_json_returns_err() {
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     std::fs::write(tmp.path(), b"not valid json {{{").expect("write");
     assert!(run_bg(tmp.path()).is_err());
-}
-
-#[test]
-fn test_run_background_valid_json_no_api_key() {
-    // Valid JSON; run_learn returns Err when no API key is set.
-    // We don't assert result — key may or may not be present in dev env.
-    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-    let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
-    std::fs::write(tmp.path(), data.to_string()).expect("write");
-    let _ = run_bg(tmp.path());
 }
 
 // ---------------------------------------------------------------------------
@@ -398,45 +391,6 @@ fn test_run_background_with_hint_extracts_hint() {
 
     let hint = parsed["hint"].as_str();
     assert_eq!(hint, Some("capture summary line only"));
-}
-
-// ---------------------------------------------------------------------------
-// run_background: status file written on failure
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_learn_status_written_on_failure() {
-    // Provide a valid JSON payload but no API key in environment.
-    // run_learn will return Err (missing API key), which should write a FAILED
-    // entry to the status file.  We redirect learn_status_path by writing a
-    // temp file and checking its contents after run_background returns.
-    //
-    // Because learn_status_path() uses the real config dir, we instead call
-    // the internal path directly via the public write_learn_status_failure helper
-    // to verify the format independently, then test run_background's error path
-    // by confirming it propagates Err for known-bad inputs.
-
-    // Part 1: verify write_learn_status_failure writes the expected format.
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    let status_path = dir.path().join("learn-status.log");
-    crate::learn_status::write_learn_status_failure(&status_path, "cargo-test", "no API key set")
-        .expect("write must succeed");
-    let content = std::fs::read_to_string(&status_path).expect("read");
-    assert!(
-        content.starts_with("FAILED cargo-test:"),
-        "status must start with FAILED prefix: {content}"
-    );
-    assert!(
-        content.contains("no API key set"),
-        "status must contain error message: {content}"
-    );
-
-    // Part 2: run_background returns Err when JSON is valid but run_learn fails.
-    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-    let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
-    std::fs::write(tmp.path(), data.to_string()).expect("write");
-    // run_background may succeed or fail depending on env API keys, but must not panic.
-    let _ = run_bg(tmp.path());
 }
 
 // ---------------------------------------------------------------------------

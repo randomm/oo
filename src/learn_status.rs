@@ -87,3 +87,7 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "learn_status_tests.rs"]
+mod tests;
