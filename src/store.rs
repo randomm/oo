@@ -129,6 +129,11 @@ pub struct SqliteStore {
     conn: Connection,
 }
 
+#[path = "store_perm.rs"]
+mod store_perm;
+#[cfg(test)]
+#[path = "store_perm_tests.rs"]
+mod store_perm_tests;
 #[cfg(test)]
 #[path = "store_test_support.rs"]
 mod store_test_support;
@@ -172,8 +177,9 @@ impl SqliteStore {
     /// Creates the database and tables if they don't exist.
     pub fn open_at(path: &std::path::Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::Store(e.to_string()))?;
+            store_perm::create_data_dir(parent).map_err(|e| Error::Store(e.to_string()))?;
         }
+        store_perm::prepare_db_files(path);
         let conn = Connection::open(path).map_err(map_err)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS entries (
