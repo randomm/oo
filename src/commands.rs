@@ -313,7 +313,7 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
 
     // Print provider before spawning so the user sees it in the foreground
     let config = learn::load_learn_config().unwrap_or_else(|e| {
-        eprintln!("oo: config error: {e}");
+        eprintln!("oo: {e}");
         learn::LearnConfig::default()
     });
     eprintln!(
@@ -330,6 +330,18 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     exit_code
 }
 
+/// Open the learn status file for appending, creating the config directory
+/// first so a fresh `OO_CONFIG_DIR` still receives failure entries.
+fn open_learn_status(status_path: &Path) -> Result<std::fs::File, std::io::Error> {
+    if let Some(parent) = status_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(status_path)
+}
+
 /// Write a one-line status entry to the learn status file.
 ///
 /// Called by the background process after successfully saving a pattern so
@@ -339,10 +351,7 @@ pub fn write_learn_status(
     cmd_name: &str,
     pattern_path: &Path,
 ) -> Result<(), std::io::Error> {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(status_path)?;
+    let mut file = open_learn_status(status_path)?;
     writeln!(
         file,
         "learned pattern for {} → {}",
@@ -360,10 +369,7 @@ pub fn write_learn_status_failure(
     cmd_name: &str,
     error_msg: &str,
 ) -> Result<(), std::io::Error> {
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(status_path)?;
+    let mut file = open_learn_status(status_path)?;
     let first_line = error_msg.lines().next().unwrap_or(error_msg);
     writeln!(file, "FAILED {cmd_name}: {first_line}")
 }

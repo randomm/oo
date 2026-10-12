@@ -247,6 +247,31 @@ fn run_learn_with_hint(
     run_learn_with_config(&params, command, output, exit_code)
 }
 
+/// Directory for the background payload file.
+///
+/// An empty or relative `TMPDIR` would make `NamedTempFile::new()` create the
+/// file relative to the current directory, so fall back to `/tmp` instead.
+fn background_temp_dir() -> PathBuf {
+    background_temp_dir_from(std::env::temp_dir())
+}
+
+fn background_temp_dir_from(dir: PathBuf) -> PathBuf {
+    if dir.is_absolute() {
+        dir
+    } else {
+        PathBuf::from("/tmp")
+    }
+}
+
+/// Removes the payload file when dropped, so every exit path of the child cleans up.
+struct RemoveOnDrop<'a>(&'a Path);
+
+impl Drop for RemoveOnDrop<'_> {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(self.0);
+    }
+}
+
 /// Spawn the learning process in the background by re-exec'ing ourselves.
 pub fn spawn_background(
     command: &str,
@@ -258,7 +283,9 @@ pub fn spawn_background(
 
     // Use a secure named temp file to avoid PID-based predictable filenames
     // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
-    let mut tmp = tempfile::NamedTempFile::new().map_err(|e| Error::Learn(e.to_string()))?;
+    let mut tmp = tempfile::Builder::new()
+        .tempfile_in(background_temp_dir())
+        .map_err(|e| Error::Learn(e.to_string()))?;
     let mut data = serde_json::json!({
         "command": command,
         "output": output,
@@ -296,7 +323,12 @@ pub fn spawn_background(
 /// Entry point for the background learn child process.
 pub fn run_background(data_path: &str) -> Result<(), Error> {
     let path = Path::new(data_path);
-    let content = std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))?;
+    // The payload can hold command output (possibly secret); remove it as soon
+    // as it has been read, on success and on every early error return.
+    let content = {
+        let _cleanup = RemoveOnDrop(path);
+        std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))?
+    };
     let data: LearnData =
         serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
 
@@ -314,9 +346,6 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
     let hint = data.hint.as_deref();
 
     let result = run_learn_with_hint(command, output, exit_code, hint);
-
-    // Clean up temp file
-    let _ = std::fs::remove_file(path);
 
     if let Err(ref e) = result {
         let cmd_label = label(command);
@@ -442,6 +471,10 @@ fn validate_pattern_toml_with_limits(toml_str: &str) -> Result<(), Error> {
 }
 
 // Tests live in separate files to keep this module under 500 lines.
+#[cfg(test)]
+#[path = "learn_temp_tests.rs"]
+mod learn_temp_tests;
+
 #[cfg(test)]
 #[path = "learn_tests.rs"]
 mod tests;
