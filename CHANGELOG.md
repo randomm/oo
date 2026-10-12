@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-12
+
+### ⚠ Breaking Changes
+
+- *(#200)* `double_o::learn::run_background` takes two more arguments: it is now `run_background(data_path: &str, payload_dir: &Path, status_path: &Path)` (was `run_background(data_path: &str)`). Callers must pass the payload directory the payload was created in and the learn status file path.
+- *(#200)* The learn status helpers moved to the `#[doc(hidden)]` module `double_o::learn_status`: `write_learn_status`, `write_learn_status_failure` and `check_and_clear_learn_status` are no longer at `double_o::commands::*`, and `write_learn_status` and `check_and_clear_learn_status` are no longer re-exported at the crate root. `double_o::learn::learn_status_path` is unchanged.
+- *(#199)* `double_o::commands::cmd_patterns_in` (`#[doc(hidden)]`) keeps its signature, but for an unreadable directory it now prints `oo: <path>: <error>` to stderr and returns 1. It previously printed the empty-state line and returned 0.
+
+### Bug Fixes
+
+- *(#190,#193)* Validate the learn API URL with a parser and refuse redirects
+- *(#194)* Show failing output up to 120 lines in full instead of fusing lines
+- *(#200)* Learn background child removes its payload and records failures
+- *(#196)* Create the database private (0700 dir, 0600 files) and tighten existing ones
+- *(#197)* Resolve OO_CONFIG_DIR and OO_DATA_DIR in one place; ignore relative, padded values with a warning
+- *(#199)* Patterns empty state, SIGPIPE default and empty API key handling
+- *(#198)* Report a failed indexing in the Large and Bounded tiers instead of advertising recall
+- *(#208)* Compile on the declared MSRV 1.85 and add an MSRV CI job
+
+### Documentation
+
+- *(#181)* Correct the documentation against v0.8.0 behavior
+
+
 ## [0.8.0] - 2026-10-11
 
 ### ⚠ Breaking Changes
