@@ -22,7 +22,8 @@ pub(crate) fn config_dir() -> PathBuf {
     config_dir_from(std::env::var_os(CONFIG_DIR_VAR))
 }
 
-/// Pure form of [`config_dir`] taking the `OO_CONFIG_DIR` value explicitly.
+/// Pure form of [`config_dir`] taking the `OO_CONFIG_DIR` value explicitly,
+/// so callers and tests never need to mutate process-global environment.
 pub(crate) fn config_dir_from(override_dir: Option<OsString>) -> PathBuf {
     accepted(override_dir.as_deref()).unwrap_or_else(platform_config_dir)
 }
@@ -33,7 +34,8 @@ pub(crate) fn data_dir() -> PathBuf {
     data_dir_from(std::env::var_os(DATA_DIR_VAR))
 }
 
-/// Pure form of [`data_dir`] taking the `OO_DATA_DIR` value explicitly.
+/// Pure form of [`data_dir`] taking the `OO_DATA_DIR` value explicitly,
+/// so callers and tests never need to mutate process-global environment.
 pub(crate) fn data_dir_from(override_dir: Option<OsString>) -> PathBuf {
     accepted(override_dir.as_deref()).unwrap_or_else(platform_data_dir)
 }
@@ -64,8 +66,12 @@ pub fn warn_ignored_overrides() {
 /// verbatim (no trimming, so a padded path is rejected). `Err(reason)` means the
 /// value must be ignored.
 fn check_override(value: &OsStr) -> Result<Option<PathBuf>, &'static str> {
-    if value.to_string_lossy().trim().is_empty() {
+    let text = value.to_string_lossy();
+    if text.trim().is_empty() {
         return Ok(None);
+    }
+    if text.trim() != text.as_ref() {
+        return Err("it must not have surrounding whitespace");
     }
     let path = Path::new(value);
     if path.is_absolute() {
@@ -128,8 +134,10 @@ mod tests {
     fn relative_and_padded_overrides_are_rejected() {
         assert!(check_override(OsStr::new("rel/dir")).is_err());
         assert!(check_override(OsStr::new(".")).is_err());
-        let padded = format!(" {}", std::env::temp_dir().display());
-        assert!(check_override(OsStr::new(&padded)).is_err());
+        let leading = format!(" {}", std::env::temp_dir().display());
+        assert!(check_override(OsStr::new(&leading)).is_err());
+        let trailing = format!("{} ", std::env::temp_dir().display());
+        assert!(check_override(OsStr::new(&trailing)).is_err());
     }
 
     #[test]

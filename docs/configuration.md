@@ -18,7 +18,7 @@ Override the config directory with the `OO_CONFIG_DIR` environment variable. The
 
 **Override rules (normative, for `OO_CONFIG_DIR` and `OO_DATA_DIR`):**
 
-- The value must be an absolute path and is used verbatim, with no trimming. A value with leading spaces is not absolute, so it is ignored.
+- The value must be an absolute path and is used verbatim, with no trimming. A value with leading or trailing whitespace is ignored.
 - An empty or whitespace-only value is treated as unset.
 - Any other value is ignored and the platform default applies. A warning naming the variable is printed to stderr once per oo invocation. Hook invocations run as separate processes, so each one may print it again.
 - A relative value is never resolved against the current working directory. A repository's own `config.toml`, `patterns/` or `learn-status.log` therefore cannot act as oo's configuration.
