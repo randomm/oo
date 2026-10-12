@@ -315,39 +315,42 @@ pub fn run_background(
     status_path: &Path,
 ) -> Result<(), Error> {
     let path = Path::new(data_path);
-    // The payload can hold command output (possibly secret); remove it as soon
-    // as it has been read, before any parse or learn step can fail.
-    let read = std::fs::read_to_string(path);
-    let removal = if is_owned_payload(path, payload_dir) {
-        remove_payload(path).err()
+    // argv is untrusted: only a payload this parent created is read or removed
+    // (a FIFO or /dev/zero argv would block or exhaust memory). The payload can
+    // hold command output (possibly secret), so it is removed right after the read.
+    let owned = is_owned_payload(path, payload_dir);
+    let read = if owned {
+        std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))
     } else {
-        None
+        Err(Error::Learn(format!(
+            "not a learn payload: {}",
+            path.display()
+        )))
     };
+    let removal = owned.then(|| remove_payload(path).err()).flatten();
 
     // Every failure below reaches the status log, labelled with the command once
     // it is known; "learn" covers a payload that could not be parsed.
     let mut cmd_label = String::from("learn");
-    let result = read
-        .map_err(|e| Error::Learn(e.to_string()))
-        .and_then(|content| {
-            let data: LearnData =
-                serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
-            cmd_label = label(&data.command);
-            // Explicit bounds check to avoid silent truncation i64→i32
-            let exit_code = i32::try_from(data.exit_code).map_err(|_| {
-                Error::Learn(format!(
-                    "exit_code out of range for i32: {}",
-                    data.exit_code
-                ))
-            })?;
-            run_learn_with_hint(
-                &data.command,
-                &data.output,
-                exit_code,
-                data.hint.as_deref(),
-                status_path,
-            )
-        });
+    let result = read.and_then(|content| {
+        let data: LearnData =
+            serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
+        cmd_label = label(&data.command);
+        // Explicit bounds check to avoid silent truncation i64→i32
+        let exit_code = i32::try_from(data.exit_code).map_err(|_| {
+            Error::Learn(format!(
+                "exit_code out of range for i32: {}",
+                data.exit_code
+            ))
+        })?;
+        run_learn_with_hint(
+            &data.command,
+            &data.output,
+            exit_code,
+            data.hint.as_deref(),
+            status_path,
+        )
+    });
 
     let result = match removal {
         None => result,

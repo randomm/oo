@@ -170,8 +170,11 @@ fn background_child_keeps_unowned_file() {
     let root = TempDir::new().unwrap();
     let other = root.path().join("notes.txt");
     std::fs::write(&other, "not a payload").unwrap();
-    run_bg_child(&other, &root.path().join("cfg"));
+    let cfg = root.path().join("cfg");
+    run_bg_child(&other, &cfg);
     assert!(other.exists(), "_learn_bg must not delete arbitrary files");
+    let status = std::fs::read_to_string(cfg.join("learn-status.log")).unwrap();
+    assert!(status.contains("not a learn payload"), "{status}");
 }
 
 #[test]

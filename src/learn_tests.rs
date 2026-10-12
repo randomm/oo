@@ -347,11 +347,11 @@ fn test_patterns_dir_is_under_config_dir() {
 // run_background
 // ---------------------------------------------------------------------------
 
-// Status goes to a temp dir, never the real config directory.
+// Status goes to a temp dir; config and API key still come from the environment.
 fn run_bg(path: &Path) -> Result<(), Error> {
     let status = tempfile::TempDir::new().unwrap();
-    let status_path = status.path().join("learn-status.log");
-    run_background(path.to_str().unwrap(), path.parent().unwrap(), &status_path)
+    let log = status.path().join("learn-status.log");
+    run_background(path.to_str().unwrap(), path.parent().unwrap(), &log)
 }
 
 #[test]

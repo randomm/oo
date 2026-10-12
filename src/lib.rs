@@ -86,6 +86,7 @@ pub mod init_pi;
 /// LLM-powered pattern learning.
 pub mod learn;
 mod learn_payload;
+#[doc(hidden)]
 pub mod learn_status;
 /// Pattern matching and output compression.
 pub mod pattern;
