@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use humansize::{BINARY, format_size};
-use std::io::Write;
 
 use crate::classify::Classification;
 pub use crate::display::savings_suffix;
@@ -330,69 +329,9 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     exit_code
 }
 
-/// Open the learn status file for appending, creating the config directory
-/// first so a fresh `OO_CONFIG_DIR` still receives failure entries.
-fn open_learn_status(status_path: &Path) -> Result<std::fs::File, std::io::Error> {
-    if let Some(parent) = status_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(status_path)
-}
-
-/// Write a one-line status entry to the learn status file.
-///
-/// Called by the background process after successfully saving a pattern so
-/// the NEXT foreground invocation can display the result.
-pub fn write_learn_status(
-    status_path: &Path,
-    cmd_name: &str,
-    pattern_path: &Path,
-) -> Result<(), std::io::Error> {
-    let mut file = open_learn_status(status_path)?;
-    writeln!(
-        file,
-        "learned pattern for {} → {}",
-        cmd_name,
-        pattern_path.display()
-    )
-}
-
-/// Write a one-line failure entry to the learn status file.
-///
-/// Called by the background process when `run_learn` returns `Err`, so the
-/// NEXT foreground invocation can display the error.
-pub fn write_learn_status_failure(
-    status_path: &Path,
-    cmd_name: &str,
-    error_msg: &str,
-) -> Result<(), std::io::Error> {
-    let mut file = open_learn_status(status_path)?;
-    let first_line = error_msg.lines().next().unwrap_or(error_msg);
-    writeln!(file, "FAILED {cmd_name}: {first_line}")
-}
-
-/// Check for a pending learn-status file, print its contents to stderr, then
-/// delete the file.  Called early in each foreground invocation.
-pub fn check_and_clear_learn_status(status_path: &Path) {
-    if let Ok(content) = std::fs::read_to_string(status_path) {
-        for line in content.lines() {
-            if let Some(rest) = line.strip_prefix("FAILED ") {
-                // Format: "FAILED cmd-name: error message"
-                if let Some((cmd, msg)) = rest.split_once(": ") {
-                    eprintln!("oo: learn failed for {cmd} — {msg}");
-                } else {
-                    eprintln!("oo: learn failed — {rest}");
-                }
-            } else {
-                eprintln!("oo: {line}");
-            }
-        }
-        let _ = std::fs::remove_file(status_path);
-    }
-}
+pub use crate::learn_status::{
+    check_and_clear_learn_status, write_learn_status, write_learn_status_failure,
+};
 
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or

@@ -98,11 +98,6 @@ pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }
 
-/// Path to the one-line status file written by the background learn process.
-pub fn learn_status_path() -> PathBuf {
-    config_dir().join("learn-status.log")
-}
-
 /// Load learn configuration from `config.toml` in the config directory
 /// (see `patterns_dir` for the platform paths).
 ///
@@ -173,8 +168,11 @@ pub(crate) fn run_learn_with_config(
         let filename = format!("{}.toml", label(command));
         let path = params.patterns_dir.join(&filename);
         std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
-        let _ =
-            crate::commands::write_learn_status(params.learn_status_path, &label(command), &path);
+        let _ = crate::learn_status::write_learn_status(
+            params.learn_status_path,
+            &label(command),
+            &path,
+        );
         return Ok(());
     }
     last_err = "initial TOML validation failed".to_string();
@@ -192,7 +190,7 @@ pub(crate) fn run_learn_with_config(
             let filename = format!("{}.toml", label(command));
             let path = params.patterns_dir.join(&filename);
             std::fs::write(&path, &clean).map_err(|e| Error::Learn(e.to_string()))?;
-            let _ = crate::commands::write_learn_status(
+            let _ = crate::learn_status::write_learn_status(
                 params.learn_status_path,
                 &label(command),
                 &path,
@@ -240,35 +238,41 @@ fn run_learn_with_hint(
         api_key: &api_key,
         base_url: &base_url,
         patterns_dir: &patterns_dir(),
-        learn_status_path: &learn_status_path(),
+        learn_status_path: &crate::learn_status::learn_status_path(),
         hint,
     };
 
     run_learn_with_config(&params, command, output, exit_code)
 }
 
-/// Directory for the background payload file.
-///
-/// An empty or relative `TMPDIR` would make `NamedTempFile::new()` create the
-/// file relative to the current directory, so fall back to `/tmp` instead.
-fn background_temp_dir() -> PathBuf {
-    background_temp_dir_from(std::env::temp_dir())
+/// Directory for the background payload file (see `config::absolute_temp_dir`).
+fn payload_dir() -> PathBuf {
+    crate::config::absolute_temp_dir(std::env::temp_dir())
 }
 
-fn background_temp_dir_from(dir: PathBuf) -> PathBuf {
-    if dir.is_absolute() {
-        dir
-    } else {
-        PathBuf::from("/tmp")
-    }
+/// Only a `.tmp*` file that `spawn_background` created directly in `dir` may be
+/// deleted: `_learn_bg` takes its path from argv, so any other path is left alone.
+fn is_owned_payload(path: &Path, dir: &Path) -> bool {
+    path.parent() == Some(dir)
+        && path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with(".tmp"))
 }
 
-/// Removes the payload file when dropped, so every exit path of the child cleans up.
-struct RemoveOnDrop<'a>(&'a Path);
-
-impl Drop for RemoveOnDrop<'_> {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(self.0);
+/// Delete the payload. A failure is recorded on the status channel because the
+/// file may still hold command output.
+fn remove_payload(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            let msg = format!("could not remove payload {}: {e}", path.display());
+            let _ = crate::learn_status::write_learn_status_failure(
+                &crate::learn_status::learn_status_path(),
+                "learn",
+                &msg,
+            );
+        }
     }
 }
 
@@ -284,7 +288,7 @@ pub fn spawn_background(
     // Use a secure named temp file to avoid PID-based predictable filenames
     // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
     let mut tmp = tempfile::Builder::new()
-        .tempfile_in(background_temp_dir())
+        .tempfile_in(payload_dir())
         .map_err(|e| Error::Learn(e.to_string()))?;
     let mut data = serde_json::json!({
         "command": command,
@@ -324,11 +328,12 @@ pub fn spawn_background(
 pub fn run_background(data_path: &str) -> Result<(), Error> {
     let path = Path::new(data_path);
     // The payload can hold command output (possibly secret); remove it as soon
-    // as it has been read, on success and on every early error return.
-    let content = {
-        let _cleanup = RemoveOnDrop(path);
-        std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))?
-    };
+    // as it has been read, before any parse or learn step can fail.
+    let read = std::fs::read_to_string(path);
+    if is_owned_payload(path, &payload_dir()) {
+        remove_payload(path);
+    }
+    let content = read.map_err(|e| Error::Learn(e.to_string()))?;
     let data: LearnData =
         serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
 
@@ -349,9 +354,12 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 
     if let Err(ref e) = result {
         let cmd_label = label(command);
-        let status_path = learn_status_path();
-        let _ =
-            crate::commands::write_learn_status_failure(&status_path, &cmd_label, &e.to_string());
+        let status_path = crate::learn_status::learn_status_path();
+        let _ = crate::learn_status::write_learn_status_failure(
+            &status_path,
+            &cmd_label,
+            &e.to_string(),
+        );
     }
 
     result

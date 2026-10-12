@@ -1,7 +1,7 @@
 use clap::Parser;
 use double_o::{
     Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn,
-    cmd_patterns, cmd_recall, cmd_rewrite, cmd_run, learn, parse_action,
+    cmd_patterns, cmd_recall, cmd_rewrite, cmd_run, learn, learn_status, parse_action,
 };
 
 // ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ fn main() {
     // Show any pending learn-status message from a previous background learn.
     // Runs before command dispatch so the user sees the result on the next invocation.
     {
-        let status_path = learn::learn_status_path();
+        let status_path = learn_status::learn_status_path();
         check_and_clear_learn_status(&status_path);
     }
 

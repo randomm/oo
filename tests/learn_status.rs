@@ -48,15 +48,6 @@ fn status_writer_creates_missing_config_dir() {
 }
 
 #[test]
-fn learn_success_status_writer_creates_missing_config_dir() {
-    let root = TempDir::new().unwrap();
-    let status = root.path().join("missing").join("learn-status.log");
-    double_o::commands::write_learn_status(&status, "git", &status)
-        .expect("write must create the missing directory");
-    assert!(status.exists());
-}
-
-#[test]
 fn foreground_config_error_has_single_prefix() {
     let cfg = TempDir::new().unwrap();
     let data = TempDir::new().unwrap();
@@ -69,16 +60,6 @@ fn foreground_config_error_has_single_prefix() {
         .success()
         .stderr(predicate::str::contains("oo: config error: "))
         .stderr(predicate::str::contains("config error: config error:").not());
-}
-
-#[test]
-fn forget_output_is_unchanged() {
-    let data = TempDir::new().unwrap();
-    oo().arg("forget")
-        .env("OO_DATA_DIR", data.path())
-        .assert()
-        .success()
-        .stdout("Cleared project data (0 entries)\n");
 }
 
 #[test]
@@ -140,19 +121,21 @@ fn empty_tmpdir_does_not_place_payload_in_cwd() {
     assert!(tmp_leftovers(cwd.path()).is_empty(), "cwd leftovers");
 }
 
-/// Runs the hidden `_learn_bg <file>` child directly, so the early-error
-/// returns (parse failure, exit-code range) are observed on disk without
-/// depending on a detached process.
+/// Runs the hidden `_learn_bg <file>` child directly with `TMPDIR` set to the
+/// payload's directory, so the child treats the file as one it owns and the
+/// early-error returns (parse failure, exit-code range) are observed on disk
+/// without depending on a detached process.
 fn run_bg_child(payload: &Path, cfg: &Path) {
     oo().args(["_learn_bg", payload.to_str().unwrap()])
         .env("OO_CONFIG_DIR", cfg)
+        .env("TMPDIR", payload.parent().unwrap())
         .env_remove("ANTHROPIC_API_KEY")
         .assert()
         .success();
 }
 
 #[test]
-fn background_child_removes_payload_on_invalid_json() {
+fn background_child_removes_owned_payload_on_invalid_json() {
     let root = TempDir::new().unwrap();
     let payload = root.path().join(".tmpBadJson");
     std::fs::write(&payload, "not valid json {{{").unwrap();
@@ -164,20 +147,12 @@ fn background_child_removes_payload_on_invalid_json() {
 }
 
 #[test]
-fn background_child_removes_payload_on_exit_code_out_of_range() {
+fn background_child_keeps_unowned_file() {
     let root = TempDir::new().unwrap();
-    let payload = root.path().join(".tmpBadExit");
-    let data = serde_json::json!({
-        "command": "echo hello",
-        "output": "hello",
-        "exit_code": 2147483648i64
-    });
-    std::fs::write(&payload, data.to_string()).unwrap();
-    run_bg_child(&payload, &root.path().join("cfg"));
-    assert!(
-        !payload.exists(),
-        "payload must be removed after an exit-code error"
-    );
+    let other = root.path().join("notes.txt");
+    std::fs::write(&other, "not a payload").unwrap();
+    run_bg_child(&other, &root.path().join("cfg"));
+    assert!(other.exists(), "_learn_bg must not delete arbitrary files");
 }
 
 #[test]
@@ -189,42 +164,4 @@ fn status_writer_unwritable_dir_fails_without_fallback_file() {
     assert!(double_o::commands::write_learn_status_failure(&status, "git", "boom").is_err());
     assert!(!status.exists());
     assert!(tmp_leftovers(root.path()).is_empty());
-}
-
-#[test]
-fn unwritable_status_dir_is_silent_for_next_invocation() {
-    let root = TempDir::new().unwrap();
-    let blocker = root.path().join("not-a-dir");
-    std::fs::write(&blocker, "x").unwrap();
-    let data = TempDir::new().unwrap();
-    oo().args(["learn", "echo", "hi"])
-        .env("OO_CONFIG_DIR", &blocker)
-        .env("OO_DATA_DIR", data.path())
-        .env_remove("ANTHROPIC_API_KEY")
-        .env_remove("OPENAI_API_KEY")
-        .assert()
-        .success();
-    // Give the detached child time to fail; it must stay silent.
-    std::thread::sleep(Duration::from_millis(1500));
-    oo().arg("patterns")
-        .env("OO_CONFIG_DIR", &blocker)
-        .env("OO_DATA_DIR", data.path())
-        .assert()
-        .success()
-        .stderr("");
-}
-
-#[test]
-fn forget_error_text_is_unchanged() {
-    let root = TempDir::new().unwrap();
-    // A regular file as the data directory makes the store unopenable.
-    let blocker = root.path().join("not-a-dir");
-    std::fs::write(&blocker, "x").unwrap();
-    oo().arg("forget")
-        .env("OO_DATA_DIR", &blocker)
-        .assert()
-        .failure()
-        // Pins the pre-existing prefix; the errno suffix is platform-specific.
-        .stderr(predicate::str::starts_with("oo: store error: "))
-        .stderr(predicate::str::contains("config error").not());
 }

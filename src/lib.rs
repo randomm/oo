@@ -85,6 +85,7 @@ pub mod init;
 pub mod init_pi;
 /// LLM-powered pattern learning.
 pub mod learn;
+pub mod learn_status;
 /// Pattern matching and output compression.
 pub mod pattern;
 /// Canonical pattern-set assembly (project/user/builtins precedence) shared
