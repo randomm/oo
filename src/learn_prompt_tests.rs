@@ -242,3 +242,28 @@ fn test_call_anthropic_refuses_every_redirect_status() {
         target_mock.assert();
     }
 }
+
+#[test]
+fn test_call_anthropic_refuses_3xx_without_location_header() {
+    for status in [302, 307, 304] {
+        let mut origin = mockito::Server::new();
+        let origin_mock = origin
+            .mock("POST", "/v1/messages")
+            .with_status(status)
+            .expect(1)
+            .create();
+
+        let url = ApiUrl::parse(&format!("{}/v1/messages", origin.url())).expect("valid URL");
+        let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
+        let msg = result
+            .expect_err("a redirect without Location must be refused")
+            .to_string();
+        assert_eq!(
+            msg,
+            format!(
+                "learn error: unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
+            ),
+        );
+        origin_mock.assert();
+    }
+}
