@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-12
+
+### Bug Fixes
+
+- *(#190,#193)* Validate the learn API URL with a parser and refuse redirects
+- *(#194)* Show failing output up to 120 lines in full instead of fusing lines
+- *(#200)* Learn background child removes its payload and records failures
+- *(#196)* Create the database private (0700 dir, 0600 files) and tighten existing ones
+- *(#197)* Resolve OO_CONFIG_DIR and OO_DATA_DIR in one place; ignore relative, padded values with a warning
+- *(#199)* Patterns empty state, SIGPIPE default and empty API key handling
+- *(#198)* Report a failed indexing in the Large and Bounded tiers instead of advertising recall
+
+### Documentation
+
+- *(#181)* Correct the documentation against v0.8.0 behavior
+
+
 ## [0.8.0] - 2026-10-11
 
 ### ⚠ Breaking Changes
