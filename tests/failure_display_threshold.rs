@@ -21,13 +21,23 @@ fn oo() -> Command {
 /// on PATH, against an isolated data dir. Returns the temp root (which owns
 /// `oo-data/`, the data dir) and the captured stdout.
 fn run_failing_tool(script_body: &str) -> (TempDir, String) {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     let root = TempDir::new().unwrap();
     let bin_dir = root.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
+    // Write under a temp name, close the handle, chmod, then rename into place:
+    // exec-ing a file still open for writing can fail with ETXTBSY when another
+    // test thread forks while the write fd is live.
     let bin = bin_dir.join(TOOL);
-    std::fs::write(&bin, script_body).unwrap();
-    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let tmp = bin_dir.join(format!("{TOOL}.tmp"));
+    {
+        let mut file = std::fs::File::create(&tmp).unwrap();
+        file.write_all(script_body.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+    }
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::rename(&tmp, &bin).unwrap();
     let path = format!(
         "{}:{}",
         bin_dir.display(),
@@ -50,13 +60,30 @@ fn data_dir_of(root: &TempDir) -> PathBuf {
     root.path().join("oo-data")
 }
 
+/// Asserts that `oo recall <query>` finds nothing in the isolated data dir.
+fn assert_not_indexed(root: &TempDir, query: &str) {
+    let recall = oo()
+        .args(["recall", query])
+        .env("OO_DATA_DIR", data_dir_of(root))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let recall = String::from_utf8_lossy(&recall).to_string();
+    assert!(
+        recall.contains("No results found."),
+        "output must not be indexed; recall got: {recall:?}"
+    );
+}
+
 fn script_printing(lines: u32) -> String {
     format!("#!/bin/sh\nfor i in $(seq 1 {lines}); do echo \"line $i\"; done\nexit 1\n")
 }
 
 #[test]
 fn test_failure_100_lines_is_displayed_in_full_and_not_indexed() {
-    let (_root, stdout) = run_failing_tool(&script_printing(100));
+    let (root, stdout) = run_failing_tool(&script_printing(100));
 
     for i in 1..=100 {
         assert!(
@@ -72,6 +99,7 @@ fn test_failure_100_lines_is_displayed_in_full_and_not_indexed() {
         !stdout.contains("oo recall"),
         "100 lines must not advertise recall; got: {stdout:?}"
     );
+    assert_not_indexed(&root, "line 60");
 }
 
 #[test]
@@ -126,19 +154,7 @@ fn test_failure_120_lines_is_displayed_in_full_and_not_indexed() {
         "120 lines must not advertise recall; got: {stdout:?}"
     );
 
-    let recall = oo()
-        .args(["recall", "line 60"])
-        .env("OO_DATA_DIR", data_dir_of(&root))
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let recall = String::from_utf8_lossy(&recall).to_string();
-    assert!(
-        recall.contains("No results found."),
-        "120-line output must not be indexed; recall got: {recall:?}"
-    );
+    assert_not_indexed(&root, "line 60");
 }
 
 #[test]
