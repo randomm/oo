@@ -86,8 +86,9 @@ pub fn list_patterns_in(dir: &Path) -> bool {
 
 /// List learned pattern files from a single directory (legacy test helper).
 ///
-/// Always returns 0. On a write error, `list_patterns_in` prints `oo: <error>` to
-/// stderr and this function then prints the empty-state line to stdout.
+/// Returns 0 on success. A write error is reported by `list_patterns_in` on stderr,
+/// and the `println!` below may then panic if stdout still fails, so this function
+/// is not a reliable error reporter.
 pub fn cmd_patterns_in(dir: &Path) -> i32 {
     if !list_patterns_in(dir) {
         println!("no learned patterns yet");

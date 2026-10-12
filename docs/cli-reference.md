@@ -464,7 +464,7 @@ Files that are not valid TOML are skipped silently. Any file that parses as TOML
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
-| 1 | Writing the listing to stdout fails for a reason other than a closed pipe (for example, a full disk); the error is printed to stderr |
+| 1 | Writing the listing to stdout fails for a reason other than a closed pipe (for example, a full disk); the error is printed to stderr. A closed pipe ends the process with SIGPIPE instead, so no exit code is set |
 
 ---
 
