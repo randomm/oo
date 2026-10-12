@@ -39,3 +39,19 @@ fn test_smart_truncation_121_lines_keeps_marker_and_split() {
     assert!(!result.contains("line 72"));
     assert!(result.ends_with("line 120"));
 }
+
+#[test]
+fn test_bounded_truncate_indexed_false_marker_omits_recall_hint() {
+    let big: String = (0..2000).map(|i| format!("row {i}\n")).collect();
+    let unindexed = bounded_truncate_indexed(&big, false);
+    assert!(
+        !unindexed.contains("oo recall"),
+        "unindexed marker must not advertise recall"
+    );
+    assert!(unindexed.contains("bytes truncated] ..."));
+    assert_eq!(
+        bounded_truncate_indexed(&big, true),
+        bounded_truncate(&big),
+        "indexed marker must stay byte-for-byte unchanged"
+    );
+}

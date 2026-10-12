@@ -127,7 +127,9 @@ impl Store for VipuneStore {
                     }
                 }
             }
-            // A short page means we've drained the project; stop.
+            // A short page is the last page of the listing, so stop. This does
+            // not mean every entry was deleted: `Ok(false)` ids are skipped, and
+            // failed deletes are reported as a partial-delete error below.
             if entries.len() < PAGE {
                 break;
             }
