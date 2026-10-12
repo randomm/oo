@@ -6,8 +6,22 @@
 use super::SqliteStore;
 use super::store_perm::{create_data_dir, prepare_db_files, tighten_as};
 use std::fs;
-use std::path::Path;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+/// Restores a directory's mode when dropped, so TempDir can clean up after a
+/// test that made it read-only.
+struct ModeGuard {
+    path: PathBuf,
+    mode: u32,
+}
+
+impl Drop for ModeGuard {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
+    }
+}
 
 #[cfg(unix)]
 fn mode_of(path: &Path) -> u32 {
@@ -215,8 +229,85 @@ fn test_journal_created_during_write_is_private() {
 }
 
 #[test]
+fn test_open_at_through_symlink_leaves_target_mode_and_still_works() {
+    // SQLite follows the link and oo never chmods through it, so the target keeps
+    // its mode. The refused chmod must not stop the store from opening or writing.
+    use std::os::unix::fs::symlink;
+    let tmp = TempDir::new().unwrap();
+    let target = tmp.path().join("elsewhere.db");
+    fs::write(&target, b"").unwrap();
+    set_mode(&target, 0o644);
+    let db = tmp.path().join("oo.db");
+    symlink(&target, &db).unwrap();
+
+    let store = SqliteStore::open_at(&db).expect("open_at must succeed through a symlink");
+    store
+        .conn
+        .execute_batch("CREATE TABLE probe (x INTEGER); INSERT INTO probe VALUES (1);")
+        .unwrap();
+
+    assert_eq!(
+        mode_of(&target),
+        0o644,
+        "the symlink target is never chmod-ed"
+    );
+}
+
+#[test]
+fn test_open_at_in_existing_read_only_dir_still_opens_and_tightens_db() {
+    // oo does not chmod an existing directory, and tightening the file needs only
+    // ownership of the file, not write access to its directory. Root bypasses the
+    // directory mode, so the assertions hold for root too.
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("data");
+    let db = dir.join("oo.db");
+    drop(SqliteStore::open_at(&db).unwrap());
+    set_mode(&db, 0o644);
+    let _restore = ModeGuard {
+        path: dir.clone(),
+        mode: 0o700,
+    };
+    set_mode(&dir, 0o500);
+
+    let store = SqliteStore::open_at(&db).expect("open_at must not fail on a read-only dir");
+    let rows: i64 = store
+        .conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(rows, 0);
+    assert_eq!(mode_of(&db), 0o600);
+    assert_eq!(
+        mode_of(&dir),
+        0o500,
+        "an existing directory is not chmod-ed"
+    );
+}
+
+#[test]
 fn test_prepare_db_files_never_panics_when_paths_cannot_be_changed() {
-    // The directory does not exist, so creating and chmod-ing must fail
-    // silently rather than abort the open.
-    prepare_db_files(Path::new("/nonexistent-oo-perm-test/dir/oo.db"));
+    // The parent directory does not exist, so creating the file must fail
+    // silently: no panic, and no file appears.
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("missing").join("oo.db");
+
+    prepare_db_files(&db);
+
+    assert!(
+        !db.exists(),
+        "no file may be created in a missing directory"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_prepare_db_files_tightens_executable_file_to_0600() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("oo.db");
+    fs::write(&db, b"").unwrap();
+    set_mode(&db, 0o755);
+
+    prepare_db_files(&db);
+
+    assert_eq!(mode_of(&db), 0o600, "an owned 0755 file ends at 0600");
 }

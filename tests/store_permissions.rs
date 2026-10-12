@@ -83,6 +83,13 @@ fn indexed_output_keeps_database_private_under_umask_022() {
         .pragma_query_value(None, "journal_mode", |row| row.get(0))
         .unwrap();
     assert_eq!(journal_mode, "delete");
+    let stored: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+    assert!(
+        stored >= 1,
+        "large output must be indexed, got {stored} entries"
+    );
     drop(conn);
     for sidecar in ["oo.db-wal", "oo.db-shm"] {
         assert!(!data.join(sidecar).exists(), "{sidecar} must not exist");

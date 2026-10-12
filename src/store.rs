@@ -132,13 +132,14 @@ pub struct SqliteStore {
 #[path = "store_perm.rs"]
 mod store_perm;
 #[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "store_perm_tests.rs"]
 mod store_perm_tests;
 #[cfg(test)]
 #[path = "store_test_support.rs"]
 mod store_test_support;
 #[cfg(test)]
-pub(crate) use store_test_support::{TestDataDirGuard, set_test_data_dir};
+pub(crate) use store_test_support::set_test_data_dir;
 
 fn db_path() -> PathBuf {
     // Test-only hook (set by a `TestDataDirGuard` for the duration of one

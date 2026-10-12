@@ -2,9 +2,9 @@
 //
 // The database holds captured command output, which can contain secrets. oo
 // therefore keeps a data directory it creates at 0700 and `oo.db` plus its
-// SQLite sidecars at 0600, whatever the process umask. Every step here is best
-// effort: a chmod or create failure never fails `open_at`, and nothing is
-// printed.
+// SQLite sidecars at 0600 (the umask can only remove bits from those). Every
+// step here is best effort: a chmod or create failure never fails `open_at`,
+// and nothing is printed.
 
 use std::fs;
 #[cfg(unix)]
@@ -76,7 +76,7 @@ fn sidecar(db: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Drop group and other permission bits from a regular file the current user owns.
+/// Tighten a file that `tighten_as` accepts (see there) to 0600 or its owner bits.
 #[cfg(unix)]
 fn tighten(path: &Path) {
     // SAFETY: geteuid takes no arguments, has no preconditions and cannot fail.
@@ -86,13 +86,27 @@ fn tighten(path: &Path) {
 
 /// `tighten` for an explicit effective uid, so the owner check is testable.
 ///
-/// Symlinks are never followed: a link to a file elsewhere is left untouched.
-/// Files owned by someone else are left alone, and a file that is already
-/// private (no group or other bits) is never rewritten.
+/// Applies to a regular file owned by `euid`. Group and other bits are removed,
+/// and the owner keeps read and write (mode 0600). A file whose owner lacks
+/// read or write keeps its owner bits instead. Symlinks are never followed, and
+/// a file owned by someone else or already without group/other bits is left
+/// alone. A file the caller cannot open for reading is skipped.
+///
+/// The file is opened with `O_NOFOLLOW` and the mode is changed through the
+/// handle (`fchmod`), so a path swapped for a symlink between the check and the
+/// chmod cannot redirect the change. `O_NONBLOCK` stops a swapped-in FIFO from
+/// blocking the open; the metadata check then rejects it.
 #[cfg(unix)]
 pub(super) fn tighten_as(path: &Path, euid: u32) {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let Ok(meta) = fs::symlink_metadata(path) else {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+    let Ok(file) = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    else {
+        return;
+    };
+    let Ok(meta) = file.metadata() else {
         return;
     };
     if !meta.file_type().is_file() || meta.uid() != euid {
@@ -102,5 +116,9 @@ pub(super) fn tighten_as(path: &Path, euid: u32) {
     if mode & 0o077 == 0 {
         return;
     }
-    let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode & 0o600));
+    // SQLite needs owner read+write only, so the target is 0600 (a 0755 file
+    // becomes 0600, not 0700). An owner without read+write keeps its own bits.
+    let owner = mode & 0o700;
+    let target = if owner & 0o600 == 0o600 { 0o600 } else { owner };
+    let _ = file.set_permissions(fs::Permissions::from_mode(target));
 }
