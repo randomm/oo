@@ -56,6 +56,11 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
+        // Only regular files are pattern files. Reading a directory fails and a FIFO would
+        // block forever, so both are skipped (as is a dangling symlink, which is not a file).
+        if !path.is_file() {
+            continue;
+        }
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             // Not UTF-8 means it is not a pattern file; a file removed since listing is gone.

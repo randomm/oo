@@ -43,6 +43,19 @@ fn only_unparseable_toml_prints_empty_state() {
     );
 }
 
+#[test]
+fn stray_toml_directory_is_skipped_not_an_error() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("stray.toml")).unwrap();
+    assert_eq!(
+        render(dir.path()),
+        format!(
+            "User ({}):\n  no learned patterns yet\n",
+            dir.path().display()
+        )
+    );
+}
+
 /// Restores a directory's mode on drop so the temp dir can be cleaned up.
 #[cfg(unix)]
 struct RestoreMode(std::path::PathBuf);

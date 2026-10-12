@@ -457,7 +457,7 @@ User (<user patterns dir>):
 
 If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is printed followed by the line `  no learned patterns yet` (two-space indent) instead of pattern lines. A directory that exists but cannot be read (for example, permission denied) is an error instead: see Exit codes.
 
-Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
+Entries that are not valid TOML are skipped silently, and so are entries that are not regular files (directories or FIFOs named `*.toml`, dangling symlinks). Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` header is always printed, and the `User` header is printed unless an earlier section fails with an error (see Exit codes); the `Project` header is printed only when the project patterns directory exists.
 
 ### Exit codes
 
