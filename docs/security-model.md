@@ -45,7 +45,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). A relative `OO_DATA_DIR` is resolved against the current working directory, and an empty `OO_DATA_DIR=` puts the database at `./oo.db`
+- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is the `dirs::data_dir()` location plus `.oo/` (per-OS defaults in [configuration.md](configuration.md#directories)). `OO_DATA_DIR` replaces it when valid (see [Directories](configuration.md#directories)), never the current directory
 - Permissions (Unix):
   - A data directory oo creates is made with mode `0700` (missing parent directories keep the umask mode), and `oo.db` is created with mode `0600`. The umask can only remove bits from these modes, so they are never wider.
   - SQLite gives its `-wal`, `-shm` and `-journal` sidecars the main file's mode, so they are `0600` too when `oo.db` is a `0600` file. If `oo.db` is a symlink, SQLite opens the target and the sidecars take the target's mode, which oo does not change.
@@ -125,14 +125,12 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design:
 
 - You installed, wrote, or accepted them. This includes patterns that `oo learn` writes into that directory from LLM output, which you should review.
-- An empty or relative `OO_CONFIG_DIR` is the exception, resolving against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` writes its LLM-generated patterns into that same directory.
+- `OO_CONFIG_DIR` is used only when absolute (see [Directories](configuration.md#directories)), so repository files in the current directory are never read as user patterns or configuration because of it.
 - A cloned repository that ships that directory (for example `./patterns/*.toml`) has its files loaded as trusted user patterns when `oo` runs in it.
-- The same config directory holds the pending learn-status file and `config.toml` (see [configuration](configuration.md#files-in-configuration-directory)). A failed background learn creates the config directory to record its status, so a relative value can create directories under the current directory.
-- `[store] retention` in `config.toml` sets how long indexed output is kept (read on every indexing run; `0` disables purging). A repository-owned `config.toml` in a relative or empty `OO_CONFIG_DIR` can therefore change that period.
+- The same config directory holds the pending learn-status file and `config.toml` (see [configuration](configuration.md#files-in-configuration-directory)). These are always read from the absolute configuration directory described above.
+- `[store] retention` in `config.toml` sets how long indexed output is kept (read on every indexing run; `0` disables purging). It is read only from the configuration directory, never from the current directory.
 - A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`. A repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`); its validation rules are in [When oo makes network calls](#when-oo-makes-network-calls).
 - A malformed `[learn]` table does not change retention, and an invalid `[store]` value does not stop `oo learn`. A TOML syntax error or an unreadable `config.toml` (a file with mode 000, or a directory named `config.toml`) affects both, except when the config directory itself is unsearchable (mode 000 on the directory): then `oo learn` silently uses its defaults while indexing still warns ([configuration](configuration.md#store-section)).
-
-Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -154,18 +152,18 @@ What a pattern cannot do: run commands or any other process, read or write files
 oo reads from:
 - Standard input (commands)
 - Environment variables (runtime only)
-- Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Configuration directory (`~/.config/oo/` on Linux, or `$XDG_CONFIG_HOME/oo/` when `XDG_CONFIG_HOME` is an absolute path; `~/Library/Application Support/oo/` on macOS; `OO_CONFIG_DIR` overrides, see [Directories](configuration.md#directories))
 - Pattern directory (`patterns/` inside the configuration directory)
-- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides; a relative value is resolved against the current working directory, and an empty value means the current working directory)
+- Storage directory (SQLite store, default build only; `~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides, see [Directories](configuration.md#directories))
 - With `vipune-store`, Vipune's database (`~/.vipune/memories.db` by default) and its config file (`vipune/config.toml` in the platform config directory) instead of `oo.db`
 - Project-local patterns (`.oo/patterns/` in the git root, or in the current directory when there is no git root), loaded each time oo classifies a command
 
-By default the configuration and storage directories are under your user home directory; if no home directory can be determined they fall back under `/tmp` (see [configuration.md](configuration.md#directories)). On Linux, they move under `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` when those are absolute paths. The `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Project-local patterns are read from the repository, not from home.
+By default the configuration and storage directories are under your user home directory; if no home directory can be determined they fall back under `/tmp` (see [configuration.md](configuration.md#directories)). On Linux, they move under `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` when those are absolute paths. The absolute `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides can point anywhere, so those paths are not confined to your home directory. Residual risk: an invalid (relative or padded) `OO_CONFIG_DIR` or `OO_DATA_DIR` is not isolation. oo writes a stderr warning and falls back to the real default directories above, so a harness that sets a relative value expecting isolation reads and writes your real configuration and store. Project-local patterns are read from the repository, not from home.
 
 ### Write Access
 
 oo writes to:
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead). On Unix, a data directory oo creates is made with mode `0700` (missing parents keep the umask mode), and `oo.db` is created with mode `0600` or, if it already exists, tightened on open (see Storage Backends)
+- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides when absolute; an ignored value falls back to the default with a stderr warning, see Read Access): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead). On Unix, a data directory oo creates is made with mode `0700` (missing parents keep the umask mode), and `oo.db` is created with mode `0600` or, if it already exists, tightened on open (see Storage Backends)
 - Hugging Face cache (`~/.cache/huggingface/hub`; vipune 0.1.2 ignores `HF_HOME`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results. It is created with mode 0600 on Unix, a pre-existing file keeps its mode, and a missing config directory is created with default permissions. If it cannot be removed after being shown, the same lines are shown again on every run until it is removed.
@@ -177,7 +175,7 @@ Writes made by `oo init` (only when you run it):
 - `oo init --agent pi`: `.pi/extensions/oo.ts` in the git root (same fallback)
 - `oo init --agent pi --global`: `$OO_PI_EXTENSIONS_DIR/oo.ts`, or `~/.pi/agent/extensions/oo.ts` when `OO_PI_EXTENSIONS_DIR` is unset
 
-By default these writes stay under your user home directory (global installs) or the repository root, falling back to the current directory when there is no git root (project installs). The `OO_CONFIG_DIR`, `OO_DATA_DIR`, `OO_CLAUDE_DIR`, and `OO_PI_EXTENSIONS_DIR` overrides can point anywhere. A set-but-empty `OO_CLAUDE_DIR` or `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); it does not fall back to the home directory.
+By default these writes stay under your user home directory (global installs) or the repository root, falling back to the current directory when there is no git root (project installs). The absolute `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides, and `OO_CLAUDE_DIR` and `OO_PI_EXTENSIONS_DIR`, can point anywhere. A set-but-empty `OO_CLAUDE_DIR` or `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); it does not fall back to the home directory.
 
 Temporary files (not listed above):
 - `oo init --agent claude-code` writes `<settings.json>.tmp` next to the target settings file and renames it over the target, for both the project and `--global` paths.

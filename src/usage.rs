@@ -27,7 +27,7 @@ const USAGE: &[(&str, &str)] = &[
          \n\
          Run <command>, then ask an LLM (in the background) to generate an output\n\
          compression pattern for it. The pattern is saved in the user patterns\n\
-         directory (see `oo patterns`; override with OO_CONFIG_DIR).\n\
+         directory (see `oo patterns`; override with an absolute OO_CONFIG_DIR).\n\
          \n\
          Options:\n  --hint <text>    Extra context for the pattern generator\n",
     ),

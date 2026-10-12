@@ -117,7 +117,7 @@ Orientation for agents new to the codebase:
 | `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag |
 | `src/session.rs` | Project id detection (the session id is informational only) |
 | `src/learn.rs` | LLM integration, background re-exec, Anthropic only |
-| `src/config.rs` | Config directory resolution (`OO_CONFIG_DIR` or platform config dir) |
+| `src/config.rs` | Config and data directory overrides (`OO_CONFIG_DIR`, `OO_DATA_DIR`) and the platform fallback |
 | `src/retention.rs` | `[store] retention` config and lazy purge of indexed output |
 | `src/error.rs` | Unified error types via `thiserror` |
 

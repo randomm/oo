@@ -150,14 +150,7 @@ fn db_path() -> PathBuf {
         return dir.join("oo.db");
     }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
-    if let Some(data_dir) = std::env::var_os("OO_DATA_DIR") {
-        return PathBuf::from(data_dir).join("oo.db");
-    }
-    dirs::data_dir()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".oo")
-        .join("oo.db")
+    crate::config::data_dir().join("oo.db")
 }
 
 fn map_err(e: rusqlite::Error) -> Error {
@@ -165,8 +158,8 @@ fn map_err(e: rusqlite::Error) -> Error {
 }
 
 impl SqliteStore {
-    /// Open the default SQLite store: `oo.db` in `OO_DATA_DIR` when set, otherwise
-    /// in `<platform data dir>/.oo/` (see docs/configuration.md#directories).
+    /// Open the default SQLite store: `oo.db` in `OO_DATA_DIR` when it is an
+    /// absolute path (otherwise ignored with a warning), else in `<platform data dir>/.oo/` (see docs/configuration.md#directories).
     ///
     /// Creates the database and tables if they don't exist.
     pub fn open() -> Result<Self, Error> {
