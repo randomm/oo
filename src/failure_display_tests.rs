@@ -15,13 +15,14 @@ fn dropped_middle_lines_are_not_shown() {
 }
 
 #[test]
-fn smart_truncate_join_case_is_not_shown() {
-    // 100 lines: under MAX_LINES, so smart_truncate keeps all of them but
-    // joins the 60/40 head and tail with no separator, fusing line 59 and 60.
+fn smart_truncate_100_lines_is_shown_in_full() {
+    // 100 lines: within MAX_LINES, so smart_truncate returns them unchanged;
+    // the 60/40 boundary lines must stay on separate lines.
     let full: String = (0..100).map(|i| format!("line {i}\n")).collect();
     let slice = smart_truncate(&full);
-    assert!(slice.contains("line 59line 60"));
-    assert!(!shows_all_lines(&full, &slice));
+    assert_eq!(slice, full);
+    assert!(!slice.contains("line 59line 60"));
+    assert!(shows_all_lines(&full, &slice));
 }
 
 #[test]

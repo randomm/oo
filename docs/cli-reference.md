@@ -46,8 +46,7 @@ The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: 
 
 Large unpatterned Data output is indexed in full and retrievable via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](configuration.md#store-section)); the
 display is only the indicator line. If indexing fails, the display falls back to
-`smart_truncate` with no indicator line: output of 80 lines or fewer is printed in full.
-Output of 81 to 120 lines prints no truncation marker, and its last head line and first tail line are joined into one line with no newline between them (for example, `seq 1 81` shows `4950` for lines 49 and 50; known defect, tracked in #182). Longer output keeps its first 72 and last 48 lines around a
+`smart_truncate` with no indicator line: output of 120 lines or fewer is printed in full, unchanged. Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
 
 Unpatterned Content and Unknown output (the Bounded tier) is indexed in full and displayed as

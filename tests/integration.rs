@@ -1908,6 +1908,71 @@ fn test_failure_fully_displayed_is_not_indexed() {
 }
 
 #[test]
+fn test_failure_100_lines_shown_in_full_and_not_indexed() {
+    // 100 lines (issue #194): smart_truncate must return them unchanged, so the
+    // head/tail boundary lines stay separate and nothing is dropped or indexed.
+    let script = format!(
+        "#!/bin/sh\nfor i in $(seq 1 100); do echo \"line $i\"; done\necho {FAIL_MARKER}\nexit 1\n"
+    );
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("line 59\nline 60"),
+        "boundary lines must not fuse; got: {stdout:?}"
+    );
+    assert!(
+        stdout.contains(FAIL_MARKER),
+        "last line must be displayed; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("truncated"),
+        "no truncation marker expected; got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("oo recall"),
+        "no recall advertisement for fully displayed output; got: {stdout:?}"
+    );
+
+    oo().args(["recall", FAIL_MARKER])
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No results found"));
+}
+
+#[test]
+fn test_failure_200_lines_dropped_lines_are_indexed() {
+    // 200 lines (issue #194): beyond MAX_LINES, so the middle is dropped from
+    // the display and must be indexed for recall.
+    let script = format!(
+        "#!/bin/sh\nfor i in $(seq 1 200); do if [ $i -eq 100 ]; then echo {FAIL_MARKER}; else echo \"line $i\"; fi; done\nexit 1\n"
+    );
+    let (_bin, path) = make_fake_bin("zfailtool", &script);
+    let (_guard, data_dir) = isolated_store();
+
+    let assert = oo()
+        .args(["zfailtool"])
+        .env("PATH", &path)
+        .env("OO_DATA_DIR", &data_dir)
+        .assert()
+        .failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        !stdout.contains(FAIL_MARKER),
+        "marker must be outside the displayed slice; got: {stdout:?}"
+    );
+    assert_recall_contains(&data_dir, FAIL_MARKER);
+}
+
+#[test]
 fn test_failure_pattern_slice_showing_all_lines_is_not_indexed() {
     // `cargo test` has a built-in tail pattern. A 5-line failure fits inside
     // its window, so every line is shown; the slice has no trailing newline
