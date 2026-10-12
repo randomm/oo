@@ -35,8 +35,8 @@ fn main() {
     // Rust ignores SIGPIPE by default, so a write to a closed pipe (`oo patterns | head -1`)
     // returns EPIPE and `println!` panics. Restoring the default makes the process exit
     // quietly like other Unix tools. Must run before any output. This does not reach
-    // std sockets: they suppress SIGPIPE per send (MSG_NOSIGNAL) or per socket (SO_NOSIGPIPE),
-    // so a reset API connection in `_learn_bg` surfaces as an error, not a signal.
+    // std TcpStream writes do not raise SIGPIPE: MSG_NOSIGNAL on Linux (library/std/src/sys/net/connection/socket/mod.rs:435),
+    // SO_NOSIGPIPE on Apple (socket/unix.rs:101-104), so a reset API connection in `_learn_bg` surfaces as an error.
     #[cfg(unix)]
     // SAFETY: signal(2) with SIG_DFL only changes the disposition for this process.
     unsafe {

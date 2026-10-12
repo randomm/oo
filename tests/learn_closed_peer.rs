@@ -2,9 +2,9 @@
 //! learn child with SIGPIPE: the write has to fail with an error that is recorded
 //! in `learn-status.log`, and the child must exit normally.
 //!
-//! Rust std suppresses SIGPIPE per send (`MSG_NOSIGNAL` on Linux) or per socket
-//! (`SO_NOSIGPIPE` on Apple platforms). The test checks the Linux and macOS
-//! behaviour; the process-wide SIGPIPE disposition is set to default in `main`.
+//! Rust std suppresses SIGPIPE on TcpStream writes: `MSG_NOSIGNAL` on Linux
+//! (library/std/src/sys/net/connection/socket/mod.rs:435), `SO_NOSIGPIPE` on Apple
+//! (socket/unix.rs:101-104). The test checks both; `main` sets SIGPIPE to default.
 //!
 //! The listener accepts one connection, then closes it with `SO_LINGER` 0 so the
 //! kernel sends an RST. Whether the child's write or its read observes the reset
