@@ -36,7 +36,8 @@ fn main() {
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
         if let (Some(path), Some(dir)) = (raw_args.get(2), raw_args.get(3)) {
-            let _ = learn::run_background(path, std::path::Path::new(dir));
+            let status = learn_status::learn_status_path();
+            let _ = learn::run_background(path, std::path::Path::new(dir), &status);
         }
         std::process::exit(0);
     }

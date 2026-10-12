@@ -347,13 +347,16 @@ fn test_patterns_dir_is_under_config_dir() {
 // run_background
 // ---------------------------------------------------------------------------
 
+// Status goes to a temp dir, never the real config directory.
 fn run_bg(path: &Path) -> Result<(), Error> {
-    run_background(path.to_str().unwrap(), path.parent().unwrap())
+    let status = tempfile::TempDir::new().unwrap();
+    let status_path = status.path().join("learn-status.log");
+    run_background(path.to_str().unwrap(), path.parent().unwrap(), &status_path)
 }
 
 #[test]
 fn test_run_background_missing_file_returns_err() {
-    assert!(run_background("/tmp/__oo_no_such_file_xyz__.json", Path::new("/tmp")).is_err());
+    assert!(run_bg(Path::new("/tmp/__oo_no_such_file_xyz__.json")).is_err());
 }
 
 #[test]

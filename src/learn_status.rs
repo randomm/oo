@@ -32,13 +32,12 @@ pub fn write_learn_status(
     cmd_name: &str,
     pattern_path: &Path,
 ) -> Result<(), std::io::Error> {
-    let mut file = open_learn_status(status_path)?;
-    writeln!(
-        file,
-        "learned pattern for {} → {}",
+    let line = format!(
+        "learned pattern for {} → {}\n",
         cmd_name,
         pattern_path.display()
-    )
+    );
+    write_line(status_path, &line)
 }
 
 /// Write a one-line failure entry to the learn status file.
@@ -50,9 +49,15 @@ pub fn write_learn_status_failure(
     cmd_name: &str,
     error_msg: &str,
 ) -> Result<(), std::io::Error> {
-    let mut file = open_learn_status(status_path)?;
     let first_line = error_msg.lines().next().unwrap_or(error_msg);
-    writeln!(file, "FAILED {cmd_name}: {first_line}")
+    write_line(status_path, &format!("FAILED {cmd_name}: {first_line}\n"))
+}
+
+/// Append one whole line with a single `write_all`, so concurrent children
+/// cannot interleave fragments of their entries.
+fn write_line(status_path: &Path, line: &str) -> Result<(), std::io::Error> {
+    let mut file = open_learn_status(status_path)?;
+    file.write_all(line.as_bytes())
 }
 
 /// Check for a pending learn-status file, print its contents to stderr, then

@@ -60,6 +60,12 @@ fn foreground_config_error_has_single_prefix() {
         .success()
         .stderr(predicate::str::contains("oo: config error: "))
         .stderr(predicate::str::contains("config error: config error:").not());
+    // The detached child writes into this temp dir; wait for it so it cannot
+    // recreate the directory after the TempDir is dropped.
+    assert!(wait_for_status(
+        &cfg.path().join("learn-status.log"),
+        "FAILED"
+    ));
 }
 
 #[test]
@@ -77,6 +83,17 @@ fn background_failure_is_reported_when_config_dir_is_missing() {
     assert!(
         wait_for_status(&cfg.join("learn-status.log"), "FAILED"),
         "background failure must be recorded in learn-status.log"
+    );
+    // The next foreground invocation prints the recorded failure.
+    oo().args(["echo", "hi"])
+        .env("OO_CONFIG_DIR", &cfg)
+        .env("OO_DATA_DIR", data.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("oo: learn failed for echo"));
+    assert!(
+        !cfg.join("learn-status.log").exists(),
+        "status is cleared once shown"
     );
 }
 
@@ -218,6 +235,14 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
     // A regular file where the config dir should be makes the status write fail.
     let blocker = root.path().join("cfg-blocker");
     std::fs::write(&blocker, "x").unwrap();
+    // Restores the directory mode on drop, so a panic cannot strand the TempDir.
+    struct RestoreMode<'a>(&'a Path);
+    impl Drop for RestoreMode<'_> {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    let _restore = RestoreMode(&payload_dir);
     let output = oo()
         .args([
             "_learn_bg",
@@ -228,8 +253,6 @@ fn undeletable_payload_is_reported_when_status_write_also_fails() {
         .env_remove("ANTHROPIC_API_KEY")
         .output()
         .unwrap();
-    // Restore before asserting, so a failed assertion cannot strand the TempDir.
-    std::fs::set_permissions(&payload_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     assert!(output.status.success());
     // The status write failed too, so the stderr fallback is the only report.
     assert!(

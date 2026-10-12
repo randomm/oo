@@ -212,7 +212,13 @@ pub(crate) fn run_learn_with_config(
 /// validates the result, and saves the pattern to disk. Retries up to 2 times
 /// if the LLM returns invalid TOML.
 pub fn run_learn(command: &str, output: &str, exit_code: i32) -> Result<(), Error> {
-    run_learn_with_hint(command, output, exit_code, None)
+    run_learn_with_hint(
+        command,
+        output,
+        exit_code,
+        None,
+        &crate::learn_status::learn_status_path(),
+    )
 }
 
 /// Internal variant of run_learn that accepts an optional hint.
@@ -223,6 +229,7 @@ fn run_learn_with_hint(
     output: &str,
     exit_code: i32,
     hint: Option<&str>,
+    status_path: &Path,
 ) -> Result<(), Error> {
     let config = load_learn_config()?;
 
@@ -241,7 +248,7 @@ fn run_learn_with_hint(
         api_key: &api_key,
         base_url: &base_url,
         patterns_dir: &patterns_dir(),
-        learn_status_path: &crate::learn_status::learn_status_path(),
+        learn_status_path: status_path,
         hint,
     };
 
@@ -302,7 +309,11 @@ pub fn spawn_background(
 ///
 /// `payload_dir` is the directory the parent created the payload in; ownership
 /// is checked against it rather than against this process's environment.
-pub fn run_background(data_path: &str, payload_dir: &Path) -> Result<(), Error> {
+pub fn run_background(
+    data_path: &str,
+    payload_dir: &Path,
+    status_path: &Path,
+) -> Result<(), Error> {
     let path = Path::new(data_path);
     // The payload can hold command output (possibly secret); remove it as soon
     // as it has been read, before any parse or learn step can fail.
@@ -329,7 +340,13 @@ pub fn run_background(data_path: &str, payload_dir: &Path) -> Result<(), Error> 
                     data.exit_code
                 ))
             })?;
-            run_learn_with_hint(&data.command, &data.output, exit_code, data.hint.as_deref())
+            run_learn_with_hint(
+                &data.command,
+                &data.output,
+                exit_code,
+                data.hint.as_deref(),
+                status_path,
+            )
         });
 
     let result = match removal {
@@ -344,8 +361,7 @@ pub fn run_background(data_path: &str, payload_dir: &Path) -> Result<(), Error> 
     };
 
     if let Err(ref e) = result {
-        let status_path = crate::learn_status::learn_status_path();
-        if crate::learn_status::write_learn_status_failure(&status_path, &cmd_label, &e.to_string())
+        if crate::learn_status::write_learn_status_failure(status_path, &cmd_label, &e.to_string())
             .is_err()
         {
             // The detached child's stderr is null, so this only helps when run in the foreground.
