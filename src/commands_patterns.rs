@@ -72,6 +72,8 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
 /// Print pattern entries from a single directory, returning true if any were found.
 ///
 /// Each line is printed with a two-space indent so callers can add section headers.
+/// A write failure is printed to stderr and returns false, so it is indistinguishable
+/// from an empty directory; `cmd_patterns_in` maps that to exit 1.
 pub fn list_patterns_in(dir: &Path) -> bool {
     match write_patterns_in(&mut io::stdout().lock(), dir) {
         Ok(found) => found,

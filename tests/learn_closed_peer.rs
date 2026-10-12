@@ -2,13 +2,15 @@
 //! learn child with SIGPIPE: the write has to fail with an error that is recorded
 //! in `learn-status.log`, and the child must exit normally.
 //!
-//! Rust std sends with `MSG_NOSIGNAL` (Linux/Android) or sets `SO_NOSIGPIPE` on
-//! the socket (Apple, FreeBSD, NetBSD, DragonFly), so the process-wide SIGPIPE
-//! disposition does not matter for std sockets. This test pins that behaviour.
+//! Rust std suppresses SIGPIPE per send (`MSG_NOSIGNAL` on Linux) or per socket
+//! (`SO_NOSIGPIPE` on Apple platforms). The test checks the Linux and macOS
+//! behaviour; the process-wide SIGPIPE disposition is set to default in `main`.
 //!
-//! The listener accepts, then closes with `SO_LINGER` 0 so the kernel sends an
-//! RST. The request body is sent after the reset has been queued, which is the
-//! case where an unsuppressed write raises SIGPIPE.
+//! The listener accepts one connection, then closes it with `SO_LINGER` 0 so the
+//! kernel sends an RST. Whether the child's write or its read observes the reset
+//! depends on timing, so the test does not pin which one fails. It asserts that
+//! the child exits normally and records an `Anthropic API error` (the request
+//! path was reached), not a config or URL rejection.
 
 #![cfg(unix)]
 
@@ -21,6 +23,9 @@ use tempfile::TempDir;
 
 const KEY_ENV: &str = "OO_TEST_DUMMY_LEARN_KEY";
 
+/// How long the listener waits for a connection, and the child's exit bound.
+const WAIT: Duration = Duration::from_secs(10);
+
 /// Large command output, so the payload file is multi-megabyte as well.
 /// The prompt truncates output to 4000 characters, so the request stays small.
 fn payload() -> String {
@@ -29,10 +34,24 @@ fn payload() -> String {
 }
 
 /// Accept one connection and reset it immediately with `SO_LINGER` 0.
+///
+/// Polls a non-blocking listener, so a child that never connects cannot block
+/// this thread past `WAIT`.
 fn reset_first_connection(listener: TcpListener) {
     use std::os::fd::AsRawFd;
-    let Ok((stream, _)) = listener.accept() else {
-        return;
+    listener.set_nonblocking(true).unwrap();
+    let deadline = Instant::now() + WAIT;
+    let stream = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() > deadline {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => return,
+        }
     };
     let linger = libc::linger {
         l_onoff: 1,
@@ -88,7 +107,7 @@ fn reset_peer_does_not_kill_background_learn_child() {
         .spawn()
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + WAIT;
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break status;
@@ -96,7 +115,7 @@ fn reset_peer_does_not_kill_background_learn_child() {
         if Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("_learn_bg did not exit within 10s after the peer reset");
+            panic!("_learn_bg did not exit within {WAIT:?} after the peer reset");
         }
         std::thread::sleep(Duration::from_millis(20));
     };
@@ -107,12 +126,19 @@ fn reset_peer_does_not_kill_background_learn_child() {
         "background learn child was killed by signal {:?}",
         status.signal()
     );
-    assert_failed_status(&cfg.join("learn-status.log"));
+    assert_api_error_status(&cfg.join("learn-status.log"));
     assert!(!payload_path.exists(), "payload must be removed after read");
 }
 
-fn assert_failed_status(path: &Path) {
+/// The failure must be a socket I/O error, which shows the request reached the
+/// socket. The exact errno varies with timing (reset, broken pipe, or EINVAL on
+/// macOS), so only the `io:` class is asserted. A config or URL rejection does
+/// not produce an `io:` error.
+fn assert_api_error_status(path: &Path) {
     let status =
         std::fs::read_to_string(path).expect("failure must be recorded in learn-status.log");
-    assert!(status.contains("FAILED"), "{status}");
+    assert!(
+        status.contains("Anthropic API error: io: "),
+        "expected a socket I/O error, got: {status}"
+    );
 }
