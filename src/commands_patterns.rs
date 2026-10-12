@@ -105,7 +105,9 @@ pub fn cmd_patterns() -> i32 {
     }
 
     println!("User ({}):", user_dir.display());
-    list_patterns_in(&user_dir);
+    if !list_patterns_in(&user_dir) {
+        println!("  no learned patterns yet");
+    }
 
     0
 }

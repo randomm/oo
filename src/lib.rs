@@ -58,6 +58,7 @@
 //! ```
 
 /// Command output classification and intelligent truncation.
+pub mod api_key;
 pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]

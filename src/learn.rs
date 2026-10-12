@@ -232,12 +232,13 @@ fn run_learn_with_hint(
 ) -> Result<(), Error> {
     let config = load_learn_config()?;
 
-    let api_key = std::env::var(&config.api_key_env).map_err(|_| {
-        Error::Learn(format!(
-            "Set {} environment variable to use `oo learn`",
-            config.api_key_env
-        ))
-    })?;
+    let api_key = crate::api_key::non_empty_key(std::env::var(&config.api_key_env).ok())
+        .ok_or_else(|| {
+            Error::Learn(format!(
+                "Set {} environment variable to use `oo learn`",
+                config.api_key_env
+            ))
+        })?;
 
     let base_url = std::env::var("ANTHROPIC_API_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".to_string());
