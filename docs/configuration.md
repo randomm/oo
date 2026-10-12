@@ -120,7 +120,7 @@ These constants are built into the binary and cannot be configured.
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `SMALL_THRESHOLD` | 4096 bytes | Successful (exit 0) output of at most this many bytes (4 KiB) passes through unchanged; failed output is always filtered |
-| `MAX_LINES` | 120 lines | Default failure truncation (patterns without a failure section): output of at most this many lines is shown in full; longer output keeps its first 72 and last 48 lines around a marker. Patterns with a failure section filter output at any length |
+| `MAX_LINES` | 120 lines | Default truncation, used for commands with no matching pattern or whose pattern has no `failure` section: output of at most this many lines is shown in full; longer output keeps its first 72 and last 48 lines around a marker. Patterns with a `failure` section filter output at any length |
 
 ## Feature Flags
 

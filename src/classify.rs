@@ -40,7 +40,7 @@ pub const MIN_SAVINGS: usize = 4096;
 /// ratio.
 pub const DISPLAY_CAP: usize = SMALL_THRESHOLD;
 
-/// Hard cap on total lines shown after truncation.
+/// Output up to this many lines is returned unchanged (head/tail joins would fuse lines); longer output is capped here.
 const MAX_LINES: usize = 120;
 
 /// Command category — determines default output handling when no pattern matches.
