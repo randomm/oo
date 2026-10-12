@@ -3,7 +3,8 @@
 //! or database. Each case runs the `oo` binary from a temp directory that holds
 //! repository-style files, so a cwd-relative resolution would be visible.
 //!
-//! Every child process also gets a temp `HOME` and XDG base directories. An
+//! Every child process also gets a temp `HOME` and XDG base directories, and
+//! `OO_CONFIG_DIR` / `OO_DATA_DIR` are removed unless a test sets them. An
 //! ignored value falls back to the platform default, and without this the
 //! fallback would point at the developer's real config directory, where `oo`
 //! consumes pending learn-status messages on every run.
@@ -14,22 +15,31 @@ use std::process::Output;
 use tempfile::TempDir;
 
 const STATUS_LINE: &str = "FAILED repo-fake: planted by the repository\n";
+const PLANTED_PATTERN: &str = "^planted-marker-xyz";
 
 /// Values that oo must ignore for both variables: empty, and relative.
 const IGNORED_VALUES: [&str; 2] = ["", "relative-dir"];
 
-/// A temp directory laid out like a repository that ships oo config files.
-fn repo_with_planted_files() -> TempDir {
-    let repo = TempDir::new().unwrap();
-    std::fs::write(repo.path().join("config.toml"), "[store]\nretention = 0\n").unwrap();
-    std::fs::write(repo.path().join("learn-status.log"), STATUS_LINE).unwrap();
-    repo
+/// Writes the files a repository could ship under `dir`: a config file with an
+/// invalid retention (warns when indexing), a pending learn-status line and a
+/// user pattern (listed by `oo patterns`).
+fn plant_oo_files(dir: &Path) {
+    std::fs::create_dir_all(dir.join("patterns")).unwrap();
+    std::fs::write(dir.join("config.toml"), "[store]\nretention = -1\n").unwrap();
+    std::fs::write(dir.join("learn-status.log"), STATUS_LINE).unwrap();
+    std::fs::write(
+        dir.join("patterns").join("planted.toml"),
+        format!("command_match = \"{PLANTED_PATTERN}\"\n"),
+    )
+    .unwrap();
 }
 
 /// An `oo` command whose platform directories all point inside `home`.
 fn oo(cwd: &Path, home: &Path) -> assert_cmd::Command {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("oo");
     cmd.current_dir(cwd)
+        .env_remove("OO_CONFIG_DIR")
+        .env_remove("OO_DATA_DIR")
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join("xdg-config"))
         .env("XDG_DATA_HOME", home.join("xdg-data"));
@@ -52,22 +62,41 @@ fn run_seq(
 }
 
 #[test]
-fn ignored_config_dir_does_not_read_repo_status_file() {
+fn ignored_config_dir_does_not_read_repo_files() {
     for value in IGNORED_VALUES {
-        let repo = repo_with_planted_files();
+        let repo = TempDir::new().unwrap();
+        plant_oo_files(repo.path());
+        // A relative value would be resolved against cwd, so plant there too.
+        let resolved = repo.path().join(value);
+        plant_oo_files(&resolved);
         let home = TempDir::new().unwrap();
-        let out = oo(repo.path(), home.path())
-            .arg("version")
+
+        let patterns = oo(repo.path(), home.path())
+            .arg("patterns")
             .env("OO_CONFIG_DIR", value)
             .output()
             .unwrap();
-        assert!(out.status.success(), "OO_CONFIG_DIR={value:?}");
+        assert!(patterns.status.success(), "OO_CONFIG_DIR={value:?}");
         assert!(
-            repo.path().join("learn-status.log").exists(),
-            "OO_CONFIG_DIR={value:?}: repo learn-status.log must not be consumed"
+            !String::from_utf8_lossy(&patterns.stdout).contains(PLANTED_PATTERN),
+            "OO_CONFIG_DIR={value:?}: planted user pattern was listed"
         );
-        let stderr = String::from_utf8_lossy(&out.stderr);
+
+        let seq = run_seq(repo.path(), home.path(), value, home.path().join("data"));
+        assert!(seq.status.success(), "OO_CONFIG_DIR={value:?}");
+        let stderr = String::from_utf8_lossy(&seq.stderr);
         assert!(!stderr.contains("planted by the repository"), "{stderr}");
+        assert!(
+            !stderr.contains("retention"),
+            "OO_CONFIG_DIR={value:?}: planted config.toml was read: {stderr}"
+        );
+        for dir in [repo.path().to_path_buf(), resolved] {
+            assert!(
+                dir.join("learn-status.log").exists(),
+                "OO_CONFIG_DIR={value:?}: {} must not be consumed",
+                dir.display()
+            );
+        }
     }
 }
 

@@ -14,13 +14,13 @@ On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are 
 
 If the `dirs` crate cannot determine a base directory, the config directory falls back to `/tmp/oo` and the data directory falls back to `$HOME/.oo` (then `/tmp/.oo`).
 
-Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it.
+Override the config directory with the `OO_CONFIG_DIR` environment variable. A valid (absolute) value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it.
 
 **Override rules (normative, for `OO_CONFIG_DIR` and `OO_DATA_DIR`):**
 
 - The value must be an absolute path and is used verbatim, with no trimming. A value with leading or trailing whitespace is ignored.
 - An empty or whitespace-only value is treated as unset.
-- Any other value is ignored and the platform default applies. A warning naming the variable is printed to stderr once per oo invocation. Hook invocations run as separate processes, so each one may print it again.
+- Any other value is ignored and the platform default applies. A warning naming the variable is printed to stderr once per oo invocation. Hook invocations run as separate processes, so each one may print it again. The fallback is the real default directory, not an isolated one: a harness that sets a relative value expecting isolation reads and writes your real config and store.
 - A relative value is never resolved against the current working directory. A repository's own `config.toml`, `patterns/` or `learn-status.log` therefore cannot act as oo's configuration.
 
 Example:
@@ -79,7 +79,7 @@ Retention for indexed command output (the entries `oo` stores for `oo recall`). 
 Overrides the configuration directory.
 
 - **Default**: the platform configuration directory plus `oo/` (see the [Directories](#directories) table)
-- **Purpose**: Specify a custom absolute location for `config.toml` and `patterns/`. The same `config.toml` supplies `[learn]` and `[store] retention`. Empty or relative values are ignored (see above), so a repository's own `config.toml` cannot set the retention (see [Security Model](security-model.md#pattern-files))
+- **Purpose**: Specify a custom absolute location for `config.toml` and `patterns/`. The same `config.toml` supplies `[learn]` and `[store] retention`. Empty values count as unset and relative or padded values are ignored with a warning (see above), so a repository's own `config.toml` cannot set the retention (see [Security Model](security-model.md#pattern-files))
 
 ```bash
 export OO_CONFIG_DIR="/some/custom/dir"

@@ -487,7 +487,7 @@ segment, and an env value containing a quote or backslash.
 
 ## `oo hook claude`
 
-Stdin-JSON processor for Claude Code PreToolUse hooks (installed by `oo init --agent claude-code`). Reads a PreToolUse event as JSON on stdin and, for a Bash tool call whose command has an `oo` rewrite, prints a `hookSpecificOutput` object with the rewritten command on stdout and exits 0. For everything else (no rewrite, non-Bash, invalid/empty JSON, missing fields) it prints nothing and exits 0 — **fail-open**.
+Stdin-JSON processor for Claude Code PreToolUse hooks (installed by `oo init --agent claude-code`). Reads a PreToolUse event as JSON on stdin and, for a Bash tool call whose command has an `oo` rewrite, prints a `hookSpecificOutput` object with the rewritten command on stdout and exits 0. For everything else (no rewrite, non-Bash, invalid/empty JSON, missing fields) it prints nothing on stdout and exits 0 — **fail-open**. If `OO_CONFIG_DIR` or `OO_DATA_DIR` is set to an ignored value (relative, padded, or otherwise not an absolute path), each hook process also writes one warning line naming the variable to stderr and uses the default directory; stdout stays empty or JSON as described here.
 
 ### Stdin / stdout contract
 

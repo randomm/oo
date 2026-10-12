@@ -95,7 +95,7 @@ fn detect_provider_with<F: Fn(&str) -> Option<String>>(env_lookup: F) -> LearnCo
 ///
 /// Returns `<config dir>/oo/patterns` (`~/.config/oo/patterns` on Linux,
 /// `~/Library/Application Support/oo/patterns` on macOS), or `OO_CONFIG_DIR/patterns`
-/// when `OO_CONFIG_DIR` is set to an absolute path (relative values are ignored).
+/// when `OO_CONFIG_DIR` is set to an absolute path (other values are ignored with a warning).
 pub fn patterns_dir() -> PathBuf {
     config_dir().join("patterns")
 }

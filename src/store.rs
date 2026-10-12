@@ -158,8 +158,8 @@ fn map_err(e: rusqlite::Error) -> Error {
 }
 
 impl SqliteStore {
-    /// Open the default SQLite store: `oo.db` in `OO_DATA_DIR` when set, otherwise
-    /// in `<platform data dir>/.oo/` (see docs/configuration.md#directories).
+    /// Open the default SQLite store: `oo.db` in `OO_DATA_DIR` when it is an
+    /// absolute path (otherwise ignored with a warning), else in `<platform data dir>/.oo/` (see docs/configuration.md#directories).
     ///
     /// Creates the database and tables if they don't exist.
     pub fn open() -> Result<Self, Error> {
