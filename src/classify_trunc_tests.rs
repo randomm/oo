@@ -1,3 +1,4 @@
+//! Kept out of classify_tests.rs, which is far over the 500-line cap.
 //! Smart-truncation boundary tests (issue #194). Totals up to MAX_LINES return
 //! the input byte-for-byte; joining head and tail there would fuse lines.
 

@@ -5,21 +5,25 @@
 //! head/marker/tail and the full output must be indexed for `oo recall`.
 
 use assert_cmd::Command;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+const TOOL: &str = "zfailtool194";
+const HIDDEN_MARKER: &str = "oo194hiddenmarker7e2a";
 
 fn oo() -> Command {
     Command::cargo_bin("oo").unwrap()
 }
 
-const HIDDEN_MARKER: &str = "oo194hiddenmarker7e2a";
-
-/// Fake executable on PATH so the command is unrecognised but deterministic.
-fn make_fake_bin(name: &str, script_body: &str) -> (TempDir, String) {
+/// Runs `oo TOOL` where `TOOL` is a fake failing executable with `script_body`
+/// on PATH, against an isolated data dir. Returns the temp root (which owns
+/// `oo-data/`, the data dir) and the captured stdout.
+fn run_failing_tool(script_body: &str) -> (TempDir, String) {
     use std::os::unix::fs::PermissionsExt;
-    let dir = TempDir::new().unwrap();
-    let bin_dir = dir.path().join("bin");
+    let root = TempDir::new().unwrap();
+    let bin_dir = root.path().join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
-    let bin = bin_dir.join(name);
+    let bin = bin_dir.join(TOOL);
     std::fs::write(&bin, script_body).unwrap();
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!(
@@ -27,29 +31,30 @@ fn make_fake_bin(name: &str, script_body: &str) -> (TempDir, String) {
         bin_dir.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    (dir, path)
-}
-
-fn isolated_store() -> (TempDir, std::path::PathBuf) {
-    let dir = TempDir::new().unwrap();
-    let data_dir = dir.path().join("oo-data");
+    let data_dir = data_dir_of(&root);
     std::fs::create_dir_all(&data_dir).unwrap();
-    (dir, data_dir)
-}
-
-#[test]
-fn test_failure_100_lines_is_displayed_in_full_and_not_indexed() {
-    let script = "#!/bin/sh\nfor i in $(seq 1 100); do echo \"line $i\"; done\nexit 1\n";
-    let (_bin, path) = make_fake_bin("zfailtool194", script);
-    let (_guard, data_dir) = isolated_store();
 
     let assert = oo()
-        .args(["zfailtool194"])
+        .args([TOOL])
         .env("PATH", &path)
         .env("OO_DATA_DIR", &data_dir)
         .assert()
         .failure();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    (root, stdout)
+}
+
+fn data_dir_of(root: &TempDir) -> PathBuf {
+    root.path().join("oo-data")
+}
+
+fn script_printing(lines: u32) -> String {
+    format!("#!/bin/sh\nfor i in $(seq 1 {lines}); do echo \"line $i\"; done\nexit 1\n")
+}
+
+#[test]
+fn test_failure_100_lines_is_displayed_in_full_and_not_indexed() {
+    let (_root, stdout) = run_failing_tool(&script_printing(100));
 
     for i in 1..=100 {
         assert!(
@@ -73,16 +78,7 @@ fn test_failure_200_lines_is_indexed_and_recallable() {
     let script = format!(
         "#!/bin/sh\nfor i in $(seq 1 200); do if [ $i -eq 100 ]; then echo {HIDDEN_MARKER}; else echo \"line $i\"; fi; done\nexit 1\n"
     );
-    let (_bin, path) = make_fake_bin("zfailtool194", &script);
-    let (_guard, data_dir) = isolated_store();
-
-    let assert = oo()
-        .args(["zfailtool194"])
-        .env("PATH", &path)
-        .env("OO_DATA_DIR", &data_dir)
-        .assert()
-        .failure();
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let (root, stdout) = run_failing_tool(&script);
 
     assert!(
         stdout.contains("lines truncated"),
@@ -99,7 +95,7 @@ fn test_failure_200_lines_is_indexed_and_recallable() {
 
     let out = oo()
         .args(["recall", HIDDEN_MARKER])
-        .env("OO_DATA_DIR", &data_dir)
+        .env("OO_DATA_DIR", data_dir_of(&root))
         .assert()
         .success()
         .get_output()
@@ -114,23 +110,8 @@ fn test_failure_200_lines_is_indexed_and_recallable() {
 
 #[test]
 fn test_failure_120_lines_is_displayed_in_full_without_fused_lines() {
-    let script = "#!/bin/sh\nfor i in $(seq 1 120); do echo \"line $i\"; done\nexit 1\n";
-    let (_bin, path) = make_fake_bin("zfailtool194", script);
-    let (_guard, data_dir) = isolated_store();
+    let (_root, stdout) = run_failing_tool(&script_printing(120));
 
-    let assert = oo()
-        .args(["zfailtool194"])
-        .env("PATH", &path)
-        .env("OO_DATA_DIR", &data_dir)
-        .assert()
-        .failure();
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-
-    // The 60/40 boundary (lines 72 and 73 for 120 lines) must stay on separate lines.
-    assert!(
-        !stdout.contains("line 72line 73"),
-        "boundary lines fused; got: {stdout:?}"
-    );
     for i in 1..=120 {
         assert!(
             stdout.lines().any(|l| l == format!("line {i}")),
@@ -142,17 +123,7 @@ fn test_failure_120_lines_is_displayed_in_full_without_fused_lines() {
 
 #[test]
 fn test_failure_121_lines_is_truncated_with_marker_and_split_at_72_48() {
-    let script = "#!/bin/sh\nfor i in $(seq 1 121); do echo \"line $i\"; done\nexit 1\n";
-    let (_bin, path) = make_fake_bin("zfailtool194", script);
-    let (_guard, data_dir) = isolated_store();
-
-    let assert = oo()
-        .args(["zfailtool194"])
-        .env("PATH", &path)
-        .env("OO_DATA_DIR", &data_dir)
-        .assert()
-        .failure();
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let (_root, stdout) = run_failing_tool(&script_printing(121));
 
     // head = 72 lines (1..=72), one line dropped (73), tail = 48 lines (74..=121)
     assert!(stdout.lines().any(|l| l == "line 72"), "got: {stdout:?}");

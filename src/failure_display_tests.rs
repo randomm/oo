@@ -21,7 +21,6 @@ fn smart_truncate_100_lines_is_shown_in_full() {
     let full: String = (0..100).map(|i| format!("line {i}\n")).collect();
     let slice = smart_truncate(&full);
     assert_eq!(slice, full);
-    assert!(!slice.contains("line 59line 60"));
     assert!(shows_all_lines(&full, &slice));
 }
 
