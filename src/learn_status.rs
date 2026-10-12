@@ -71,6 +71,14 @@ pub fn check_and_clear_learn_status(status_path: &Path) {
                 eprintln!("oo: {line}");
             }
         }
-        let _ = std::fs::remove_file(status_path);
+        // Left in place, the same lines would print again on every run.
+        if let Err(e) = std::fs::remove_file(status_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!(
+                "oo: could not remove learn status {}: {e}",
+                status_path.display()
+            );
+        }
     }
 }

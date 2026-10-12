@@ -349,14 +349,20 @@ fn test_patterns_dir_is_under_config_dir() {
 
 #[test]
 fn test_run_background_missing_file_returns_err() {
-    assert!(run_background("/tmp/__oo_no_such_file_xyz__.json").is_err());
+    assert!(run_background("/tmp/__oo_no_such_file_xyz__.json", Path::new("/tmp")).is_err());
 }
 
 #[test]
 fn test_run_background_invalid_json_returns_err() {
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     std::fs::write(tmp.path(), b"not valid json {{{").expect("write");
-    assert!(run_background(tmp.path().to_str().expect("utf8 path")).is_err());
+    assert!(
+        run_background(
+            tmp.path().to_str().expect("utf8 path"),
+            tmp.path().parent().expect("parent")
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -366,7 +372,10 @@ fn test_run_background_valid_json_no_api_key() {
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
     std::fs::write(tmp.path(), data.to_string()).expect("write");
-    let _ = run_background(tmp.path().to_str().expect("utf8 path"));
+    let _ = run_background(
+        tmp.path().to_str().expect("utf8 path"),
+        tmp.path().parent().expect("parent"),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +421,7 @@ fn test_learn_status_written_on_failure() {
     // Part 1: verify write_learn_status_failure writes the expected format.
     let dir = tempfile::TempDir::new().expect("tempdir");
     let status_path = dir.path().join("learn-status.log");
-    crate::commands::write_learn_status_failure(&status_path, "cargo-test", "no API key set")
+    crate::learn_status::write_learn_status_failure(&status_path, "cargo-test", "no API key set")
         .expect("write must succeed");
     let content = std::fs::read_to_string(&status_path).expect("read");
     assert!(
@@ -429,7 +438,10 @@ fn test_learn_status_written_on_failure() {
     let data = serde_json::json!({"command": "echo hello", "output": "hello", "exit_code": 0});
     std::fs::write(tmp.path(), data.to_string()).expect("write");
     // run_background may succeed or fail depending on env API keys, but must not panic.
-    let _ = run_background(tmp.path().to_str().expect("utf8 path"));
+    let _ = run_background(
+        tmp.path().to_str().expect("utf8 path"),
+        tmp.path().parent().expect("parent"),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +460,10 @@ fn test_run_background_invalid_exit_code_truncation() {
     });
     std::fs::write(tmp.path(), data.to_string()).expect("write");
 
-    let result = run_background(tmp.path().to_str().expect("utf8 path"));
+    let result = run_background(
+        tmp.path().to_str().expect("utf8 path"),
+        tmp.path().parent().expect("parent"),
+    );
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(
@@ -470,7 +485,10 @@ fn test_run_background_negative_exit_code_out_of_range() {
     });
     std::fs::write(tmp.path(), data.to_string()).expect("write");
 
-    let result = run_background(tmp.path().to_str().expect("utf8 path"));
+    let result = run_background(
+        tmp.path().to_str().expect("utf8 path"),
+        tmp.path().parent().expect("parent"),
+    );
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(

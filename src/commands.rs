@@ -329,10 +329,6 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     exit_code
 }
 
-pub use crate::learn_status::{
-    check_and_clear_learn_status, write_learn_status, write_learn_status_failure,
-};
-
 /// Rewrite a command via `oo rewrite` for agent hooks: print the `oo`-prefixed
 /// form on stdout (exit 0) when at least one segment has an oo pattern, or
 /// print nothing and return 1 otherwise. Never executes the command.

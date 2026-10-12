@@ -5,7 +5,10 @@ use serde::Deserialize;
 
 use crate::config::config_dir;
 use crate::error::Error;
+use crate::learn_payload::{is_owned_payload, payload_dir, remove_payload};
 pub use crate::learn_prompt::SYSTEM_PROMPT;
+/// Re-exported so existing `learn::learn_status_path` callers keep compiling.
+pub use crate::learn_status::learn_status_path;
 use crate::learn_url::ApiUrl;
 
 // ---------------------------------------------------------------------------
@@ -245,37 +248,6 @@ fn run_learn_with_hint(
     run_learn_with_config(&params, command, output, exit_code)
 }
 
-/// Directory for the background payload file (see `config::absolute_temp_dir`).
-fn payload_dir() -> PathBuf {
-    crate::config::absolute_temp_dir(std::env::temp_dir())
-}
-
-/// Only a `.tmp*` file that `spawn_background` created directly in `dir` may be
-/// deleted: `_learn_bg` takes its path from argv, so any other path is left alone.
-fn is_owned_payload(path: &Path, dir: &Path) -> bool {
-    path.parent() == Some(dir)
-        && path
-            .file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with(".tmp"))
-}
-
-/// Delete the payload. A failure is recorded on the status channel because the
-/// file may still hold command output.
-fn remove_payload(path: &Path) {
-    match std::fs::remove_file(path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            let msg = format!("could not remove payload {}: {e}", path.display());
-            let _ = crate::learn_status::write_learn_status_failure(
-                &crate::learn_status::learn_status_path(),
-                "learn",
-                &msg,
-            );
-        }
-    }
-}
-
 /// Spawn the learning process in the background by re-exec'ing ourselves.
 pub fn spawn_background(
     command: &str,
@@ -287,8 +259,9 @@ pub fn spawn_background(
 
     // Use a secure named temp file to avoid PID-based predictable filenames
     // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
+    let dir = payload_dir();
     let mut tmp = tempfile::Builder::new()
-        .tempfile_in(payload_dir())
+        .tempfile_in(&dir)
         .map_err(|e| Error::Learn(e.to_string()))?;
     let mut data = serde_json::json!({
         "command": command,
@@ -309,6 +282,7 @@ pub fn spawn_background(
     std::process::Command::new(exe)
         .arg("_learn_bg")
         .arg(&tmp_path)
+        .arg(&dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -325,41 +299,58 @@ pub fn spawn_background(
 }
 
 /// Entry point for the background learn child process.
-pub fn run_background(data_path: &str) -> Result<(), Error> {
+///
+/// `payload_dir` is the directory the parent created the payload in; ownership
+/// is checked against it rather than against this process's environment.
+pub fn run_background(data_path: &str, payload_dir: &Path) -> Result<(), Error> {
     let path = Path::new(data_path);
     // The payload can hold command output (possibly secret); remove it as soon
     // as it has been read, before any parse or learn step can fail.
     let read = std::fs::read_to_string(path);
-    if is_owned_payload(path, &payload_dir()) {
-        remove_payload(path);
-    }
-    let content = read.map_err(|e| Error::Learn(e.to_string()))?;
-    let data: LearnData =
-        serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
+    let removal = if is_owned_payload(path, payload_dir) {
+        remove_payload(path).err()
+    } else {
+        None
+    };
 
-    let command = &data.command;
-    let output = &data.output;
+    // Every failure below reaches the status log, labelled with the command once
+    // it is known; "learn" covers a payload that could not be parsed.
+    let mut cmd_label = String::from("learn");
+    let result = read
+        .map_err(|e| Error::Learn(e.to_string()))
+        .and_then(|content| {
+            let data: LearnData =
+                serde_json::from_str(&content).map_err(|e| Error::Learn(e.to_string()))?;
+            cmd_label = label(&data.command);
+            // Explicit bounds check to avoid silent truncation i64→i32
+            let exit_code = i32::try_from(data.exit_code).map_err(|_| {
+                Error::Learn(format!(
+                    "exit_code out of range for i32: {}",
+                    data.exit_code
+                ))
+            })?;
+            run_learn_with_hint(&data.command, &data.output, exit_code, data.hint.as_deref())
+        });
 
-    // Explicit bounds check to avoid silent truncation i64→i32
-    let exit_code = i32::try_from(data.exit_code).map_err(|_| {
-        Error::Learn(format!(
-            "exit_code out of range for i32: {}",
-            data.exit_code
-        ))
-    })?;
-
-    let hint = data.hint.as_deref();
-
-    let result = run_learn_with_hint(command, output, exit_code, hint);
+    let result = match removal {
+        None => result,
+        Some(e) => {
+            let msg = format!("could not remove payload {}: {e}", path.display());
+            Err(Error::Learn(match result {
+                Ok(()) => msg,
+                Err(learn_err) => format!("{msg}; {learn_err}"),
+            }))
+        }
+    };
 
     if let Err(ref e) = result {
-        let cmd_label = label(command);
         let status_path = crate::learn_status::learn_status_path();
-        let _ = crate::learn_status::write_learn_status_failure(
-            &status_path,
-            &cmd_label,
-            &e.to_string(),
-        );
+        if crate::learn_status::write_learn_status_failure(&status_path, &cmd_label, &e.to_string())
+            .is_err()
+        {
+            // The detached child's stderr is null, so this only helps when run in the foreground.
+            eprintln!("oo: could not record learn failure for {cmd_label}: {e}");
+        }
     }
 
     result
@@ -479,10 +470,6 @@ fn validate_pattern_toml_with_limits(toml_str: &str) -> Result<(), Error> {
 }
 
 // Tests live in separate files to keep this module under 500 lines.
-#[cfg(test)]
-#[path = "learn_temp_tests.rs"]
-mod learn_temp_tests;
-
 #[cfg(test)]
 #[path = "learn_tests.rs"]
 mod tests;

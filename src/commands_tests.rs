@@ -1,5 +1,8 @@
 use super::*;
 use crate::classify::Classification;
+use crate::learn_status::{
+    check_and_clear_learn_status, write_learn_status, write_learn_status_failure,
+};
 
 fn s(s: &str) -> String {
     s.to_string()

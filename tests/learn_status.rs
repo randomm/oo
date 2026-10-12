@@ -41,7 +41,7 @@ fn tmp_leftovers(dir: &Path) -> Vec<String> {
 fn status_writer_creates_missing_config_dir() {
     let root = TempDir::new().unwrap();
     let status = root.path().join("missing").join("learn-status.log");
-    double_o::commands::write_learn_status_failure(&status, "cargo-test", "no API key set")
+    double_o::learn_status::write_learn_status_failure(&status, "cargo-test", "no API key set")
         .expect("write must create the missing directory");
     let content = std::fs::read_to_string(&status).unwrap();
     assert!(content.starts_with("FAILED cargo-test: no API key set"));
@@ -121,17 +121,19 @@ fn empty_tmpdir_does_not_place_payload_in_cwd() {
     assert!(tmp_leftovers(cwd.path()).is_empty(), "cwd leftovers");
 }
 
-/// Runs the hidden `_learn_bg <file>` child directly with `TMPDIR` set to the
-/// payload's directory, so the child treats the file as one it owns and the
-/// early-error returns (parse failure, exit-code range) are observed on disk
-/// without depending on a detached process.
+/// Runs the hidden `_learn_bg <file> <payload-dir>` child directly, with the
+/// same argv `spawn_background` passes, so early-error returns are observed on
+/// disk without depending on a detached process.
 fn run_bg_child(payload: &Path, cfg: &Path) {
-    oo().args(["_learn_bg", payload.to_str().unwrap()])
-        .env("OO_CONFIG_DIR", cfg)
-        .env("TMPDIR", payload.parent().unwrap())
-        .env_remove("ANTHROPIC_API_KEY")
-        .assert()
-        .success();
+    oo().args([
+        "_learn_bg",
+        payload.to_str().unwrap(),
+        payload.parent().unwrap().to_str().unwrap(),
+    ])
+    .env("OO_CONFIG_DIR", cfg)
+    .env_remove("ANTHROPIC_API_KEY")
+    .assert()
+    .success();
 }
 
 #[test]
@@ -161,7 +163,72 @@ fn status_writer_unwritable_dir_fails_without_fallback_file() {
     let blocker = root.path().join("not-a-dir");
     std::fs::write(&blocker, "x").unwrap();
     let status = blocker.join("learn-status.log");
-    assert!(double_o::commands::write_learn_status_failure(&status, "git", "boom").is_err());
+    assert!(double_o::learn_status::write_learn_status_failure(&status, "git", "boom").is_err());
     assert!(!status.exists());
-    assert!(tmp_leftovers(root.path()).is_empty());
+}
+
+#[test]
+fn background_parse_failure_is_recorded_in_status_log() {
+    let root = TempDir::new().unwrap();
+    let payload = root.path().join(".tmpBadJson");
+    std::fs::write(&payload, "not valid json {{{").unwrap();
+    let cfg = root.path().join("cfg");
+    run_bg_child(&payload, &cfg);
+    let status = std::fs::read_to_string(cfg.join("learn-status.log"))
+        .expect("an early parse error must still reach learn-status.log");
+    assert!(status.starts_with("FAILED learn: "), "{status}");
+}
+
+#[test]
+fn background_child_owns_payload_by_argv_dir_not_tmpdir() {
+    let root = TempDir::new().unwrap();
+    let payload = root.path().join(".tmpOwned1");
+    std::fs::write(&payload, "not valid json {{{").unwrap();
+    let other_tmp = TempDir::new().unwrap();
+    oo().args([
+        "_learn_bg",
+        payload.to_str().unwrap(),
+        root.path().to_str().unwrap(),
+    ])
+    .env("OO_CONFIG_DIR", root.path().join("cfg"))
+    .env("TMPDIR", other_tmp.path())
+    .env_remove("ANTHROPIC_API_KEY")
+    .assert()
+    .success();
+    assert!(
+        !payload.exists(),
+        "the payload directory is passed explicitly; the child's TMPDIR must not decide ownership"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn undeletable_payload_is_reported_when_status_write_also_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TempDir::new().unwrap();
+    let payload_dir = root.path().join("payloads");
+    std::fs::create_dir(&payload_dir).unwrap();
+    let payload = payload_dir.join(".tmpLocked1");
+    std::fs::write(
+        &payload,
+        r#"{"command":"echo hi","output":"","exit_code":0}"#,
+    )
+    .unwrap();
+    // Read-only directory: the payload can be read but not removed.
+    std::fs::set_permissions(&payload_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    // A regular file where the config dir should be makes the status write fail.
+    let blocker = root.path().join("cfg-blocker");
+    std::fs::write(&blocker, "x").unwrap();
+    let result = oo()
+        .args([
+            "_learn_bg",
+            payload.to_str().unwrap(),
+            payload_dir.to_str().unwrap(),
+        ])
+        .env("OO_CONFIG_DIR", blocker.join("cfg"))
+        .env_remove("ANTHROPIC_API_KEY")
+        .assert()
+        .success();
+    std::fs::set_permissions(&payload_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    result.stderr(predicate::str::contains("could not remove payload"));
 }

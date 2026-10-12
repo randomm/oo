@@ -1,7 +1,7 @@
 use clap::Parser;
 use double_o::{
-    Action, check_and_clear_learn_status, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn,
-    cmd_patterns, cmd_recall, cmd_rewrite, cmd_run, learn, learn_status, parse_action,
+    Action, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
+    cmd_rewrite, cmd_run, learn, learn_status, parse_action,
 };
 
 // ---------------------------------------------------------------------------
@@ -35,8 +35,8 @@ fn main() {
     // Intercept _learn_bg before clap parsing (it's a hidden internal command)
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
-        if let Some(path) = raw_args.get(2) {
-            let _ = learn::run_background(path);
+        if let (Some(path), Some(dir)) = (raw_args.get(2), raw_args.get(3)) {
+            let _ = learn::run_background(path, std::path::Path::new(dir));
         }
         std::process::exit(0);
     }
@@ -47,7 +47,7 @@ fn main() {
     // Runs before command dispatch so the user sees the result on the next invocation.
     {
         let status_path = learn_status::learn_status_path();
-        check_and_clear_learn_status(&status_path);
+        learn_status::check_and_clear_learn_status(&status_path);
     }
 
     let exit_code = match parse_action(&cli.args) {

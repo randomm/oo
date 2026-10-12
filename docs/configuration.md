@@ -142,6 +142,6 @@ The configuration directory (see the [Directories](#directories) table) contains
 
 - `config.toml` - Optional user configuration
 - `patterns/` - User-defined pattern files (`.toml`) — see [Custom Patterns](patterns.md)
-- `learn-status.log` - Transient status from background learn processes. Printed and deleted on the next `oo` run; the config directory is created if it is missing, so failures are reported even on a fresh setup.
+- `learn-status.log` - Transient status from background learn processes. Read and deleted on every `oo` run except top-level `--help`, `-h`, `--version`, `-V` and the internal `_learn_bg` entry point. An unreadable file is ignored; a failed delete prints a warning. The config directory is created if it is missing, so failures are reported even on a fresh setup.
 
 Project patterns (`<git-root>/.oo/patterns/`) and user patterns in the config directory's `patterns/` directory are checked before the built-in patterns; the order is project, then user, then built-in, and the first match wins. The foreground display in `oo learn` uses built-ins only (#151). See `oo patterns` for the full list.
