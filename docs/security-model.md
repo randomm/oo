@@ -180,7 +180,7 @@ Temporary files (not listed above):
   - Content: the command line, the complete captured output (stdout and stderr merged, which may contain secrets), the exit code, and the hint if given.
   - Created by the `tempfile` crate with mode `0600`; the name is `.tmp` plus random characters (for example `.tmpAbC123`).
   - The background process removes it as soon as it has read it, before any parse or learn step. A failed removal is recorded in `learn-status.log`. If that file cannot be written either (for example, the config directory path is blocked by a regular file), nothing is printed, the failure is lost, and the file stays on disk.
-  - The process deletes only a file directly in the directory the parent passed on the hidden `_learn_bg` argv, with the name `tempfile` gives it (`.tmp` plus six alphanumeric characters); any other path is neither read nor removed and the background run records an error.
+  - Only a file with the exact tempfile name shape (`.tmp` plus six alphanumeric characters) directly inside the directory given on the hidden `_learn_bg` argv is read or removed; any other path is neither read nor removed and the background run records an error. This checks the name and directory only: argv is untrusted, so it does not prove this process's parent created the file.
   - A background process killed before it reads the file (SIGKILL, reboot) leaves it behind. If spawning the process fails, the file is removed immediately.
 - Manual cleanup of leftover files: list the `.tmp*` files in `$TMPDIR` that you own (or in `/tmp` when `TMPDIR` is empty or relative), check their contents, and delete them. The name is shared with other programs that use the `tempfile` crate, so do not delete files you have not checked.
 

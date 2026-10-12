@@ -2,9 +2,17 @@
 //!
 //! The payload can hold command output (possibly secret), so the child deletes
 //! it as soon as it has read it. The parent passes the directory it created the
-//! file in, so the child's ownership check does not depend on its environment.
+//! file in, so the child's name check does not depend on its environment.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
+
+/// Name prefix of a payload file (the `tempfile` default, made explicit so the
+/// producer and the consumer share one shape).
+pub const PAYLOAD_PREFIX: &str = ".tmp";
+
+/// Number of random alphanumeric characters after [`PAYLOAD_PREFIX`].
+pub const PAYLOAD_RAND_LEN: usize = 6;
 
 /// Directory for the background payload file.
 pub fn payload_dir() -> PathBuf {
@@ -21,17 +29,31 @@ fn absolute_temp_dir(dir: PathBuf) -> PathBuf {
     }
 }
 
-/// Only a file that `spawn_background` created directly in `dir`, with the exact
-/// name `tempfile` gives it (`.tmp` plus six alphanumerics), may be deleted:
-/// `_learn_bg` takes its path from argv, so any other path is left alone.
-pub fn is_owned_payload(path: &Path, dir: &Path) -> bool {
+/// Create a payload holding `data` directly in `dir` with the shape
+/// [`is_payload_shaped`] accepts. The file is removed when the returned
+/// `TempPath` drops unless it is kept.
+pub fn create_payload(dir: &Path, data: &str) -> std::io::Result<tempfile::TempPath> {
+    let mut tmp = tempfile::Builder::new()
+        .prefix(PAYLOAD_PREFIX)
+        .rand_bytes(PAYLOAD_RAND_LEN)
+        .tempfile_in(dir)?;
+    tmp.write_all(data.as_bytes())?;
+    // Closes the handle but keeps the file until the TempPath drops.
+    Ok(tmp.into_temp_path())
+}
+
+/// Only a file with the exact tempfile name shape directly inside `dir` (the
+/// directory given on argv) is read or removed: `_learn_bg` takes its path from
+/// argv, so any other path is left alone. This checks name and directory only;
+/// argv is untrusted, so it does not prove this parent created the file.
+pub fn is_payload_shaped(path: &Path, dir: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
     path.parent() == Some(dir)
-        && name
-            .strip_prefix(".tmp")
-            .is_some_and(|rand| rand.len() == 6 && rand.bytes().all(|b| b.is_ascii_alphanumeric()))
+        && name.strip_prefix(PAYLOAD_PREFIX).is_some_and(|rand| {
+            rand.len() == PAYLOAD_RAND_LEN && rand.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
 }
 
 /// Delete the payload. A file that is already gone is not an error.
@@ -62,21 +84,28 @@ mod tests {
     }
 
     #[test]
-    fn is_owned_payload_accepts_tmp_file_in_payload_dir() {
-        let dir = PathBuf::from("/some/tmp");
-        assert!(is_owned_payload(&dir.join(".tmpAbC123"), &dir));
+    fn payload_from_producer_is_accepted_by_consumer() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let payload = create_payload(dir.path(), "{}").unwrap();
+        assert!(is_payload_shaped(&payload, dir.path()));
     }
 
     #[test]
-    fn is_owned_payload_rejects_other_names_and_dirs() {
+    fn is_payload_shaped_accepts_tmp_file_in_payload_dir() {
         let dir = PathBuf::from("/some/tmp");
-        assert!(!is_owned_payload(&dir.join("payload.json"), &dir));
-        assert!(!is_owned_payload(&dir.join(".tmpBadJson"), &dir));
-        assert!(!is_owned_payload(
+        assert!(is_payload_shaped(&dir.join(".tmpAbC123"), &dir));
+    }
+
+    #[test]
+    fn is_payload_shaped_rejects_other_names_and_dirs() {
+        let dir = PathBuf::from("/some/tmp");
+        assert!(!is_payload_shaped(&dir.join("payload.json"), &dir));
+        assert!(!is_payload_shaped(&dir.join(".tmpBadJson"), &dir));
+        assert!(!is_payload_shaped(
             &PathBuf::from("/elsewhere/.tmpAbC123"),
             &dir
         ));
-        assert!(!is_owned_payload(
+        assert!(!is_payload_shaped(
             &dir.join("nested").join(".tmpAbC123"),
             &dir
         ));

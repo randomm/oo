@@ -1,11 +1,10 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use crate::config::config_dir;
 use crate::error::Error;
-use crate::learn_payload::{is_owned_payload, payload_dir, remove_payload};
+use crate::learn_payload::{create_payload, is_payload_shaped, payload_dir, remove_payload};
 pub use crate::learn_prompt::SYSTEM_PROMPT;
 /// Kept for callers of the published `double_o` crate; new code uses `learn_status`.
 pub use crate::learn_status::learn_status_path;
@@ -264,12 +263,9 @@ pub fn spawn_background(
 ) -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Learn(e.to_string()))?;
 
-    // Use a secure named temp file to avoid PID-based predictable filenames
-    // (symlink/TOCTOU attacks). The file is kept alive until the child spawns.
+    // A random tempfile name avoids PID-based predictable filenames
+    // (symlink/TOCTOU attacks).
     let dir = payload_dir();
-    let mut tmp = tempfile::Builder::new()
-        .tempfile_in(&dir)
-        .map_err(|e| Error::Learn(e.to_string()))?;
     let mut data = serde_json::json!({
         "command": command,
         "output": output,
@@ -278,12 +274,10 @@ pub fn spawn_background(
     if let Some(h) = hint {
         data["hint"] = serde_json::Value::String(h.to_string());
     }
-    tmp.write_all(data.to_string().as_bytes())
-        .map_err(|e| Error::Learn(e.to_string()))?;
-
-    // Convert to TempPath: closes the file handle but keeps the file on disk
-    // until the TempPath is dropped — after the child has been spawned.
-    let tmp_path = tmp.into_temp_path();
+    // Kept on disk (not deleted by the TempPath drop) until the child spawns;
+    // `keep()` below stops the parent deleting it.
+    let tmp_path =
+        create_payload(&dir, &data.to_string()).map_err(|e| Error::Learn(e.to_string()))?;
 
     // Spawn detached child
     std::process::Command::new(exe)
@@ -307,19 +301,20 @@ pub fn spawn_background(
 
 /// Entry point for the background learn child process.
 ///
-/// `payload_dir` is the directory the parent created the payload in; ownership
-/// is checked against it rather than against this process's environment.
+/// `payload_dir` is the directory the parent created the payload in; the name
+/// check uses it rather than this process's environment.
 pub fn run_background(
     data_path: &str,
     payload_dir: &Path,
     status_path: &Path,
 ) -> Result<(), Error> {
     let path = Path::new(data_path);
-    // argv is untrusted: only a payload this parent created is read or removed
-    // (a FIFO or /dev/zero argv would block or exhaust memory). The payload can
-    // hold command output (possibly secret), so it is removed right after the read.
-    let owned = is_owned_payload(path, payload_dir);
-    let read = if owned {
+    // argv is untrusted: only a file with the payload name shape directly inside
+    // `payload_dir` is read or removed (a FIFO or /dev/zero argv would block or
+    // exhaust memory). The payload can hold command output (possibly secret), so
+    // it is removed right after the read.
+    let shaped = is_payload_shaped(path, payload_dir);
+    let read = if shaped {
         std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))
     } else {
         Err(Error::Learn(format!(
@@ -327,7 +322,7 @@ pub fn run_background(
             path.display()
         )))
     };
-    let removal = owned.then(|| remove_payload(path).err()).flatten();
+    let removal = shaped.then(|| remove_payload(path).err()).flatten();
 
     // Every failure below reaches the status log, labelled with the command once
     // it is known; "learn" covers a payload that could not be parsed.

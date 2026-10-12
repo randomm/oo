@@ -356,7 +356,7 @@ fn run_bg(path: &Path) -> Result<(), Error> {
 
 #[test]
 fn test_run_background_missing_file_returns_err() {
-    // Owned-shaped name in a directory that exists, so the read error path runs.
+    // Payload-shaped name in a directory that exists, so the read error path runs.
     let dir = tempfile::TempDir::new().unwrap();
     let missing = dir.path().join(".tmpAbC123");
     assert!(run_bg(&missing).is_err());

@@ -143,3 +143,17 @@ fn test_write_learn_status_appends_multiple_lines() {
     // Both lines must coexist — not overwritten
     assert_eq!(content.lines().count(), 2, "must have 2 lines");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_write_learn_status_creates_file_mode_0600() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::TempDir::new().unwrap();
+    let status_path = dir.path().join("learn-status.log");
+    write_learn_status_failure(&status_path, "git", "boom").unwrap();
+    let mode = std::fs::metadata(&status_path)
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

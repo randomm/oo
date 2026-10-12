@@ -154,7 +154,7 @@ fn run_bg_child(payload: &Path, cfg: &Path) {
 }
 
 #[test]
-fn background_child_removes_owned_payload_on_invalid_json() {
+fn background_child_removes_payload_shaped_file_on_invalid_json() {
     let root = TempDir::new().unwrap();
     let payload = root.path().join(".tmpBadJs1");
     std::fs::write(&payload, "not valid json {{{").unwrap();
@@ -166,7 +166,7 @@ fn background_child_removes_owned_payload_on_invalid_json() {
 }
 
 #[test]
-fn background_child_keeps_unowned_file() {
+fn background_child_keeps_non_payload_file() {
     let root = TempDir::new().unwrap();
     let other = root.path().join("notes.txt");
     std::fs::write(&other, "not a payload").unwrap();
@@ -280,9 +280,9 @@ fn background_parse_failure_is_recorded_in_status_log() {
 }
 
 #[test]
-fn background_child_owns_payload_by_argv_dir_not_tmpdir() {
+fn background_child_takes_payload_dir_from_argv_not_tmpdir() {
     let root = TempDir::new().unwrap();
-    let payload = root.path().join(".tmpOwned1");
+    let payload = root.path().join(".tmpArgv01");
     std::fs::write(&payload, "not valid json {{{").unwrap();
     let other_tmp = TempDir::new().unwrap();
     oo().args([
@@ -297,14 +297,47 @@ fn background_child_owns_payload_by_argv_dir_not_tmpdir() {
     .success();
     assert!(
         !payload.exists(),
-        "the payload directory is passed explicitly; the child's TMPDIR must not decide ownership"
+        "the payload directory is passed explicitly; the child's TMPDIR must not decide which directory is checked"
     );
+}
+
+#[test]
+fn background_payload_without_dir_argument_is_recorded_and_kept() {
+    let root = TempDir::new().unwrap();
+    let payload = root.path().join(".tmpNoDir1");
+    let original = r#"{"command":"echo hi","output":"","exit_code":0}"#;
+    std::fs::write(&payload, original).unwrap();
+    let cfg = root.path().join("cfg");
+    let data = TempDir::new().unwrap();
+    oo().args(["_learn_bg", payload.to_str().unwrap()])
+        .env("OO_CONFIG_DIR", &cfg)
+        .env_remove("ANTHROPIC_API_KEY")
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&payload).unwrap(),
+        original,
+        "a path without a directory argument must be neither read nor removed"
+    );
+    let status = std::fs::read_to_string(cfg.join("learn-status.log"))
+        .expect("a missing directory argument must be recorded");
+    assert!(
+        status.starts_with("FAILED learn: _learn_bg needs a payload directory argument"),
+        "{status}"
+    );
+    oo().args(["echo", "hi"])
+        .env("OO_CONFIG_DIR", &cfg)
+        .env("OO_DATA_DIR", data.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "oo: learn failed for learn \u{2014} _learn_bg needs a payload directory argument",
+        ));
 }
 
 #[cfg(unix)]
 #[test]
 fn undeletable_payload_is_silent_when_status_write_also_fails() {
-    use std::os::unix::fs::PermissionsExt;
     let root = TempDir::new().unwrap();
     let payload_dir = root.path().join("payloads");
     std::fs::create_dir(&payload_dir).unwrap();
@@ -315,18 +348,12 @@ fn undeletable_payload_is_silent_when_status_write_also_fails() {
     )
     .unwrap();
     // Read-only directory: the payload can be read but not removed.
-    std::fs::set_permissions(&payload_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let Some(_locked) = lock_or_skip(&payload_dir) else {
+        return;
+    };
     // A regular file where the config dir should be makes the status write fail.
     let blocker = root.path().join("cfg-blocker");
     std::fs::write(&blocker, "x").unwrap();
-    // Restores the directory mode on drop, so a panic cannot strand the TempDir.
-    struct RestoreMode<'a>(&'a Path);
-    impl Drop for RestoreMode<'_> {
-        fn drop(&mut self) {
-            let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o700));
-        }
-    }
-    let _restore = RestoreMode(&payload_dir);
     let output = oo()
         .args([
             "_learn_bg",
@@ -345,4 +372,71 @@ fn undeletable_payload_is_silent_when_status_write_also_fails() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(payload.exists(), "the undeletable payload stays on disk");
+}
+
+/// Makes a directory read-only and restores it on drop, so a failing assert
+/// cannot strand the TempDir.
+#[cfg(unix)]
+struct ReadOnlyDir(std::path::PathBuf);
+
+#[cfg(unix)]
+impl Drop for ReadOnlyDir {
+    fn drop(&mut self) {
+        set_mode(&self.0, 0o700);
+    }
+}
+
+#[cfg(unix)]
+fn set_mode(dir: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// Read-only `dir` for a permission test, or `None` (test skipped) when this
+/// process can still write there, as root does regardless of mode bits.
+#[cfg(unix)]
+fn lock_or_skip(dir: &Path) -> Option<ReadOnlyDir> {
+    set_mode(dir, 0o500);
+    let guard = ReadOnlyDir(dir.to_path_buf());
+    let probe = dir.join(".write-probe");
+    if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        eprintln!(
+            "skipped: {} stays writable (running as root?)",
+            dir.display()
+        );
+        return None;
+    }
+    Some(guard)
+}
+
+#[cfg(unix)]
+#[test]
+fn undeletable_payload_error_is_recorded_when_status_dir_is_writable() {
+    let root = TempDir::new().unwrap();
+    let payload_dir = root.path().join("payloads");
+    std::fs::create_dir(&payload_dir).unwrap();
+    let payload = payload_dir.join(".tmpLocks2");
+    std::fs::write(
+        &payload,
+        r#"{"command":"echo hi","output":"","exit_code":0}"#,
+    )
+    .unwrap();
+    let Some(_locked) = lock_or_skip(&payload_dir) else {
+        return;
+    };
+    let cfg = root.path().join("cfg");
+    oo().args([
+        "_learn_bg",
+        payload.to_str().unwrap(),
+        payload_dir.to_str().unwrap(),
+    ])
+    .env("OO_CONFIG_DIR", &cfg)
+    .env_remove("ANTHROPIC_API_KEY")
+    .assert()
+    .success();
+    assert!(payload.exists(), "the undeletable payload stays on disk");
+    let status = std::fs::read_to_string(cfg.join("learn-status.log"))
+        .expect("the removal failure must reach the writable status file");
+    assert!(status.contains("could not remove payload"), "{status}");
 }

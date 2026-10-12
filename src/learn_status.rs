@@ -17,10 +17,15 @@ fn open_learn_status(status_path: &Path) -> Result<std::fs::File, std::io::Error
     if let Some(parent) = status_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(status_path)
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    // Lines embed command labels, so other local users must not read them.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(status_path)
 }
 
 /// Write a one-line status entry to the learn status file.
