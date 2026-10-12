@@ -1,8 +1,10 @@
 //! Failure-display threshold behaviour (issue #194).
 //!
 //! A failing unrecognised command whose output is at most 120 lines must be
-//! displayed in full and must not be indexed. Above 120 lines the display is
-//! head/marker/tail and the full output must be indexed for `oo recall`.
+//! displayed in full, with no truncation marker and no recall hint, and must
+//! not be indexed (an `oo recall` for one of its lines finds nothing). Above
+//! 120 lines the display is head/marker/tail and the full output must be
+//! indexed for `oo recall`.
 
 use assert_cmd::Command;
 use std::path::PathBuf;
@@ -109,8 +111,8 @@ fn test_failure_200_lines_is_indexed_and_recallable() {
 }
 
 #[test]
-fn test_failure_120_lines_is_displayed_in_full_without_fused_lines() {
-    let (_root, stdout) = run_failing_tool(&script_printing(120));
+fn test_failure_120_lines_is_displayed_in_full_and_not_indexed() {
+    let (root, stdout) = run_failing_tool(&script_printing(120));
 
     for i in 1..=120 {
         assert!(
@@ -119,11 +121,29 @@ fn test_failure_120_lines_is_displayed_in_full_without_fused_lines() {
         );
     }
     assert!(!stdout.contains("lines truncated"));
+    assert!(
+        !stdout.contains("oo recall"),
+        "120 lines must not advertise recall; got: {stdout:?}"
+    );
+
+    let recall = oo()
+        .args(["recall", "line 60"])
+        .env("OO_DATA_DIR", data_dir_of(&root))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let recall = String::from_utf8_lossy(&recall).to_string();
+    assert!(
+        recall.contains("No results found."),
+        "120-line output must not be indexed; recall got: {recall:?}"
+    );
 }
 
 #[test]
 fn test_failure_121_lines_is_truncated_with_marker_and_split_at_72_48() {
-    let (_root, stdout) = run_failing_tool(&script_printing(121));
+    let (root, stdout) = run_failing_tool(&script_printing(121));
 
     // head = 72 lines (1..=72), one line dropped (73), tail = 48 lines (74..=121)
     assert!(stdout.lines().any(|l| l == "line 72"), "got: {stdout:?}");
@@ -133,4 +153,18 @@ fn test_failure_121_lines_is_truncated_with_marker_and_split_at_72_48() {
         "got: {stdout:?}"
     );
     assert!(!stdout.contains("line 73"), "got: {stdout:?}");
+
+    let recall = oo()
+        .args(["recall", "--full", "line 73"])
+        .env("OO_DATA_DIR", data_dir_of(&root))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let recall = String::from_utf8_lossy(&recall).to_string();
+    assert!(
+        recall.contains("line 73"),
+        "dropped line 73 must be recallable; recall got: {recall:?}"
+    );
 }

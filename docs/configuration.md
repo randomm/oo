@@ -120,7 +120,7 @@ These constants are built into the binary and cannot be configured.
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `SMALL_THRESHOLD` | 4096 bytes | Successful (exit 0) output of at most this many bytes (4 KiB) passes through unchanged; failed output is always filtered |
-| `MAX_LINES` | 120 lines | Default truncation, used for commands with no matching pattern or whose pattern has no `failure` section: output of at most this many lines is shown in full; longer output keeps its first 72 and last 48 lines around a marker. Patterns with a `failure` section filter output at any length |
+| `MAX_LINES` | 120 lines | Cap of the `smart_truncate` view (output of at most this many lines is shown in full; longer output keeps its first 72 and last 48 lines around a marker). Used for failed output with no matching pattern or whose pattern has no `failure` section, and as the display when indexing fails for successful Data output over 4 KiB |
 
 ## Feature Flags
 
