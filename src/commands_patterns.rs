@@ -32,27 +32,44 @@ fn write_pattern_entry<W: Write>(
     }
 }
 
+/// Prefix an I/O error with the path that failed, as `oo: <path>: <error>` reads.
+fn with_path(path: &Path, e: &io::Error) -> io::Error {
+    io::Error::new(e.kind(), format!("{}: {e}", path.display()))
+}
+
 /// Write pattern entries from a single directory, returning true if any were found.
 ///
 /// Each line is written with a two-space indent so callers can add section headers.
-/// A missing directory or one with no parseable `.toml` files writes nothing.
+/// A missing directory, or one with no parseable `.toml` files, writes nothing and
+/// returns false. Any other read failure (permission denied, I/O error) is returned
+/// as an error naming the path, so an unreadable directory is never reported as empty.
 fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return Ok(false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(with_path(dir, &e)),
     };
 
     let mut found = false;
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        let path = entry.map_err(|e| with_path(dir, &e))?.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let parsed = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str::<toml::Value>(&s).ok());
-
-        let Some(parsed) = parsed else {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            // Not UTF-8 means it is not a pattern file; a file removed since listing is gone.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::InvalidData | io::ErrorKind::NotFound
+                ) =>
+            {
+                continue;
+            }
+            Err(e) => return Err(with_path(&path, &e)),
+        };
+        let Ok(parsed) = toml::from_str::<toml::Value>(&text) else {
             continue;
         };
         found = true;
@@ -86,14 +103,22 @@ pub fn list_patterns_in(dir: &Path) -> bool {
 
 /// List learned pattern files from a single directory (legacy test helper).
 ///
-/// Returns 0 on success. A write error is reported by `list_patterns_in` on stderr,
-/// and the `println!` below may then panic if stdout still fails, so this function
-/// is not a reliable error reporter.
+/// Uses the same rendering as the `User` section of `oo patterns`: the empty-state
+/// line when nothing is listed. Returns 0 on success, and 1 with `oo: <path>: <error>`
+/// on stderr when the directory cannot be read.
 pub fn cmd_patterns_in(dir: &Path) -> i32 {
-    if !list_patterns_in(dir) {
-        println!("no learned patterns yet");
+    let result = write_patterns_in(&mut io::stdout().lock(), dir);
+    match result {
+        Ok(true) => 0,
+        Ok(false) => {
+            println!("{EMPTY_USER_PATTERNS_LINE}");
+            0
+        }
+        Err(e) => {
+            eprintln!("oo: {e}");
+            1
+        }
     }
-    0
 }
 
 /// Write the `User (<dir>):` section, with the empty-state line when nothing is listed.

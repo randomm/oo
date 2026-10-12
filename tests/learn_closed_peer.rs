@@ -36,8 +36,9 @@ fn payload() -> String {
 /// Accept one connection and reset it immediately with `SO_LINGER` 0.
 ///
 /// Polls a non-blocking listener, so a child that never connects cannot block
-/// this thread past `WAIT`.
-fn reset_first_connection(listener: TcpListener) {
+/// this thread past `WAIT`. Returns true only when a peer connected and was reset,
+/// so the caller can tell a real reset from a silent timeout.
+fn reset_first_connection(listener: TcpListener) -> bool {
     use std::os::fd::AsRawFd;
     listener.set_nonblocking(true).unwrap();
     let deadline = Instant::now() + WAIT;
@@ -46,11 +47,11 @@ fn reset_first_connection(listener: TcpListener) {
             Ok((stream, _)) => break stream,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() > deadline {
-                    return;
+                    return false;
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
-            Err(_) => return,
+            Err(_) => return false,
         }
     };
     let linger = libc::linger {
@@ -69,6 +70,7 @@ fn reset_first_connection(listener: TcpListener) {
         );
     }
     drop(stream);
+    true
 }
 
 #[test]
@@ -101,6 +103,14 @@ fn reset_peer_does_not_kill_background_learn_child() {
         .env("OO_DATA_DIR", root.path().join("data"))
         .env(KEY_ENV, "dummy-key")
         .env("ANTHROPIC_API_URL", format!("http://{addr}/v1/messages"))
+        // ureq reads proxy variables from the environment; the loopback peer must be reached directly.
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("all_proxy")
+        .env("NO_PROXY", "127.0.0.1,localhost")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -119,12 +129,19 @@ fn reset_peer_does_not_kill_background_learn_child() {
         }
         std::thread::sleep(Duration::from_millis(20));
     };
-    server.join().unwrap();
+    let connected = server.join().unwrap();
+    assert!(connected, "the child never connected to the listener");
 
     assert!(
         status.signal().is_none(),
         "background learn child was killed by signal {:?}",
         status.signal()
+    );
+    // `_learn_bg` always exits 0 after recording its status (see main.rs).
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "background learn child exit: {status:?}"
     );
     assert_api_error_status(&cfg.join("learn-status.log"));
     assert!(!payload_path.exists(), "payload must be removed after read");

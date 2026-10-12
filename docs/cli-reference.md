@@ -455,7 +455,7 @@ User (<user patterns dir>):
   \\bterraform\\s+plan\\b  [success]
 ```
 
-If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is printed followed by the line `  no learned patterns yet` (two-space indent) instead of pattern lines.
+If the user directory doesn't exist or contains no valid TOML files, its `User (dir):` header is printed followed by the line `  no learned patterns yet` (two-space indent) instead of pattern lines. A directory that exists but cannot be read (for example, permission denied) is an error instead: see Exit codes.
 
 Files that are not valid TOML are skipped silently. Any file that parses as TOML is listed, including a file with no `command_match` (shown as `(unknown)`); a file with valid TOML but an invalid regex is also still listed, although it is not loaded. The `Built-in` and `User` headers are always printed; the `Project` header is printed only when the project patterns directory exists.
 
@@ -464,6 +464,7 @@ Files that are not valid TOML are skipped silently. Any file that parses as TOML
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
+| 1 | A patterns directory that exists but cannot be read (permission denied, I/O error) or a `.toml` file in it that cannot be read; the error is printed to stderr as `oo: <path>: <error>`, and the listing stops there (the `User (dir):` header may already be on stdout, but no empty-state line is printed) |
 | 1 | Writing the listing to stdout fails for a reason other than a closed pipe (for example, a full disk); the error is printed to stderr. A closed pipe ends the process with SIGPIPE instead, so no exit code is set |
 
 ---

@@ -57,8 +57,9 @@
 //! }
 //! ```
 
-/// Command output classification and intelligent truncation.
+/// API key presence check for `oo learn`.
 pub mod api_key;
+/// Command output classification and intelligent truncation.
 pub mod classify;
 #[doc(hidden)]
 #[allow(missing_docs)]

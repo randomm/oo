@@ -43,6 +43,43 @@ fn only_unparseable_toml_prints_empty_state() {
     );
 }
 
+/// Restores a directory's mode on drop so the temp dir can be cleaned up.
+#[cfg(unix)]
+struct RestoreMode(std::path::PathBuf);
+
+#[cfg(unix)]
+impl Drop for RestoreMode {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&self.0, PermissionsExt::from_mode(0o700));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_user_dir_is_an_error_not_empty() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::TempDir::new().unwrap();
+    let locked = dir.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::set_permissions(&locked, PermissionsExt::from_mode(0o000)).unwrap();
+    let _restore = RestoreMode(locked.clone());
+    if std::fs::read_dir(&locked).is_ok() {
+        // Running as root: mode bits do not restrict reads, so there is nothing to test.
+        return;
+    }
+
+    let mut out = Vec::new();
+    let err = write_user_section(&mut out, &locked).unwrap_err();
+    assert!(
+        err.to_string()
+            .starts_with(&format!("{}: ", locked.display())),
+        "{err}"
+    );
+    let printed = String::from_utf8(out).unwrap();
+    assert!(!printed.contains("no learned patterns yet"), "{printed}");
+}
+
 #[test]
 fn valid_pattern_is_listed_without_empty_state() {
     let dir = tempfile::TempDir::new().unwrap();

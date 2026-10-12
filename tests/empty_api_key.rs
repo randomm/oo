@@ -35,6 +35,14 @@ fn run_bg_with_key(root: &Path, api_key: &str, listener: &TcpListener) {
             "ANTHROPIC_API_URL",
             format!("http://{}/v1/messages", listener.local_addr().unwrap()),
         )
+        // ureq reads proxy variables from the environment; the loopback listener must be reached directly.
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("all_proxy")
+        .env("NO_PROXY", "127.0.0.1,localhost")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
