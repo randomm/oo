@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ## [0.9.0] - 2026-10-12
 
+### ⚠ Breaking Changes
+
+- *(#200)* `double_o::learn::run_background` takes two more arguments: it is now `run_background(data_path: &str, payload_dir: &Path, status_path: &Path)` (was `run_background(data_path: &str)`). Callers must pass the payload directory the payload was created in and the learn status file path.
+- *(#200)* The learn status helpers moved to the `#[doc(hidden)]` module `double_o::learn_status`: `write_learn_status`, `write_learn_status_failure` and `check_and_clear_learn_status` are no longer at `double_o::commands::*`, and `write_learn_status` and `check_and_clear_learn_status` are no longer re-exported at the crate root. `double_o::learn::learn_status_path` is unchanged.
+- *(#199)* `double_o::commands::cmd_patterns_in` (`#[doc(hidden)]`) keeps its signature, but for an unreadable directory it now prints `oo: <path>: <error>` to stderr and returns 1. It previously printed the empty-state line and returned 0.
+
 ### Bug Fixes
 
 - *(#190,#193)* Validate the learn API URL with a parser and refuse redirects
