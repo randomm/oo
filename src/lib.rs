@@ -129,6 +129,7 @@ pub mod util;
 
 // Re-exports for library users
 pub use classify::{Classification, classify};
+pub use config::warn_ignored_overrides;
 pub use error::Error;
 pub use exec::CommandOutput;
 pub use pattern::{Pattern, builtins, load_user_patterns};

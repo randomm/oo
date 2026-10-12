@@ -45,7 +45,7 @@ You must trust:
 ### Storage Backends
 
 **SQLite (default)**:
-- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is the `dirs::data_dir()` location plus `.oo/` (per-OS defaults in [configuration.md](configuration.md#directories)). With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). Only an absolute `OO_DATA_DIR` is used (see [Directories](configuration.md#directories)); otherwise the database uses the default `<data dir>`, never the current directory
+- Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is the `dirs::data_dir()` location plus `.oo/` (per-OS defaults in [configuration.md](configuration.md#directories)). `OO_DATA_DIR` replaces it when valid (see [Directories](configuration.md#directories)), never the current directory
 - Permissions (Unix):
   - A data directory oo creates is made with mode `0700` (missing parent directories keep the umask mode), and `oo.db` is created with mode `0600`. The umask can only remove bits from these modes, so they are never wider.
   - SQLite gives its `-wal`, `-shm` and `-journal` sidecars the main file's mode, so they are `0600` too when `oo.db` is a `0600` file. If `oo.db` is a symlink, SQLite opens the target and the sidecars take the target's mode, which oo does not change.

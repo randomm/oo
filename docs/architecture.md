@@ -110,7 +110,7 @@ Category definitions and default behaviors: see [Command Categories in the Patte
 Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for full-text retrieval, as are the full merged outputs of failed commands whose displayed slice does not match them line for line (see Failure above).
 
 **Storage backends**:
-- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (per-OS defaults in [configuration.md](configuration.md#directories); Windows untested). `OO_DATA_DIR` replaces the whole directory when it is an absolute path, so `OO_DATA_DIR=/x` gives `/x/oo.db` (see configuration.md for the empty and relative cases)
+- `SqliteStore` (default) — SQLite database in `dirs::data_dir()/.oo/` (per-OS defaults in [configuration.md](configuration.md#directories); Windows untested). `OO_DATA_DIR` replaces the whole directory when valid (see [configuration.md](configuration.md#directories) for the override rules)
 - `VipuneStore` (feature flag) — Optional semantic search via Vipune
 
 **Operations**:
@@ -153,7 +153,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/store.rs`](../src/store.rs) | Storage backends (SQLite, Vipune) | `Store` trait, `SqliteStore` |
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
 | [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
-| [`src/config.rs`](../src/config.rs) | Config and data directory overrides (`OO_CONFIG_DIR`, `OO_DATA_DIR`) and the platform fallback | `config_dir()`, `data_dir_override()`, `validate_override()` |
+| [`src/config.rs`](../src/config.rs) | Config and data directory overrides (`OO_CONFIG_DIR`, `OO_DATA_DIR`) and the platform fallback | `config_dir()`, `data_dir()`, `warn_ignored_overrides()` |
 | [`src/retention.rs`](../src/retention.rs) | `[store] retention` parsing and the lazy per-project purge of indexed output | `purge_stale()`, `load_retention()` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
 | [`src/commands.rs`](../src/commands.rs) | CLI command handlers | `cmd_run()`, `cmd_recall()`, etc. |

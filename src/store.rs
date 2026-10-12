@@ -150,14 +150,7 @@ fn db_path() -> PathBuf {
         return dir.join("oo.db");
     }
     // OO_DATA_DIR overrides the base directory so tests can isolate the store.
-    if let Some(data_dir) = crate::config::data_dir_override() {
-        return data_dir.join("oo.db");
-    }
-    dirs::data_dir()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".oo")
-        .join("oo.db")
+    crate::config::data_dir().join("oo.db")
 }
 
 fn map_err(e: rusqlite::Error) -> Error {

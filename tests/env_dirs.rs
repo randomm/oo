@@ -75,7 +75,8 @@ fn ignored_config_dir_does_not_read_repo_status_file() {
 fn relative_config_dir_warns_once_per_process() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
-    // Indexing output reads the config directory from several places in one run.
+    // The warning is printed once at startup, so it does not depend on which
+    // directories this command goes on to read.
     let out = run_seq(
         repo.path(),
         home.path(),

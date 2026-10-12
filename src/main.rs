@@ -1,7 +1,7 @@
 use clap::Parser;
 use double_o::{
     Action, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
-    cmd_rewrite, cmd_run, learn, learn_status, parse_action,
+    cmd_rewrite, cmd_run, learn, learn_status, parse_action, warn_ignored_overrides,
 };
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,9 @@ struct Cli {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Before any dispatch, so the warning appears once on every code path,
+    // including the background learn child.
+    warn_ignored_overrides();
     // Intercept _learn_bg before clap parsing (it's a hidden internal command)
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {

@@ -14,19 +14,28 @@ On Linux, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured only when they are 
 
 If the `dirs` crate cannot determine a base directory, the config directory falls back to `/tmp/oo` and the data directory falls back to `$HOME/.oo` (then `/tmp/.oo`).
 
-Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it. The value must be an absolute path. An empty or whitespace-only value (`OO_CONFIG_DIR=`) is treated as unset. A relative value, or one with leading spaces, is ignored with a warning on stderr (printed once per oo process, so each hook invocation that reads it may print it again), and the platform default applies. It is never resolved against the current working directory, so a repository's own `config.toml`, `patterns/` or `learn-status.log` cannot act as oo's configuration:
+Override the config directory with the `OO_CONFIG_DIR` environment variable. The value is used as-is (no `oo/` is appended), so `config.toml` and `patterns/` live directly inside it.
+
+**Override rules (normative, for `OO_CONFIG_DIR` and `OO_DATA_DIR`):**
+
+- The value must be an absolute path and is used verbatim, with no trimming. A value with leading spaces is not absolute, so it is ignored.
+- An empty or whitespace-only value is treated as unset.
+- Any other value is ignored and the platform default applies. A warning naming the variable is printed to stderr once per oo invocation. Hook invocations run as separate processes, so each one may print it again.
+- A relative value is never resolved against the current working directory. A repository's own `config.toml`, `patterns/` or `learn-status.log` therefore cannot act as oo's configuration.
+
+Example:
 
 ```bash
 export OO_CONFIG_DIR=/custom/path
 ```
 
-Override the data directory with the `OO_DATA_DIR` environment variable (used primarily for test isolation):
+Override the data directory with the `OO_DATA_DIR` environment variable, under the same override rules (used primarily for test isolation):
 
 ```bash
 export OO_DATA_DIR=/custom/data/path
 ```
 
-The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when set to an absolute path, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`). Empty and whitespace-only values are treated as unset. A relative value is ignored with a warning, and the database goes in the platform data directory plus `.oo/` (the Data row above), never in the current working directory.
+The SQLite database is always named `oo.db`. Its directory (`<data dir>`) is `OO_DATA_DIR` when it is valid under the override rules above, used as-is (`OO_DATA_DIR=/x` gives `/x/oo.db`). Otherwise it is the platform data directory plus `.oo/` (the Data row above).
 
 ## Config File
 
