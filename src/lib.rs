@@ -61,6 +61,8 @@
 pub mod api_key;
 /// Command output classification and intelligent truncation.
 pub mod classify;
+/// Byte-bounded head+tail truncation, re-exported from [`classify`].
+mod classify_bounded;
 #[doc(hidden)]
 #[allow(missing_docs)]
 pub mod commands;
