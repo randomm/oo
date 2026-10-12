@@ -37,7 +37,7 @@ const WRONG_SCHEME_OR_HOST: &[&str] = &[
     "http://192.168.1.1/api",
     "http://[::2]:8080/",
     "ftp://localhost/",
-    // A well-formed URI with a disallowed scheme and no authority.
+    // Rejected by the scheme check before URI parsing (http::Uri would also reject an authority-less URL).
     "file:///etc/passwd",
 ];
 
