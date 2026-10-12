@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::config::config_dir;
 use crate::error::Error;
 pub use crate::learn_prompt::SYSTEM_PROMPT;
+use crate::learn_url::ApiUrl;
 
 // ---------------------------------------------------------------------------
 // Config & Validation limits
@@ -141,6 +142,7 @@ pub(crate) fn run_learn_with_config(
         h => h,
     };
 
+    let api_url = ApiUrl::parse(params.base_url)?;
     let truncated_command = crate::learn_utils::truncate_utf8(command, MAX_COMMAND_LENGTH);
 
     let user_msg = if let Some(h) = hint {
@@ -157,9 +159,7 @@ pub(crate) fn run_learn_with_config(
 
     let get_response = |msg: &str| -> Result<String, Error> {
         match params.config.provider.as_str() {
-            "anthropic" => {
-                call_anthropic(params.base_url, params.api_key, &params.config.model, msg)
-            }
+            "anthropic" => call_anthropic(&api_url, params.api_key, &params.config.model, msg),
             other => Err(Error::Learn(format!("unknown provider: {other}"))),
         }
     };
@@ -234,8 +234,6 @@ fn run_learn_with_hint(
 
     let base_url = std::env::var("ANTHROPIC_API_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".to_string());
-
-    validate_anthropic_url(&base_url)?;
 
     let params = LearnParams {
         config: &config,
@@ -335,7 +333,7 @@ pub fn run_background(data_path: &str) -> Result<(), Error> {
 // ---------------------------------------------------------------------------
 
 fn call_anthropic(
-    base_url: &str,
+    base_url: &ApiUrl,
     api_key: &str,
     model: &str,
     user_msg: &str,
@@ -350,19 +348,18 @@ fn call_anthropic(
 
     use std::time::Duration;
 
-    // Configure Agent with explicit timeout to prevent hanging on API calls
+    // Configure Agent with explicit timeout to prevent hanging on API calls.
     // Redirects are refused: ureq would replay x-api-key to the Location target.
-    // Returning 3xx as a response (not an error) lets the status check below run.
+    // With max_redirects(0) ureq returns a 3xx as a response, so the status check below runs.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
         .timeout_connect(Some(Duration::from_secs(10)))
         .max_redirects(0)
-        .max_redirects_will_error(false)
         .build()
         .into();
 
     let mut response = agent
-        .post(base_url)
+        .post(base_url.uri().clone())
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
@@ -372,7 +369,7 @@ fn call_anthropic(
     let status = response.status().as_u16();
     if (300..400).contains(&status) {
         return Err(Error::Learn(format!(
-            "unexpected redirect (status {status})"
+            "unexpected redirect (status {status}): the API endpoint redirected; set ANTHROPIC_API_URL to the final URL"
         )));
     }
 
@@ -436,30 +433,6 @@ fn truncate_for_prompt(output: &str) -> &str {
     crate::learn_utils::truncate_utf8(output, 4000)
 }
 
-/// Validate ANTHROPIC_API_URL: https for any host, http only for loopback.
-///
-/// The URL is parsed with the `http` crate (re-exported by ureq), so the host is
-/// the one the HTTP client actually connects to. Userinfo is rejected explicitly
-/// because `http://localhost:@evil.com/` would otherwise pass a prefix check.
-fn validate_anthropic_url(url: &str) -> Result<(), Error> {
-    let reject = || {
-        Error::Learn(format!(
-            "ANTHROPIC_API_URL must use HTTPS (got: {url}). HTTP is only allowed for localhost/127.0.0.1/[::1]."
-        ))
-    };
-    let uri: ureq::http::Uri = url.parse().map_err(|_| reject())?;
-    let authority = uri.authority().ok_or_else(reject)?;
-    if authority.as_str().contains('@') {
-        return Err(reject());
-    }
-    let host = authority.host().to_ascii_lowercase();
-    match uri.scheme_str().map(str::to_ascii_lowercase).as_deref() {
-        Some("https") => Ok(()),
-        Some("http") if matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]") => Ok(()),
-        _ => Err(reject()),
-    }
-}
-
 /// Validate a TOML pattern string using the same regex limits as TOML loading.
 ///
 /// Uses `validate_pattern_regexes` from pattern::toml module for consistency.
@@ -476,7 +449,3 @@ mod tests;
 #[cfg(test)]
 #[path = "learn_prompt_tests.rs"]
 mod prompt_tests;
-
-#[cfg(test)]
-#[path = "learn_url_tests.rs"]
-mod url_tests;

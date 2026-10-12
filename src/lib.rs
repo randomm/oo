@@ -110,6 +110,7 @@ pub mod commands_patterns;
 mod init_args_tests;
 pub mod init_cmd;
 pub mod learn_prompt;
+mod learn_url;
 pub mod learn_utils;
 /// Static usage text for reserved subcommands (`--help` and `oo help <sub>`).
 #[doc(hidden)]

@@ -111,7 +111,7 @@ Optional custom endpoint for Anthropic API.
 export ANTHROPIC_API_URL="https://your-proxy.example.com/v1/messages"
 ```
 
-> **Security warning:** `https://` URLs are accepted for any host, but URLs containing userinfo (`user@` or `user:pass@`) are rejected for both schemes. `http://` URLs are accepted only when the host is `localhost`, `127.0.0.1` or `[::1]` (compared case-insensitively). Any other scheme is rejected. The check applies only to the configured URL. The API request does not follow redirects: any 3xx response is an error (`unexpected redirect (status N)`), and the API key is never sent to the `Location` target.
+> **Security warning:** the URL rules (HTTPS except for `localhost`, `127.0.0.1` and `[::1]`, no userinfo) and the rule that redirects are never followed are in [When oo makes network calls](security-model.md#when-oo-makes-network-calls).
 
 ## Runtime Thresholds
 
