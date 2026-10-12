@@ -450,13 +450,14 @@ fn test_run_learn_with_config_rejects_hint_too_long() {
         api_key_env: "ANTHROPIC_API_KEY".into(),
     };
     let status_path = tmpdir.path().join("status.log");
+    let long_hint = "x".repeat(1001);
     let params = LearnParams {
         config: &config,
         api_key: "test-key",
         base_url: "https://api.anthropic.com/v1/messages",
         patterns_dir: tmpdir.path(),
         learn_status_path: &status_path,
-        hint: Some(&"x".repeat(1001)), // Exceeds MAX_HINT_LENGTH (1000)
+        hint: Some(&long_hint), // Exceeds MAX_HINT_LENGTH (1000)
     };
 
     let result = run_learn_with_config(&params, "echo test", "output", 0);
