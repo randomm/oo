@@ -72,8 +72,8 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
 /// Print pattern entries from a single directory, returning true if any were found.
 ///
 /// Each line is printed with a two-space indent so callers can add section headers.
-/// A write failure is printed to stderr and returns false, so it is indistinguishable
-/// from an empty directory; `cmd_patterns_in` maps that to exit 1.
+/// A write failure is printed to stderr and returns false, so callers cannot tell it
+/// apart from an empty directory.
 pub fn list_patterns_in(dir: &Path) -> bool {
     match write_patterns_in(&mut io::stdout().lock(), dir) {
         Ok(found) => found,
@@ -85,6 +85,9 @@ pub fn list_patterns_in(dir: &Path) -> bool {
 }
 
 /// List learned pattern files from a single directory (legacy test helper).
+///
+/// Always returns 0. On a write error, `list_patterns_in` prints `oo: <error>` to
+/// stderr and this function then prints the empty-state line to stdout.
 pub fn cmd_patterns_in(dir: &Path) -> i32 {
     if !list_patterns_in(dir) {
         println!("no learned patterns yet");
