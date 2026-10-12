@@ -464,7 +464,7 @@ Entries that are not valid TOML are skipped silently, and so are entries that ar
 | Exit | Condition |
 |------|-----------|
 | 0 | Success (directory may be empty) |
-| 1 | A patterns directory that exists but cannot be read (permission denied, I/O error) or a `.toml` file in it that cannot be read; the error is printed to stderr as `oo: <path>: <error>`, and the listing stops there (the `User (dir):` header may already be on stdout, but no empty-state line is printed) |
+| 1 | A patterns directory that exists but cannot be read (permission denied, I/O error) or a `.toml` entry in it whose metadata or contents cannot be read; the error is printed to stderr as `oo: <path>: <error>`, and the listing stops there (the `User (dir):` header may already be on stdout, but no empty-state line is printed) |
 | 1 | Writing the listing to stdout fails for a reason other than a closed pipe (for example, a full disk); the error is printed to stderr. A closed pipe ends the process with SIGPIPE instead, so no exit code is set |
 
 ---

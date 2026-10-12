@@ -57,8 +57,15 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
             continue;
         }
         // Only regular files are pattern files. Reading a directory fails and a FIFO would
-        // block forever, so both are skipped (as is a dangling symlink, which is not a file).
-        if !path.is_file() {
+        // block forever, so both are skipped. Metadata follows symlinks, so a dangling one is
+        // NotFound and skipped; any other stat failure (e.g. EACCES on an unsearchable dir)
+        // must surface rather than look like an empty directory.
+        let meta = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(with_path(&path, &e)),
+        };
+        if !meta.is_file() {
             continue;
         }
         let text = match std::fs::read_to_string(&path) {
