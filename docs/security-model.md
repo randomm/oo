@@ -35,7 +35,7 @@ You must trust:
 - **Small successful outputs (≤ 4 KiB, 4096 bytes)**: Displayed directly, never stored (failed-command output is handled by the failure bullet below, at any size)
 - **Pattern-matched outputs**: Extracted summary displayed, original output discarded
 - **Large (Data) and Bounded (Content/Unknown) unpatterned outputs**: Stored locally for recall, in the SQLite index by default or in Vipune's database with `vipune-store` (see Storage Backends)
-- **Failed-command outputs (exit code ≠ 0)**: when the displayed slice does not match the full merged output line for line (compared line for line; trailing empty lines and CRLF line endings are ignored), the full merged output is stored in the same index for recall, with the same project scoping as other indexed output. With the default SQLite store it also has the same file permissions (the default umask mode, `0644` under umask `022`; see Storage Backends) and the same retention (the `[store] retention` purge). With `--features vipune-store`, oo sets no mode on Vipune's database, so its permissions are whatever Vipune creates, and the retention purge examines only the first 10,000 entries Vipune lists for the project (from source inspection; see Data retention). It can contain secrets the failing command printed. The recall line printed after the slice is host-authored, but it follows command output that can contain a byte-identical copy of it, so its text does not prove that oo printed it (the same residual risk as the Bounded framing line; see Pattern Files)
+- **Failed-command outputs (exit code ≠ 0)**: when the displayed slice does not match the full merged output line for line (compared line for line; trailing empty lines and CRLF line endings are ignored), the full merged output is stored in the same index for recall, with the same project scoping as other indexed output. With the default SQLite store it also has the same file permissions (`oo.db` created with mode `0600`, and an existing one tightened on open; see Storage Backends) and the same retention (the `[store] retention` purge). With `--features vipune-store`, oo sets no mode on Vipune's database, so its permissions are whatever Vipune creates, and the retention purge examines only the first 10,000 entries Vipune lists for the project (from source inspection; see Data retention). It can contain secrets the failing command printed. The recall line printed after the slice is host-authored, but it follows command output that can contain a byte-identical copy of it, so its text does not prove that oo printed it (the same residual risk as the Bounded framing line; see Pattern Files)
 
 **Data retention**:
 - Indexed outputs are purged automatically after a configurable retention period (default 7 days), lazily when the same project next indexes output — see [configuration.md](configuration.md#store-section)
@@ -46,9 +46,14 @@ You must trust:
 
 **SQLite (default)**:
 - Database file: `oo.db`, in `<data dir>`. Default `<data dir>` is `~/.local/share/.oo/` on Linux (`$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path) and `~/Library/Application Support/.oo/` on macOS. With `OO_DATA_DIR=/x` the database is `/x/oo.db` (no `.oo/` is added). A relative `OO_DATA_DIR` is resolved against the current working directory, and an empty `OO_DATA_DIR=` puts the database at `./oo.db`
-- Permissions: the file is created with the default mode from the process umask (`0644` under the common umask `022`); oo does not set a restrictive mode. For sensitive environments, run `chmod 600` on the file or use a restrictive umask (e.g. `umask 077`) before running oo
+- Permissions (Unix):
+  - A data directory oo creates is made with mode `0700` (missing parent directories keep the umask mode), and `oo.db` is created with mode `0600`. The umask can only remove bits from these modes, so they are never wider.
+  - SQLite gives its `-wal`, `-shm` and `-journal` sidecars the main file's mode, so they are `0600` too when `oo.db` is a `0600` file. If `oo.db` is a symlink, SQLite opens the target and the sidecars take the target's mode, which oo does not change.
+  - Before the database is opened, oo tightens an existing `oo.db` and its sidecars that are regular files you own: group and other bits are removed (if set), and a file whose owner lacks read or write keeps its owner bits instead of `0600`. A file oo cannot open for reading is left unchanged. oo never changes a data directory it did not create, and never changes a file owned by another user.
+  - oo's own create and chmod never follow a symlink at `oo.db` or a sidecar, but SQLite follows a symlink when it opens the database: if `oo.db` is a symlink, its target keeps its own mode, and if the link is dangling, SQLite creates the target with the umask mode.
+  - Creating or tightening `oo.db` and its sidecars is best effort and silent: if it fails, oo still opens the store and prints nothing. Failing to create the data directory is still an error that stops oo from opening the store, as before.
 - Contents: Command output, metadata (command, timestamp, session identifier — informational only, not used for scoping)
-- Other local users can read it if the file and its parent directory permit it
+- When oo creates `oo.db`, other local users (not root) cannot read it, because the file is `0600`. When oo tightens an existing `oo.db` you own, its group and other bits are removed, so other users cannot read it either. A file owned by another user, or one oo cannot open for reading, is not changed, so its mode is whatever it was
 
 **Vipune (optional, `--features vipune-store` build)**:
 - Stores outputs in Vipune's database instead of `oo.db`. The default database is `~/.vipune/memories.db`; `VIPUNE_DATABASE_PATH`, or `database_path` in `vipune/config.toml` in the platform config directory, changes it (from source inspection of vipune 0.1.2)
@@ -160,7 +165,7 @@ By default the configuration and storage directories are under your user home di
 ### Write Access
 
 oo writes to:
-- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead)
+- Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead). On Unix, a data directory oo creates is made with mode `0700` (missing parents keep the umask mode), and `oo.db` is created with mode `0600` or, if it already exists, tightened on open (see Storage Backends)
 - Hugging Face cache (`~/.cache/huggingface/hub`; vipune 0.1.2 ignores `HF_HOME`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
 - Status file (`learn-status.log` inside the configuration directory): Background learn results. It is created with mode 0600 on Unix, a pre-existing file keeps its mode, and a missing config directory is created with default permissions. If it cannot be removed after being shown, the same lines are shown again on every run until it is removed.
@@ -184,7 +189,7 @@ Temporary files (not listed above):
   - A background process killed before it reads the file (SIGKILL, reboot) leaves it behind. If spawning the process fails, the file is removed immediately.
 - Manual cleanup of leftover files: list the `.tmp*` files in `$TMPDIR` that you own (or in `/tmp` when `TMPDIR` is empty or relative), check their contents, and delete them. The name is shared with other programs that use the `tempfile` crate, so do not delete files you have not checked.
 
-User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. Apart from the paths, temporary files, and directories it creates (`create_dir_all` for the configuration, storage, pattern, `.claude/`, and `.pi/extensions/` directories) listed here, oo does not write files.
+User-run commands are not confined: `oo <cmd>` executes the command you give it with your permissions, so that command may read or write any path it can reach, wherever it is. Apart from the paths, temporary files, and directories it creates (`create_dir_all` for the configuration, pattern, `.claude/`, and `.pi/extensions/` directories, and for the missing parents of the storage directory; the storage directory itself is created with mode `0700` on Unix) listed here, oo does not write files.
 
 ### Execution Access
 
@@ -317,7 +322,7 @@ This section is for compliance assessments.
 ### Data Access
 
 - **Owner**: User account running oo
-- **Permissions**: The SQLite database file (default build) uses the default mode from the process umask (not `rw-------`); use `chmod 600` or a restrictive umask for sensitive environments. With `vipune-store`, oo does not set the mode of Vipune's database (the vipune-side mode was not checked)
+- **Permissions**: The SQLite database file (default build) is created with mode `0600` (`rw-------`) and a data directory oo creates with mode `0700` (see Storage Backends). An existing `oo.db` is tightened on open (see Storage Backends), and a data directory that already existed keeps its mode. With `vipune-store`, oo does not set the mode of Vipune's database (the vipune-side mode was not checked)
 - **Sharing**: No data sharing or syncing capabilities
 
 ### Data Retention
