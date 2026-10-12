@@ -163,7 +163,7 @@ oo writes to:
 - Storage directory (`~/.local/share/.oo/` on Linux, or `$XDG_DATA_HOME/.oo/` when `XDG_DATA_HOME` is an absolute path; `~/Library/Application Support/.oo/` on macOS; `OO_DATA_DIR` overrides): Indexed outputs (SQLite store; with `vipune-store`, Vipune's database instead)
 - Hugging Face cache (`~/.cache/huggingface/hub`; vipune 0.1.2 ignores `HF_HOME`), `vipune-store` builds only: embedding model files, downloaded when the store is opened and not yet cached (vipune's `model_cache` setting is not used for this in 0.1.2, from source inspection)
 - Pattern directory (`patterns/` inside the configuration directory): Learned patterns (via `oo learn`)
-- Status file (`learn-status.log` inside the configuration directory): Background learn results
+- Status file (`learn-status.log` inside the configuration directory): Background learn results. It is created with mode 0600 on Unix, a pre-existing file keeps its mode, and a missing config directory is created with default permissions. If it cannot be removed after being shown, the same lines are shown again on every run until it is removed.
 
 Writes made by `oo init` (only when you run it):
 - `oo init` or `oo init --format claude`: `.claude/hooks.json` in the git root (or the current directory when there is no git root)

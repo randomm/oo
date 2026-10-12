@@ -309,10 +309,10 @@ pub fn run_background(
     status_path: &Path,
 ) -> Result<(), Error> {
     let path = Path::new(data_path);
-    // argv is untrusted: only a file with the payload name shape directly inside
-    // `payload_dir` is read or removed (a FIFO or /dev/zero argv would block or
-    // exhaust memory). The payload can hold command output (possibly secret), so
-    // it is removed right after the read.
+    // argv is untrusted: only a payload-shaped name directly in `payload_dir` is
+    // read or removed, which rejects paths like /dev/zero. It does not reject a
+    // FIFO with such a name, which would block the read. The payload can hold
+    // command output (possibly secret), so it is removed right after the read.
     let shaped = is_payload_shaped(path, payload_dir);
     let read = if shaped {
         std::fs::read_to_string(path).map_err(|e| Error::Learn(e.to_string()))
