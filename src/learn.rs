@@ -350,7 +350,7 @@ fn call_anthropic(
 
     // Configure Agent with explicit timeout to prevent hanging on API calls.
     // Redirects are refused: ureq would replay x-api-key to the Location target.
-    // With max_redirects(0) ureq returns a 3xx as a response, so the status check below runs.
+    // max_redirects(0) returns a 3xx as a response for the status check below; max_redirects_will_error(false) is a no-op here.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
         .timeout_connect(Some(Duration::from_secs(10)))
@@ -369,7 +369,7 @@ fn call_anthropic(
     let status = response.status().as_u16();
     if (300..400).contains(&status) {
         return Err(Error::Learn(format!(
-            "unexpected redirect (status {status}): the API endpoint redirected; set ANTHROPIC_API_URL to the final URL"
+            "unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
         )));
     }
 

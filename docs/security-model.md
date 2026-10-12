@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [Network Access](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see Network Access). Commands you run may make their own requests
+2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [When oo makes network calls](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see [When oo makes network calls](#when-oo-makes-network-calls)). Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -23,7 +23,7 @@ You must trust:
 
 ### What We Don't Trust (and Why)
 
-- **Remote servers**: All command execution is local. The default build makes network requests only for `oo learn` and `oo help <command>`; a `vipune-store` build also downloads an embedding model (see Network Access).
+- **Remote servers**: All command execution is local. The default build makes network requests only for `oo learn` and `oo help <command>`; a `vipune-store` build also downloads an embedding model (see [When oo makes network calls](#when-oo-makes-network-calls)).
 - **Command inputs**: Commands are parsed but not modified. If a command is malicious (e.g., `rm -rf /`), oo executes it as-is — the security boundary is between you and the command, not oo.
 
 ## Data Handling
@@ -54,7 +54,7 @@ You must trust:
 - Stores outputs in Vipune's database instead of `oo.db`. The default database is `~/.vipune/memories.db`; `VIPUNE_DATABASE_PATH`, or `database_path` in `vipune/config.toml` in the platform config directory, changes it (from source inspection of vipune 0.1.2)
 - Same access controls as your Vipune installation
 - Only used if you explicitly enable the `vipune-store` feature
-- Opening the store may download the embedding model from Hugging Face when it is not cached (see Network Access)
+- Opening the store may download the embedding model from Hugging Face when it is not cached (see [When oo makes network calls](#when-oo-makes-network-calls))
 
 ### LLM Learning (`oo learn`)
 
@@ -91,7 +91,7 @@ You must trust:
 - No caching or persistence to disk
 
 **Transmission**:
-- The key is sent only to the configured API endpoint (Anthropic), never to a redirect target (see Network Access)
+- The key is sent only to the endpoint configured in `ANTHROPIC_API_URL` (default `https://api.anthropic.com/v1/messages`), never to a redirect target (see [When oo makes network calls](#when-oo-makes-network-calls))
 - Keys are never logged or printed in output
 
 **Best practice**: Use shell environment or a secret manager:
@@ -117,7 +117,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` also writes its LLM-generated patterns into that same directory. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and, when it can be read, deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V` and the internal background-learn entry point) and `config.toml`. `[store] retention` in the same file sets how long indexed output is kept (read on every indexing run; `0` disables purging), so a repository-owned `config.toml` in a relative or empty `OO_CONFIG_DIR` can change that period. A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`: a repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`), and its validation rules are in [Network Access](#when-oo-makes-network-calls). A malformed `[learn]` table does not change retention, and an invalid `[store]` value does not stop `oo learn`; a TOML syntax error or an unreadable `config.toml` (a file with mode 000, or a directory named `config.toml`) affects both, except when the config directory itself is unsearchable (mode 000 on the directory): then `oo learn` silently uses its defaults while indexing still warns ([configuration](configuration.md#store-section)). Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design: you installed them, wrote them, or accepted them, including patterns that `oo learn` writes into that directory from LLM output, which you should review. An empty or relative `OO_CONFIG_DIR` is the exception: the config directory then resolves against the current directory, so the user patterns directory becomes `./patterns` for an empty value or `.`, and `<value>/patterns` for any other relative value. With such a value, `oo learn` also writes its LLM-generated patterns into that same directory. A cloned repository that ships that directory (for example `./patterns/*.toml`) then has its files loaded as trusted user patterns when `oo` runs in it. The same relative config directory also holds the pending learn-status file (`learn-status.log`, read and, when it can be read, deleted on each run that reaches the status check, which is every run except top-level `--help`, `-h`, `--version` and `-V` and the internal background-learn entry point) and `config.toml`. `[store] retention` in the same file sets how long indexed output is kept (read on every indexing run; `0` disables purging), so a repository-owned `config.toml` in a relative or empty `OO_CONFIG_DIR` can change that period. A `[learn]` table in `config.toml`, when present, must set all three of `provider` (only `anthropic` is accepted), `model` and `api_key_env`: a repository that controls this file can choose the model and name the environment variable whose value is read and sent as the API key, but it cannot set the API URL. That URL comes only from the `ANTHROPIC_API_URL` environment variable (default `https://api.anthropic.com/v1/messages`), and its validation rules are in [When oo makes network calls](#when-oo-makes-network-calls). A malformed `[learn]` table does not change retention, and an invalid `[store]` value does not stop `oo learn`; a TOML syntax error or an unreadable `config.toml` (a file with mode 000, or a directory named `config.toml`) affects both, except when the config directory itself is unsearchable (mode 000 on the directory): then `oo learn` silently uses its defaults while indexing still warns ([configuration](configuration.md#store-section)). Leave `OO_CONFIG_DIR` unset or set it to an absolute path.
 
 **Project patterns are not trusted by design.** They are read from `<git-root>/.oo/patterns/` (or the current directory when there is no git root) from whatever repository you are working in, with no confirmation. A cloned repository you did not write can therefore supply patterns, and those patterns are applied automatically whenever `oo` runs or routes a command (`oo <cmd>`, `oo rewrite`, `oo hook claude`). The one exception is the foreground display of `oo learn`, which uses built-in patterns only (#151).
 
@@ -188,7 +188,7 @@ In the default build, oo itself makes network requests in two cases:
 
 **Via `oo learn`**:
 - To the Anthropic API (`https://api.anthropic.com/v1/messages` by default). `ANTHROPIC_API_URL` may override it: it must use HTTPS, except `http://` to a host that is exactly `localhost`, `127.0.0.1` or `[::1]` (compared case-insensitively), and it must not contain userinfo (`user@`). Other schemes are rejected. The URL is validated once, and the request is sent to that validated URL.
-- Redirects are not followed. The HTTP client is configured with `max_redirects(0)`, so any 3xx response (301, 302, 303, 304, 305, 307, 308) fails the request with `unexpected redirect (status N)`. The `x-api-key` header is never sent to a `Location` target, and the error does not include the `Location` value.
+- Redirects are not followed. The HTTP client is configured with `max_redirects(0)`, so any 3xx status (300 to 399, with or without a `Location` header, including 304) fails the request with `unexpected redirect (status N): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint`. The `x-api-key` header is never sent to a `Location` target, and the error does not include the `Location` value.
 - With your command output and API key
 - In the background, after command completes
 
@@ -271,7 +271,7 @@ SQLite database stores output as plain text. If your machine is compromised, ind
 ### For Contributors
 
 1. **No secret storage**: Never implement API key caching or persistence
-2. **Validate URLs**: Enforce HTTPS for all network connections (plain HTTP only to `localhost`/`127.0.0.1`/`[::1]`); the `oo learn` URL and redirect rules are in Network Access
+2. **Validate URLs**: Enforce HTTPS for all network connections (plain HTTP only to `localhost`/`127.0.0.1`/`[::1]`); the `oo learn` URL and redirect rules are in [When oo makes network calls](#when-oo-makes-network-calls)
 3. **Sanitize inputs**: Use `clap` for argument parsing
 4. **Test for injection**: Ensure malformed input doesn't cause crashes or security issues
 5. **Document assumptions**: Be clear about what is trusted and what is not

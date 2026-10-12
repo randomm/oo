@@ -1,10 +1,9 @@
 use super::*;
 
-// `Error::Learn` displays with a "learn error: " prefix, so messages are matched by suffix.
-const CREDENTIALS_ERROR: &str = "ANTHROPIC_API_URL must not contain credentials";
-const MALFORMED_ERROR: &str = "ANTHROPIC_API_URL is not a valid URL";
-const SCHEME_OR_HOST_ERROR: &str =
-    "ANTHROPIC_API_URL must use HTTPS (HTTP is only allowed for localhost, 127.0.0.1 and ::1)";
+// `Error::Learn` displays with a "learn error: " prefix; each case is matched against its full text.
+const CREDENTIALS_ERROR: &str = "learn error: ANTHROPIC_API_URL must not contain credentials";
+const MALFORMED_ERROR: &str = "learn error: ANTHROPIC_API_URL is not a valid URL";
+const SCHEME_OR_HOST_ERROR: &str = "learn error: ANTHROPIC_API_URL must use HTTPS (HTTP is only allowed for localhost, 127.0.0.1 and ::1)";
 
 const ACCEPTED: &[&str] = &[
     "https://api.anthropic.com/v1/messages",
@@ -38,17 +37,12 @@ const WRONG_SCHEME_OR_HOST: &[&str] = &[
     "http://192.168.1.1/api",
     "http://[::2]:8080/",
     "ftp://localhost/",
-];
-
-// Empty, relative and otherwise unparseable input.
-const MALFORMED: &[&str] = &[
-    "",
-    "http://",
-    "https://",
-    "not a url",
-    "localhost:8000/api",
+    // A well-formed URI with a disallowed scheme and no authority.
     "file:///etc/passwd",
 ];
+
+// Input that is not a URL at all (no parse, no scheme, or no host); each must fail with the malformed error.
+const MALFORMED: &[&str] = &["", "http://", "https://", "not a url", "localhost:8000/api"];
 
 fn rejection(url: &str) -> String {
     ApiUrl::parse(url)
@@ -83,7 +77,7 @@ fn test_parse_returns_the_normalized_uri_it_validated() {
 fn test_parse_rejects_userinfo_without_echoing_it() {
     for url in USERINFO {
         let msg = rejection(url);
-        assert!(msg.ends_with(CREDENTIALS_ERROR), "{url}: {msg}");
+        assert_eq!(msg, CREDENTIALS_ERROR, "{url}");
         assert!(
             !msg.contains("s3cret") && !msg.contains("user:"),
             "error must not echo credentials: {msg}"
@@ -95,25 +89,32 @@ fn test_parse_rejects_userinfo_without_echoing_it() {
 fn test_parse_rejects_percent_and_backslash_authority_tricks() {
     // The http crate reads `localhost%2f@evil.com` as userinfo; the backslash form
     // is not a valid URI. Neither may pass as localhost.
-    assert!(rejection("http://localhost%2f@evil.com").ends_with(CREDENTIALS_ERROR));
-    assert!(rejection("http://localhost\\@evil.com").ends_with(MALFORMED_ERROR));
+    assert_eq!(rejection("http://localhost%2f@evil.com"), CREDENTIALS_ERROR);
+    assert_eq!(rejection("http://localhost\\@evil.com"), MALFORMED_ERROR);
 }
 
 #[test]
 fn test_parse_rejects_wrong_scheme_or_host() {
     for url in WRONG_SCHEME_OR_HOST {
-        let msg = rejection(url);
-        assert!(msg.ends_with(SCHEME_OR_HOST_ERROR), "{url:?}: {msg}");
+        assert_eq!(rejection(url), SCHEME_OR_HOST_ERROR, "{url:?}");
     }
 }
 
 #[test]
 fn test_parse_rejects_malformed_input() {
     for url in MALFORMED {
-        let msg = rejection(url);
+        assert_eq!(rejection(url), MALFORMED_ERROR, "{url:?}");
+    }
+}
+
+#[test]
+fn test_scheme_or_host_error_names_every_loopback_host() {
+    // The message spells IPv6 loopback as `::1`, so compare without the brackets.
+    for host in LOOPBACK_HOSTS {
+        let bare = host.trim_matches(|c| c == '[' || c == ']');
         assert!(
-            msg.ends_with(MALFORMED_ERROR) || msg.ends_with(SCHEME_OR_HOST_ERROR),
-            "{url:?}: {msg}"
+            SCHEME_OR_HOST_ERROR.contains(bare),
+            "{host} missing from the error text"
         );
     }
 }

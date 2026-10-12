@@ -210,7 +210,7 @@ fn test_call_anthropic_malformed_response() {
 
 #[test]
 fn test_call_anthropic_refuses_every_redirect_status() {
-    for status in [301, 302, 303, 304, 305, 307, 308] {
+    for status in [300, 301, 302, 303, 304, 305, 306, 307, 308] {
         let mut origin = mockito::Server::new();
         let mut target = mockito::Server::new();
         let target_mock = target
@@ -228,9 +228,11 @@ fn test_call_anthropic_refuses_every_redirect_status() {
         let url = ApiUrl::parse(&format!("{}/v1/messages", origin.url())).expect("valid URL");
         let result = call_anthropic(&url, "test-key", "test-model", "test prompt");
         let msg = result.expect_err("a redirect must be refused").to_string();
-        assert!(
-            msg.contains(&format!("unexpected redirect (status {status})")),
-            "wrong error for {status}: {msg}"
+        assert_eq!(
+            msg,
+            format!(
+                "learn error: unexpected redirect (status {status}): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint"
+            ),
         );
         assert!(
             !msg.contains("/steal"),
