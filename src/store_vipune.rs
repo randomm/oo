@@ -4,9 +4,14 @@
 //! Available behind the `vipune-store` feature flag.
 
 use crate::error::Error;
-use crate::project_drain::{self, Entry, LIST_CAP, MAX_PASSES, ProjectEntries};
+use crate::project_drain::{
+    self, Entry, EntryId, MAX_PASSES, ProjectEntries, partial_delete_error,
+};
 use crate::store::{SearchResult, SessionMeta, Store, parse_meta};
 use crate::util;
+
+/// Vipune's per-call row cap for `list`.
+const LIST_CAP: usize = 10_000;
 
 /// Vipune-backed store with semantic search capabilities.
 ///
@@ -36,15 +41,9 @@ impl VipuneStore {
 /// `Store` for Vipune.
 ///
 /// `delete_project` and `cleanup_stale` are thin adapters over the shared
-/// drain logic in `crate::project_drain`: Vipune has no bulk delete and no
-/// pagination offset, so entries are listed page by page (up to 10,000 per
-/// call) and deleted one by one. `delete_project` drains until the listing
-/// is empty, which is the only way it reports success; a pass with no
-/// successful delete and at least one failed delete, two consecutive passes
-/// in which nothing could be deleted, or a pass bound of 1,000 stop the drain with `partial delete: deleted N, failed M; entries
-/// remain` (M is the number of distinct entries whose delete failed). The
-/// retention cleanup inspects a single window of the newest 10,000 entries
-/// and prints a warning, once per process, when that window is full.
+/// loops in `crate::project_drain`, which list and delete page by page. The
+/// stop rules and error messages are documented in `docs/security-model.md`,
+/// Data Retention.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
@@ -90,37 +89,34 @@ impl Store for VipuneStore {
 
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
         // Project-scoped delete: drop every entry for this project regardless
-        // of metadata. The drain in `crate::project_drain` stops only when
-        // the listing is empty, so success means the project is empty.
-        let mut drain = ProjectDrain {
+        // of metadata.
+        let drain = ProjectDrain {
             store: &self.store,
             project_id,
         };
-        project_drain::drain_project(&mut drain, LIST_CAP, MAX_PASSES)
+        project_drain::drain_project(&drain, LIST_CAP, MAX_PASSES)
     }
 
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
         let cutoff = util::now_epoch() - max_age_secs;
-        let mut drain = ProjectDrain {
+        let drain = ProjectDrain {
             store: &self.store,
             project_id,
         };
-        let out = project_drain::cleanup_stale_in(&mut drain, cutoff, LIST_CAP)?;
+        let out = project_drain::cleanup_stale_in(&drain, cutoff, LIST_CAP)?;
         if out.window_capped {
             project_drain::warn_window_capped_once(&mut std::io::stderr(), &WINDOW_WARNED);
         }
         if out.failed > 0 {
-            return Err(Error::Store(format!(
-                "partial delete: deleted {}, failed {}; entries remain",
-                out.deleted, out.failed
-            )));
+            return Err(partial_delete_error(out.deleted, out.failed));
         }
         Ok(out.deleted)
     }
 }
 
-/// One per process: both the retention purge and `try_index` call
-/// `cleanup_stale`, so the window-capped warning must not repeat.
+/// Process-wide: both the retention purge and `try_index` call
+/// `cleanup_stale`, so the window-capped warning must not repeat within one
+/// process. Deliberately not per store instance.
 static WINDOW_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Adapter scope for the drain functions: borrows the Vipune store and pins
@@ -131,10 +127,12 @@ struct ProjectDrain<'a> {
 }
 
 /// `ProjectEntries` adapter over a `VipuneStore`: maps Vipune's rows to
-/// [`Entry`], parsing `SessionMeta` from the metadata JSON (staleness basis
-/// unchanged: only `oo`-sourced entries with a parseable timestamp).
+/// [`Entry`], parsing `SessionMeta` from the metadata JSON. Only `oo`-sourced
+/// entries with parseable metadata get an `oo_timestamp`. Enumeration uses
+/// `list`, never `search`: search is similarity-based and would not return
+/// every entry.
 impl ProjectEntries for ProjectDrain<'_> {
-    fn list(&mut self, limit: usize) -> Result<Vec<Entry>, Error> {
+    fn list(&self, limit: usize) -> Result<Vec<Entry>, Error> {
         let memories = self
             .store
             .list(self.project_id, limit)
@@ -144,17 +142,18 @@ impl ProjectEntries for ProjectDrain<'_> {
             .map(|m| {
                 let meta = m.metadata.as_deref().and_then(parse_meta);
                 Entry {
-                    id: m.id,
-                    timestamp: meta.as_ref().map_or(0, |meta| meta.timestamp),
-                    is_oo_entry: meta.is_some_and(|meta| meta.source == "oo"),
+                    id: EntryId::new(m.id),
+                    oo_timestamp: meta
+                        .filter(|meta| meta.source == "oo")
+                        .map(|meta| meta.timestamp),
                 }
             })
             .collect())
     }
 
-    fn delete(&mut self, id: &str) -> Result<bool, Error> {
+    fn delete(&self, id: &EntryId) -> Result<bool, Error> {
         self.store
-            .delete(id)
+            .delete(id.as_str())
             .map_err(|e| Error::Store(e.to_string()))
     }
 }

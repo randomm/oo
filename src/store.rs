@@ -102,15 +102,17 @@ pub trait Store {
     ///
     /// - `SqliteStore` deletes by the same `project` predicate that `search`
     ///   uses, so `recall` finds nothing afterwards.
-    /// - `VipuneStore` deletes the project's entries page by page (up to
-    ///   10,000 per call) and fails with `partial delete: deleted N, failed
-    ///   M; entries remain` if any entry could not be deleted; it never
-    ///   reports success while entries remain.
+    /// - `VipuneStore` drains the project page by page; its completeness
+    ///   guarantee and error contract are in `docs/security-model.md`, Data
+    ///   Retention.
     ///
     /// Returns the number of entries deleted.
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
 
     /// Delete entries older than `max_age_secs` seconds.
+    ///
+    /// Every failed delete is attempted, and the call then returns an error
+    /// if any failed. Listing failures return at once.
     ///
     /// Returns the number of entries deleted.
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error>;
