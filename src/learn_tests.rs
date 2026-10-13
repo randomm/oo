@@ -351,7 +351,7 @@ fn test_patterns_dir_is_under_config_dir() {
 fn run_bg(path: &Path) -> Result<(), Error> {
     let status = tempfile::TempDir::new().unwrap();
     let log = status.path().join("learn-status.log");
-    run_background(path.to_str().unwrap(), path.parent().unwrap(), &log)
+    run_background(path, path.parent().unwrap(), &log)
 }
 
 #[test]

@@ -1,6 +1,9 @@
+use std::ffi::OsString;
 use std::path::Path;
 
 use humansize::{BINARY, format_size};
+
+use crate::argv;
 
 use crate::classify::Classification;
 pub use crate::display::savings_suffix;
@@ -18,13 +21,17 @@ pub enum Action {
     /// Print a reserved subcommand's usage text and exit 0. The subcommand does not run,
     /// but a pending learn-status message is printed and cleared before this action.
     Usage(&'static str),
-    Run(Vec<String>),
+    /// Run an argument that `oo` itself must interpret as a shell command.
+    /// The original bytes (unix passthrough) are what the child receives; the
+    /// command line recorded for labels, history, and the learn payload is
+    /// the lossy (U+FFFD) text, computed in `run_command_args` (see #213).
+    Run(Vec<OsString>),
     Recall {
         query: String,
         full: bool,
     },
     Forget,
-    Learn(Vec<String>, Option<String>),
+    Learn(Vec<OsString>, Option<String>),
     Version,
     Help(Option<String>),
     Init(InitMode),
@@ -38,14 +45,16 @@ pub enum Action {
 /// `--full` is stripped from ANY position in the trailing args (consistent
 /// with `parse_learn_action`'s `--hint` handling). Searching for the literal
 /// string `--full` in a query is unsupported; document that in help.
-fn parse_recall_action(args: &[String]) -> Action {
-    let query: String = args
+fn parse_recall_action(args: &[OsString]) -> Action {
+    // Non-UTF-8 arguments are rejected in main before this function is
+    // called; recall's own text is otherwise recorded lossily (see #213).
+    let full = args.iter().any(|a| a == "--full");
+    let query = args
         .iter()
-        .filter(|a| a.as_str() != "--full")
-        .cloned()
+        .filter(|a| **a != "--full")
+        .map(|a| a.to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join(" ");
-    let full = args.iter().any(|a| a.as_str() == "--full");
     Action::Recall { query, full }
 }
 
@@ -53,24 +62,25 @@ fn parse_recall_action(args: &[String]) -> Action {
 ///
 /// Returns (args_without_hint, hint_text). The hint text is removed from the
 /// command args so it doesn't interfere with the actual command being run.
-fn parse_learn_action(args: &[String]) -> Action {
-    let mut result: Vec<String> = Vec::new();
+fn parse_learn_action(args: &[OsString]) -> Action {
+    let mut result: Vec<OsString> = Vec::new();
     let mut hint: Option<String> = None;
-    let mut iter = args.iter().peekable();
+    let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
         if arg == "--hint" {
-            // Take the next argument as the hint text, but only if it's not a flag
-            // If the next arg starts with '-', treat it as a command argument, not hint text
+            // Take the next argument as the hint text, but only if it's not a flag.
             if let Some(hint_text) = iter.next() {
-                if !hint_text.starts_with('-') {
-                    hint = Some(hint_text.clone());
-                } else {
-                    // The next arg is a flag, treat it as part of the command
-                    result.push(hint_text.clone());
+                match argv::utf8_or(hint_text) {
+                    // Valid UTF-8 that does not start with `-` is the hint text.
+                    Ok(text) if !text.starts_with('-') => hint = Some(text),
+                    // The next arg is a flag, treat it as part of the command. Main
+                    // rejects a non-UTF-8 hint before this point, so the `_` arm
+                    // only sees flag-like values in practice.
+                    _ => result.push(hint_text.clone()),
                 }
             }
-            // If no hint text after --hint, emit a warning and treat as no hint
+            // If no hint text after --hint, treat as no hint
         } else {
             result.push(arg.clone());
         }
@@ -79,40 +89,56 @@ fn parse_learn_action(args: &[String]) -> Action {
     Action::Learn(result, hint)
 }
 
-pub fn parse_action(args: &[String]) -> Action {
+pub fn parse_action(args: &[OsString]) -> Action {
+    // A non-UTF-8 first word is simply the command to run — reserved names
+    // are matched only when the first word is valid UTF-8, and the match
+    // below compares the lossy text (a non-UTF-8 first word never equals a
+    // reserved name).
+
     // `oo <reserved> --help|-h`: the flag must be the first argument after the
-    // subcommand. Intercepted before any side-effecting arm runs.
+    // subcommand. Intercepted before any side-effecting arm runs. The first
+    // word must be valid UTF-8 for the lookup to succeed (see #213).
     if args.get(1).is_some_and(|a| a == "--help" || a == "-h") {
-        if let Some(text) = args.first().and_then(|s| usage::for_subcommand(s)) {
-            return Action::Usage(text);
+        let first_str = args.first().and_then(|s| argv::utf8_or(s).ok());
+        if let Some(name) = first_str {
+            if let Some(text) = usage::for_subcommand(&name) {
+                return Action::Usage(text);
+            }
         }
     }
-    match args.first().map(|s| s.as_str()) {
+    let first_lossy = args.first().map(|s| s.to_string_lossy().into_owned());
+    match first_lossy.as_deref() {
         None => Action::Help(None),
         Some("recall") => parse_recall_action(&args[1..]),
         Some("forget") => Action::Forget,
         Some("learn") => parse_learn_action(&args[1..]),
         Some("version") => Action::Version,
         // `oo help <cmd>` — look up cheat sheet; `oo help` alone shows usage
-        Some("help") => Action::Help(args.get(1).cloned()),
-        Some("init") => match parse_init_mode(&args[1..]) {
-            Ok(mode) => Action::Init(mode),
-            Err(e) => {
-                // Errors already carry their full prefix when they need one
-                // (`oo init: unsupported format ...`); the rest keep `oo: `.
-                if e.starts_with("oo init: ") {
-                    eprintln!("{e}");
-                } else {
-                    eprintln!("oo: {e}");
+        Some("help") => Action::Help(args.get(1).map(|a| a.to_string_lossy().into_owned())),
+        Some("init") => {
+            let init_args: Vec<String> = args[1..]
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            match parse_init_mode(&init_args) {
+                Ok(mode) => Action::Init(mode),
+                Err(e) => {
+                    // Errors already carry their full prefix when they need one
+                    // (`oo init: unsupported format ...`); the rest keep `oo: `.
+                    if e.starts_with("oo init: ") {
+                        eprintln!("{e}");
+                    } else {
+                        eprintln!("oo: {e}");
+                    }
+                    std::process::exit(1);
                 }
-                std::process::exit(1);
             }
-        },
+        }
         Some("patterns") => Action::Patterns,
         Some("rewrite") => {
             let command: String = args
                 .get(1..)
-                .map(|rest| rest.join(" "))
+                .map(argv::lossy_join)
                 .filter(|s| !s.is_empty())
                 .unwrap_or_default();
             Action::Rewrite(command)
@@ -120,7 +146,9 @@ pub fn parse_action(args: &[String]) -> Action {
         // `oo hook claude` — stdin-JSON PreToolUse processor (issue #172).
         // Must be recognised before the `Run` fall-through, else `hook` would
         // be treated as a shell command to spawn.
-        Some("hook") => Action::Hook(args.get(1).cloned()),
+        // An empty agent string (`oo hook ""`) is kept as `Some("")` so main
+        // reports the unknown-agent error (byte-identical to pre-#213).
+        Some("hook") => Action::Hook(args.get(1).map(|a| a.to_string_lossy().into_owned())),
         _ => Action::Run(args.to_vec()),
     }
 }
@@ -132,7 +160,11 @@ pub fn parse_action(args: &[String]) -> Action {
 /// The classification is `None` on the two pre-classification error paths
 /// (no command given, or exec failure) — there is no output to classify, so
 /// no `Classification` value is fabricated.
-pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
+///
+/// On unix the original argument bytes are passed to the child unchanged;
+/// the command line used for the label is the lossy (U+FFFD) text (see
+/// #213).
+pub fn run_command_args(args: &[OsString]) -> (i32, Option<Classification>) {
     if args.is_empty() {
         eprintln!("oo: no command specified");
         return (1, None);
@@ -151,7 +183,7 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
     };
 
     let exit_code = output.exit_code;
-    let command = args.join(" ");
+    let command = argv::lossy_join(args);
 
     // Classify
     let merged = output.merged_lossy();
@@ -164,7 +196,7 @@ pub fn run_command_args(args: &[String]) -> (i32, Option<Classification>) {
 }
 
 /// Run a command via [`exec::run`], classify the output, and render it. Returns the exit code.
-pub fn cmd_run(args: &[String]) -> i32 {
+pub fn cmd_run(args: &[OsString]) -> i32 {
     run_command_args(args).0
 }
 
@@ -289,13 +321,13 @@ pub fn cmd_forget() -> i32 {
     }
 }
 
-pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
+pub fn cmd_learn(args: &[OsString], hint: Option<&str>) -> i32 {
     if args.is_empty() {
         eprintln!("oo: learn requires a command");
         return 1;
     }
 
-    // Run the command normally first
+    // Run the command normally first (original bytes on unix)
     let output = match exec::run(args) {
         Ok(o) => o,
         Err(e) => {
@@ -305,7 +337,7 @@ pub fn cmd_learn(args: &[String], hint: Option<&str>) -> i32 {
     };
 
     let exit_code = output.exit_code;
-    let command = args.join(" ");
+    let command = argv::lossy_join(args);
     let merged = output.merged_lossy();
     let original_size = merged.len();
 

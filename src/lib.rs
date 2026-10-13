@@ -59,6 +59,12 @@
 
 /// API key presence check for `oo learn`.
 pub mod api_key;
+/// OS-string argv helpers: lossy display and UTF-8-or-reject conversion (issue #213).
+#[doc(hidden)]
+pub mod argv;
+#[cfg(test)]
+#[path = "argv_tests.rs"]
+mod argv_tests;
 /// Command output classification and intelligent truncation.
 pub mod classify;
 /// Byte-bounded head+tail truncation, re-exported from [`classify`].

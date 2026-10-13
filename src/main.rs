@@ -1,8 +1,9 @@
 use clap::Parser;
 use double_o::{
-    Action, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
+    Action, argv, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
     cmd_rewrite, cmd_run, learn, learn_status, parse_action, warn_ignored_overrides,
 };
+use std::ffi::OsString;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -24,7 +25,7 @@ struct Cli {
     /// hook (rewrite Bash commands for agent hook processors, e.g. `oo hook claude`),
     /// version (print oo version). Any other command runs as a shell command.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    args: Vec<OsString>,
 }
 
 // ---------------------------------------------------------------------------
@@ -46,13 +47,20 @@ fn main() {
     // Before any dispatch, so the warning appears once on every code path,
     // including the background learn child.
     warn_ignored_overrides();
-    // Intercept _learn_bg before clap parsing (it's a hidden internal command)
-    let raw_args: Vec<String> = std::env::args().collect();
+
+    // Intercept _learn_bg before clap parsing (it's a hidden internal command).
+    // Read argv with args_os and treat the payload path and directory as
+    // Path so a non-UTF-8 TMPDIR works fully (see #213).
+    let raw_args: Vec<OsString> = std::env::args_os().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
         let status = learn_status::learn_status_path();
         match (raw_args.get(2), raw_args.get(3)) {
             (Some(path), Some(dir)) => {
-                let _ = learn::run_background(path, std::path::Path::new(dir), &status);
+                let _ = learn::run_background(
+                    std::path::Path::new(path),
+                    std::path::Path::new(dir),
+                    &status,
+                );
             }
             // Older parents pass only the path: report it, and leave the file alone
             // because argv is untrusted and the directory is what makes it a payload.
@@ -69,6 +77,17 @@ fn main() {
     }
 
     let cli = Cli::parse();
+    let args = cli.args;
+
+    // Pre-validate the reserved subcommand's arguments (see #213): a
+    // non-UTF-8 first word is simply the command to run, while a non-UTF-8
+    // argument given to an oo-owned option or a reserved subcommand's own
+    // text argument is rejected with exit 2 and the stderr line
+    // `oo: argument is not valid UTF-8`.
+    if let Err(msg) = argv::reject_non_utf8_reserved_args(&args) {
+        eprintln!("{msg}");
+        std::process::exit(2);
+    }
 
     // Show any pending learn-status message from a previous background learn.
     // Runs before command dispatch so the user sees the result on the next invocation.
@@ -77,7 +96,7 @@ fn main() {
         learn_status::check_and_clear_learn_status(&status_path);
     }
 
-    let exit_code = match parse_action(&cli.args) {
+    let exit_code = match parse_action(&args) {
         Action::Help(None) => {
             println!("oo — Context-efficient command runner for AI coding agents");
             println!();

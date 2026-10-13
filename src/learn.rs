@@ -304,12 +304,15 @@ pub fn spawn_background(
 ///
 /// `payload_dir` is the directory the parent created the payload in; the name
 /// check uses it rather than this process's environment.
+///
+/// `data_path` is the payload file path (a [`Path`], so a non-UTF-8 TMPDIR
+/// works fully); see issue #213.
 pub fn run_background(
-    data_path: &str,
+    data_path: &Path,
     payload_dir: &Path,
     status_path: &Path,
 ) -> Result<(), Error> {
-    let path = Path::new(data_path);
+    let path = data_path;
     // argv is untrusted: only a payload-shaped name directly in `payload_dir` is
     // read or removed, which rejects paths like /dev/zero. It does not reject a
     // FIFO with such a name, which would block the read. The payload can hold

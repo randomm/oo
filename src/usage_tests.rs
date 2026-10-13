@@ -2,9 +2,10 @@
 
 use crate::commands::{Action, parse_action};
 use crate::usage::{for_subcommand, reserved_names};
+use std::ffi::OsString;
 
-fn args(t: &[&str]) -> Vec<String> {
-    t.iter().map(|s| s.to_string()).collect()
+fn args(t: &[&str]) -> Vec<OsString> {
+    t.iter().map(|s| OsString::from(s)).collect()
 }
 
 #[test]
