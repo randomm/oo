@@ -108,6 +108,22 @@ When no pattern matches, oo uses command category to determine behavior:
 
 A pattern whose success strategy yields a summary takes priority over category defaults. Among patterns, project-local, then user, then built-in are checked in that order, and the first match wins. Within one directory, pattern files are loaded in unsorted directory-listing order, so when two patterns in the same directory match a command, which one wins is not defined; keep their `command_match` values disjoint.
 
+### Arguments and non-UTF-8 handling
+
+Wrapped-command arguments are passed to the child process verbatim as OS bytes on
+Unix (byte-exact passthrough, including non-UTF-8 file names). The command line
+recorded for labels, history, classification, and the learn payload is the
+lossy UTF-8 conversion of those bytes (invalid sequences become U+FFFD).
+
+Reserved subcommand names and oo's own option values are matched only when they
+are valid UTF-8. A non-UTF-8 argument given to an oo-owned option or to a
+reserved subcommand's own text argument (for example `oo recall <bytes>`,
+`oo forget <bytes>`, or `oo learn --hint <bytes> …`) is rejected with exit code
+2 and the stderr line `oo: argument is not valid UTF-8` — never a panic.
+A non-UTF-8 first word that is not a reserved name is simply the command to run.
+On non-Unix platforms, wrapped-command arguments are converted lossily instead
+of passed through.
+
 ### Exit codes
 
 Returns the exit code of the wrapped command.

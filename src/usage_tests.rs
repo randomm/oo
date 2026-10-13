@@ -2,9 +2,10 @@
 
 use crate::commands::{Action, parse_action};
 use crate::usage::{for_subcommand, reserved_names};
+use std::ffi::OsString;
 
-fn args(t: &[&str]) -> Vec<String> {
-    t.iter().map(|s| s.to_string()).collect()
+fn args(t: &[&str]) -> Vec<OsString> {
+    t.iter().map(|s| OsString::from(s)).collect()
 }
 
 #[test]
@@ -31,7 +32,7 @@ fn non_reserved_name_has_no_usage() {
 fn every_reserved_name_is_dispatched_not_run() {
     for sub in reserved_names() {
         assert!(
-            !matches!(parse_action(&args(&[sub])), Action::Run(_)),
+            !matches!(parse_action(&args(&[sub])), Action::Run { .. }),
             "`oo {sub}` must be a reserved dispatch, not a shell command"
         );
     }
@@ -66,7 +67,7 @@ fn help_flag_not_first_argument_is_not_intercepted() {
 #[test]
 fn non_reserved_command_with_help_flag_still_runs() {
     match parse_action(&args(&["cargo", "--help"])) {
-        Action::Run(a) => assert_eq!(a, args(&["cargo", "--help"])),
+        Action::Run { os, .. } => assert_eq!(os, args(&["cargo", "--help"])),
         _ => panic!("`oo cargo --help` must still execute"),
     }
 }

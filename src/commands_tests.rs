@@ -1,8 +1,9 @@
 use super::*;
 use crate::classify::Classification;
+use std::ffi::OsString;
 
-fn s(s: &str) -> String {
-    s.to_string()
+fn s(s: &str) -> OsString {
+    OsString::from(s)
 }
 
 // ---------------------------------------------------------------------------
@@ -289,7 +290,11 @@ fn test_parse_action_init_agent_and_format_mutually_exclusive() {
         s("--format"),
         s("generic"),
     ];
-    let err = parse_init_mode(&args[1..]).expect_err("combining --agent and --format must error");
+    let init_args: Vec<String> = args[1..]
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let err = parse_init_mode(&init_args).expect_err("combining --agent and --format must error");
     assert!(
         err.contains("--agent and --format"),
         "error must name the conflicting flags: {err:?}"
@@ -297,7 +302,11 @@ fn test_parse_action_init_agent_and_format_mutually_exclusive() {
 
     // Flag order must not matter.
     let args = vec![s("init"), s("--format"), s("claude"), s("--agent"), s("pi")];
-    let err = parse_init_mode(&args[1..]).expect_err("order must not matter");
+    let init_args: Vec<String> = args[1..]
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let err = parse_init_mode(&init_args).expect_err("order must not matter");
     assert!(
         err.contains("--agent and --format"),
         "error must name the conflicting flags: {err:?}"
@@ -307,13 +316,15 @@ fn test_parse_action_init_agent_and_format_mutually_exclusive() {
 #[test]
 fn test_parse_action_run_unknown() {
     let args = vec![s("echo"), s("hi")];
-    assert!(matches!(parse_action(&args), Action::Run(a) if a[0] == "echo"));
+    assert!(matches!(parse_action(&args), Action::Run { os: a, .. } if a[0] == "echo"));
 }
 
 #[test]
 fn test_parse_action_run_hyphen_arg() {
     let args = vec![s("ls"), s("-la")];
-    assert!(matches!(parse_action(&args), Action::Run(a) if a == vec!["ls", "-la"]));
+    assert!(
+        matches!(parse_action(&args), Action::Run { os: a, .. } if a == vec![OsString::from("ls"), OsString::from("-la")])
+    );
 }
 
 fn make_output(exit_code: i32, stdout: &str) -> exec::CommandOutput {

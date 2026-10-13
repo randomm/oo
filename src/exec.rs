@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::process::Command;
 
 use crate::error::Error;
@@ -57,7 +58,7 @@ impl CommandOutput {
 /// assert_eq!(output.exit_code, 0);
 /// assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));
 /// ```
-pub fn run(args: &[String]) -> Result<CommandOutput, Error> {
+pub fn run(args: &[OsString]) -> Result<CommandOutput, Error> {
     let output = Command::new(&args[0]).args(&args[1..]).output()?;
 
     let exit_code = output.status.code().unwrap_or(128);

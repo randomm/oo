@@ -1,8 +1,9 @@
 use clap::Parser;
 use double_o::{
-    Action, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
+    Action, argv, cmd_forget, cmd_help, cmd_hook, cmd_init, cmd_learn, cmd_patterns, cmd_recall,
     cmd_rewrite, cmd_run, learn, learn_status, parse_action, warn_ignored_overrides,
 };
+use std::ffi::OsString;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -24,7 +25,7 @@ struct Cli {
     /// hook (rewrite Bash commands for agent hook processors, e.g. `oo hook claude`),
     /// version (print oo version). Any other command runs as a shell command.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    args: Vec<OsString>,
 }
 
 // ---------------------------------------------------------------------------
@@ -46,13 +47,20 @@ fn main() {
     // Before any dispatch, so the warning appears once on every code path,
     // including the background learn child.
     warn_ignored_overrides();
-    // Intercept _learn_bg before clap parsing (it's a hidden internal command)
-    let raw_args: Vec<String> = std::env::args().collect();
+
+    // Intercept _learn_bg before clap parsing (it's a hidden internal command).
+    // D5: read argv with args_os and treat payload path and directory as Path,
+    // so a non-UTF-8 TMPDIR works fully.
+    let raw_args: Vec<OsString> = std::env::args_os().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
         let status = learn_status::learn_status_path();
         match (raw_args.get(2), raw_args.get(3)) {
             (Some(path), Some(dir)) => {
-                let _ = learn::run_background(path, std::path::Path::new(dir), &status);
+                let _ = learn::run_background(
+                    std::path::Path::new(path),
+                    std::path::Path::new(dir),
+                    &status,
+                );
             }
             // Older parents pass only the path: report it, and leave the file alone
             // because argv is untrusted and the directory is what makes it a payload.
@@ -69,6 +77,49 @@ fn main() {
     }
 
     let cli = Cli::parse();
+    let args = cli.args;
+
+    // D3: a non-UTF-8 first word that is not a reserved name is simply the
+    // command to run. A non-UTF-8 argument given to an oo-owned option or to
+    // a reserved subcommand's own text argument is REJECTED with exit code 2
+    // and the stderr line `oo: argument is not valid UTF-8`.
+    //
+    // `oo learn` is special-cased: only the `--hint` value is oo-owned, while
+    // all wrapped-command arguments pass through as raw bytes (D2).
+    let first_is_reserved = args
+        .first()
+        .and_then(|a| argv::utf8_or(a).ok())
+        .map(|name| argv::RESERVED_SUBCOMMANDS.contains(&name.as_str()))
+        .unwrap_or(false);
+
+    if first_is_reserved {
+        let first_is_learn =
+            args.first().and_then(|a| argv::utf8_or(a).ok()) == Some("learn".to_string());
+        if first_is_learn {
+            // Reject only non-UTF-8 values following `--hint` (D3: the hint
+            // is consumed by oo and must be valid UTF-8).
+            let mut i = 1;
+            while i < args.len() {
+                if args[i] == "--hint" && i + 1 < args.len() {
+                    if argv::utf8_or(&args[i + 1]).is_err() {
+                        eprintln!("{}", argv::NON_UTF8_ARG_ERR);
+                        std::process::exit(2);
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+        } else {
+            // Every remaining argument is oo-owned and must be valid UTF-8.
+            for arg in &args[1..] {
+                if argv::utf8_or(arg).is_err() {
+                    eprintln!("{}", argv::NON_UTF8_ARG_ERR);
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
 
     // Show any pending learn-status message from a previous background learn.
     // Runs before command dispatch so the user sees the result on the next invocation.
@@ -77,7 +128,7 @@ fn main() {
         learn_status::check_and_clear_learn_status(&status_path);
     }
 
-    let exit_code = match parse_action(&cli.args) {
+    let exit_code = match parse_action(&args) {
         Action::Help(None) => {
             println!("oo — Context-efficient command runner for AI coding agents");
             println!();
@@ -112,7 +163,7 @@ fn main() {
             println!("oo {}", env!("CARGO_PKG_VERSION"));
             0
         }
-        Action::Run(args) => cmd_run(&args),
+        Action::Run { os, .. } => cmd_run(&os),
         Action::Recall { query, full } => cmd_recall(&query, full),
         Action::Forget => cmd_forget(),
         Action::Learn(args, hint) => cmd_learn(&args, hint.as_deref()),
