@@ -316,14 +316,14 @@ fn test_parse_action_init_agent_and_format_mutually_exclusive() {
 #[test]
 fn test_parse_action_run_unknown() {
     let args = vec![s("echo"), s("hi")];
-    assert!(matches!(parse_action(&args), Action::Run { os: a, .. } if a[0] == "echo"));
+    assert!(matches!(parse_action(&args), Action::Run(a) if a[0] == "echo"));
 }
 
 #[test]
 fn test_parse_action_run_hyphen_arg() {
     let args = vec![s("ls"), s("-la")];
     assert!(
-        matches!(parse_action(&args), Action::Run { os: a, .. } if a == vec![OsString::from("ls"), OsString::from("-la")])
+        matches!(parse_action(&args), Action::Run(a) if a == vec![OsString::from("ls"), OsString::from("-la")])
     );
 }
 

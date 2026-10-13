@@ -9,10 +9,6 @@
 
 use std::ffi::OsString;
 
-#[cfg(unix)]
-#[allow(unused_imports)]
-use std::os::unix::ffi::OsStringExt as _;
-
 /// The stderr line printed when an argument that `oo` itself must interpret
 /// is not valid UTF-8 (D3).
 pub const NON_UTF8_ARG_ERR: &str = "oo: argument is not valid UTF-8";
@@ -36,28 +32,11 @@ pub fn lossy_display(arg: &OsString) -> String {
 /// otherwise.
 ///
 /// Reserved subcommand names and `oo`'s own option values are matched only
-/// as valid UTF-8 (D3): the check runs on the OS string before any lossy
-/// conversion, on all platforms. On unix the check is byte-exact (the OS
-/// string is a byte vector); on non-unix it is approximate (the lossy
-/// encoding is the platform representation).
+/// as valid UTF-8 (D3): `OsStr::to_str` is `None` for non-UTF-8 content on
+/// every platform, so this check runs on the OS string before any lossy
+/// conversion, identically on unix and non-unix.
 pub fn utf8_or(arg: &OsString) -> Result<String, &'static str> {
-    #[cfg(unix)]
-    {
-        // On unix the OS string is a byte vector, so the check is byte-exact.
-        let bytes = arg.as_encoded_bytes();
-        std::str::from_utf8(bytes)
-            .map(|s| s.to_string())
-            .map_err(|_| NON_UTF8_ARG_ERR)
-    }
-    #[cfg(not(unix))]
-    {
-        // On non-unix the lossy encoding is the platform representation;
-        // the check is approximate (valid UTF-8 passes, invalid bytes fail).
-        let lossy = arg.to_string_lossy().into_owned();
-        std::str::from_utf8(lossy.as_bytes())
-            .map(|s| s.to_string())
-            .map_err(|_| NON_UTF8_ARG_ERR)
-    }
+    arg.to_str().map(str::to_string).ok_or(NON_UTF8_ARG_ERR)
 }
 
 /// Join OS-string arguments with spaces, converting each lossily, for the

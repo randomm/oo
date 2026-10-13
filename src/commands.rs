@@ -22,13 +22,10 @@ pub enum Action {
     /// but a pending learn-status message is printed and cleared before this action.
     Usage(&'static str),
     /// Run an argument that `oo` itself must interpret as a shell command.
-    /// `os` carries the original bytes (unix passthrough); `lossy` is the
-    /// U+FFFD-converted text recorded for labels, history, and the learn
-    /// payload (D4).
-    Run {
-        os: Vec<OsString>,
-        lossy: Vec<String>,
-    },
+    /// The original bytes (unix passthrough) are what the child receives; the
+    /// command line recorded for labels, history, and the learn payload is
+    /// the lossy (U+FFFD) text, computed in `run_command_args` (D4).
+    Run(Vec<OsString>),
     Recall {
         query: String,
         full: bool,
@@ -49,8 +46,8 @@ pub enum Action {
 /// with `parse_learn_action`'s `--hint` handling). Searching for the literal
 /// string `--full` in a query is unsupported; document that in help.
 fn parse_recall_action(args: &[OsString]) -> Action {
-    // D3: the reserved subcommand's own text arguments are matched only as
-    // valid UTF-8; anything else is rejected by the caller before dispatch.
+    // D3: non-UTF-8 arguments are rejected in main before this function is
+    // called; recall's own text is otherwise recorded lossily (D4).
     let full = args.iter().any(|a| a == "--full");
     let query = args
         .iter()
@@ -151,18 +148,7 @@ pub fn parse_action(args: &[OsString]) -> Action {
                 .map(|a| a.to_string_lossy().into_owned())
                 .filter(|s| !s.is_empty()),
         ),
-        _ => {
-            // D4: the lossy text is recorded for labels/history; the original
-            // bytes (unix) are what the child receives.
-            let lossy = args
-                .iter()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect::<Vec<_>>();
-            Action::Run {
-                os: args.to_vec(),
-                lossy,
-            }
-        }
+        _ => Action::Run(args.to_vec()),
     }
 }
 

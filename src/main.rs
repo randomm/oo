@@ -163,7 +163,7 @@ fn main() {
             println!("oo {}", env!("CARGO_PKG_VERSION"));
             0
         }
-        Action::Run { os, .. } => cmd_run(&os),
+        Action::Run(args) => cmd_run(&args),
         Action::Recall { query, full } => cmd_recall(&query, full),
         Action::Forget => cmd_forget(),
         Action::Learn(args, hint) => cmd_learn(&args, hint.as_deref()),
