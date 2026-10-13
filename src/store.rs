@@ -103,8 +103,8 @@ pub trait Store {
     /// - `SqliteStore` deletes by the same `project` predicate that `search`
     ///   uses, so `recall` finds nothing afterwards.
     /// - `VipuneStore` returns success only when a listing finds no entries;
-    ///   any other stop is an error (see `docs/security-model.md`, Data
-    ///   Retention).
+    ///   any other stop is an error (see `docs/security-model.md#command-output`,
+    ///   Data retention).
     ///
     /// Returns the number of entries deleted.
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error>;
