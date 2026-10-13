@@ -5,13 +5,10 @@
 
 use crate::error::Error;
 use crate::project_drain::{
-    self, Entry, EntryId, MAX_PASSES, ProjectEntries, partial_delete_error,
+    self, Entry, EntryId, LIST_CAP, MAX_PASSES, ProjectEntries, partial_delete_error,
 };
 use crate::store::{SearchResult, SessionMeta, Store, parse_meta};
 use crate::util;
-
-/// Vipune's per-call row cap for `list`.
-const LIST_CAP: usize = 10_000;
 
 /// Vipune-backed store with semantic search capabilities.
 ///
@@ -40,10 +37,11 @@ impl VipuneStore {
 
 /// `Store` for Vipune.
 ///
-/// `delete_project` and `cleanup_stale` are thin adapters over the shared
-/// loops in `crate::project_drain`, which list and delete page by page. The
-/// stop rules and error messages are documented in `docs/security-model.md`,
-/// Data Retention.
+/// `delete_project` and `cleanup_stale` run the shared loops in
+/// `crate::project_drain`, which list and delete page by page. Vipune has no
+/// bulk delete and no offset, so a project is drained only when a listing is
+/// empty; any other stop is an error. Stale cleanup inspects one window of the
+/// newest entries Vipune lists and reports failed deletes as an error.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
@@ -98,7 +96,7 @@ impl Store for VipuneStore {
     }
 
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let cutoff = util::now_epoch() - max_age_secs;
+        let cutoff = project_drain::stale_cutoff(util::now_epoch(), max_age_secs);
         let drain = ProjectDrain {
             store: &self.store,
             project_id,
@@ -120,15 +118,14 @@ impl Store for VipuneStore {
 static WINDOW_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Adapter scope for the drain functions: borrows the Vipune store and pins
-/// the project id, so the backend-agnostic loop never needs to know either.
+/// the project id, so the backend-agnostic loops never need to know either.
 struct ProjectDrain<'a> {
     store: &'a vipune::MemoryStore,
     project_id: &'a str,
 }
 
-/// `ProjectEntries` adapter over a `VipuneStore`: maps Vipune's rows to
-/// [`Entry`], parsing `SessionMeta` from the metadata JSON. Only `oo`-sourced
-/// entries with parseable metadata get an `oo_timestamp`. Enumeration uses
+/// `ProjectEntries` adapter over a `VipuneStore`. It maps Vipune rows and
+/// leaves the staleness decision to `crate::project_drain`. Enumeration uses
 /// `list`, never `search`: search is similarity-based and would not return
 /// every entry.
 impl ProjectEntries for ProjectDrain<'_> {
@@ -141,19 +138,27 @@ impl ProjectEntries for ProjectDrain<'_> {
             .into_iter()
             .map(|m| {
                 let meta = m.metadata.as_deref().and_then(parse_meta);
+                let is_oo_entry = meta.as_ref().is_some_and(|meta| meta.source == "oo");
                 Entry {
-                    id: EntryId::new(m.id),
-                    oo_timestamp: meta
-                        .filter(|meta| meta.source == "oo")
-                        .map(|meta| meta.timestamp),
+                    id: m.id,
+                    timestamp: meta.map_or(0, |meta| meta.timestamp),
+                    is_oo_entry,
                 }
             })
             .collect())
     }
 
-    fn delete(&self, id: &EntryId) -> Result<bool, Error> {
+    fn list_ids(&self, limit: usize) -> Result<Vec<EntryId>, Error> {
+        let memories = self
+            .store
+            .list(self.project_id, limit)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(memories.into_iter().map(|m| m.id).collect())
+    }
+
+    fn delete(&self, id: &str) -> Result<bool, Error> {
         self.store
-            .delete(id.as_str())
+            .delete(id)
             .map_err(|e| Error::Store(e.to_string()))
     }
 }
