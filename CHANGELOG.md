@@ -12,8 +12,7 @@ All notable changes to this project will be documented in this file.
 - *(#213)* The `#[doc(hidden)]` items `double_o::commands::{parse_action, run_command_args, cmd_run, cmd_learn}` take `&[OsString]`, and `Action::Run` and `Action::Learn` carry `Vec<OsString>`. New `#[doc(hidden)]` module `double_o::argv`.
 - *(#213)* Non-UTF-8 arguments to oo's own inputs (`recall`, `forget`, `help`, `rewrite`, `hook`, `init`, `patterns`, `version`, and the `--hint` value of `learn`) exit 2 with `oo: argument is not valid UTF-8` instead of panicking. Wrapped-command arguments are not checked.
 - *(#213)* On Unix, wrapped-command arguments reach the child as their original bytes; labels, history and learn payloads use the lossy UTF-8 form.
-- *(#214)* Non-regular `*.toml` entries (FIFOs, directories, dangling symlinks) in the project and user pattern directories are skipped without being opened.
-- *(#215)* With `vipune-store`, `oo forget` fails with `partial delete: deleted N, failed M; entries remain` unless a listing finds no entries, instead of reporting success after a partial delete.
+- *(#215)* With `vipune-store`, `oo forget` fails with `partial delete: deleted N, failed M; entries remain` unless a listing finds no entries. Previously a failed delete also failed, with `partial delete: removed X of Y entries, Z deletion(s) failed`, and a listing whose ids all returned not-found reported success. If the listing itself fails, the message is `partial delete: deleted N, failed M; entries may remain; listing failed: <detail>`.
 - *(#215)* With `vipune-store`, retention cleanup attempts every stale entry in the newest 10,000 Vipune entries and returns an error if any delete fails; it previously stopped at the first failed delete. It does not drain the project.
 
 ### Bug Fixes
