@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-13
+
+### ⚠ Breaking Changes
+
+- *(#213)* `double_o::exec::run` takes `&[OsString]` instead of `&[String]`, and `double_o::learn::run_background` takes `data_path: &Path` instead of `&str`; its full signature is now `run_background(data_path: &Path, payload_dir: &Path, status_path: &Path)`. See [Library API Stability](docs/architecture.md#library-api-stability).
+- *(#213)* The `#[doc(hidden)]` items `double_o::commands::{parse_action, run_command_args, cmd_run, cmd_learn}` and the crate-root re-exports `double_o::{parse_action, cmd_run, cmd_learn}` take `&[OsString]`. `Action::Run` carries `Vec<OsString>`; `Action::Learn` carries `Vec<OsString>` and `Option<String>`. New `#[doc(hidden)]` module `double_o::argv`.
+- *(#213)* Non-UTF-8 arguments to oo's own inputs (`recall`, `forget`, `help`, `rewrite`, `hook`, `init`, `patterns`, `version`, and the `--hint` value of `learn`) exit 2 with `oo: argument is not valid UTF-8` instead of panicking. Wrapped-command arguments are not checked, except that a non-UTF-8 argument directly after a `--hint` token in `oo learn` is rejected even when it belongs to the wrapped command.
+- *(#213)* On Unix, wrapped-command arguments reach the child as their original bytes; labels, history and learn payloads use the lossy UTF-8 form.
+- *(#215)* With `vipune-store`, `oo forget` fails with `partial delete: deleted N, failed M; entries remain` unless a listing finds no entries. Previously a failed delete also failed, with `partial delete: removed X of Y entries, Z deletion(s) failed`, and a listing whose ids all returned not-found reported success. If the listing itself fails, the message is `partial delete: deleted N, failed M; entries may remain; listing failed: <detail>`.
+- *(#215)* With `vipune-store`, retention cleanup inspects the newest 10,000 entries of the project, attempts to delete every stale `oo` entry among them, and returns an error if any delete fails; it previously stopped at the first failed delete. It does not drain the project.
+
+### Bug Fixes
+
+- *(#214)* Skip non-regular *.toml entries in the pattern loader
+- *(#213)* Never panic on non-UTF-8 arguments; pass wrapped-command bytes through
+- *(#215)* Drain Vipune projects completely or fail loudly; saturating cleanup cutoff
+- *(#220)* Make env-dependent lib tests hermetic; NUL-terminate the mkfifo path
+
+### Documentation
+
+- Record the library API stability policy; exec::run and learn::run_background take OsString/Path
+
+
 ## [0.9.0] - 2026-10-12
 
 ### ⚠ Breaking Changes
