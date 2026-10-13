@@ -4,8 +4,8 @@
 //! ever converted with a panicking API. On unix, wrapped-command arguments
 //! are passed to the child verbatim as [`OsString`] bytes; text that `oo`
 //! itself consumes (reserved-subcommand names and arguments, labels, history)
-//! is converted with [`OsStr::to_string_lossy`] (D4) or rejected with a
-//! single helper (D3).
+//! is converted lossily with `OsStr::to_string_lossy` (D4) or rejected with
+//! a single helper (D3).
 
 use std::ffi::OsString;
 
@@ -18,15 +18,6 @@ pub const NON_UTF8_ARG_ERR: &str = "oo: argument is not valid UTF-8";
 pub const RESERVED_SUBCOMMANDS: &[&str] = &[
     "recall", "forget", "learn", "version", "help", "init", "patterns", "rewrite", "hook",
 ];
-
-/// The argument's bytes converted lossily (invalid sequences become U+FFFD).
-///
-/// This is the form `oo` records for the command line: label, classification,
-/// history, and the learn payload all use it, so a non-UTF-8 wrapped argument
-/// never panics (D4).
-pub fn lossy_display(arg: &OsString) -> String {
-    arg.to_string_lossy().into_owned()
-}
 
 /// The argument's text, when it is valid UTF-8; `Err(NON_UTF8_ARG_ERR)`
 /// otherwise.

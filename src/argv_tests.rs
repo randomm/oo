@@ -1,27 +1,10 @@
 //! Unit tests for the OS-string argv helpers (issue #213).
 
-use crate::argv::{NON_UTF8_ARG_ERR, lossy_display, lossy_join, utf8_or};
+use crate::argv::{NON_UTF8_ARG_ERR, lossy_join, utf8_or};
 use std::ffi::OsString;
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStringExt as _;
-
-/// A single invalid byte (0xFF) maps to U+FFFD; valid bytes around it are
-/// preserved untouched.
-#[cfg(unix)]
-#[test]
-fn lossy_display_maps_invalid_bytes_to_replacement_char() {
-    let arg = OsString::from_vec(vec![0x68, 0xff, 0x69]);
-    assert_eq!(lossy_display(&arg), "h\u{fffd}i");
-}
-
-/// Valid UTF-8 passes through byte-for-byte (including multi-byte characters).
-#[test]
-fn lossy_display_leaves_valid_utf8_unchanged() {
-    let arg = OsString::from("héllo");
-    assert_eq!(lossy_display(&arg), "héllo");
-    assert_eq!(lossy_display(&OsString::from("")), "");
-}
 
 /// Non-UTF-8 bytes are rejected with the fixed message, never converted.
 #[cfg(unix)]
