@@ -257,6 +257,18 @@ fn non_utf8_tmpdir_learn_background_leaves_no_payload() {
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
+    // Accept and immediately close each connection. A bound-but-unaccepted
+    // socket would let the child's TCP connect succeed while the HTTP response
+    // never arrives, hanging `ureq` well past the 10 s bound so the status
+    // line (written only after the API call) never appeared and the test
+    // passed vacuously. Accepting + dropping makes the child fail fast and
+    // write the FAILED status line within the deadline.
+    let listener_accept = listener.try_clone().unwrap();
+    std::thread::spawn(move || {
+        for _ in listener_accept.incoming() {
+            // Drop the connection on drop: immediate close for the client.
+        }
+    });
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_oo"));
     cmd.args(["learn", "sh", "-c", "exit 1", "x"])
@@ -284,20 +296,35 @@ fn non_utf8_tmpdir_learn_background_leaves_no_payload() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Poll for the status file to appear (bounded wait), then check for leftovers.
+    // Poll for the status file to appear (bounded wait). It must appear with a
+    // FAILED line: fail loudly instead of passing vacuously or racing the
+    // detached `_learn_bg` child. In the production code the payload is removed
+    // right after it is read, BEFORE the status line is written, so once
+    // learn-status.log exists the removal has already happened.
     let status_path = cfg.join("learn-status.log");
     let deadline = Instant::now() + TIMEOUT;
     loop {
         if status_path.exists() {
-            break;
+            if let Ok(status) = std::fs::read_to_string(&status_path) {
+                if status.contains("FAILED") {
+                    break;
+                }
+            }
         }
         if Instant::now() > deadline {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    let status = std::fs::read_to_string(&status_path)
+        .unwrap_or_else(|e| panic!("learn-status.log must appear within {TIMEOUT:?} (the detached _learn_bg child wrote it); got: {e}"));
+    assert!(
+        status.contains("FAILED"),
+        "learn-status.log must record a FAILED line within {TIMEOUT:?}; got: {status}"
+    );
 
-    // Check for .tmp* leftovers in the non-UTF-8 TMPDIR.
+    // The payload was removed before the status line was written, so the
+    // leftover check is now ordered after the removal has happened.
     let leftovers: Vec<OsString> = std::fs::read_dir(&bad_tmp)
         .unwrap()
         .filter_map(|e| e.ok())
@@ -308,15 +335,6 @@ fn non_utf8_tmpdir_learn_background_leaves_no_payload() {
         leftovers.is_empty(),
         "non-UTF-8 TMPDIR must not have .tmp* leftovers: {leftovers:?}"
     );
-
-    // The status file should record a FAILED line.
-    if status_path.exists() {
-        let status = std::fs::read_to_string(&status_path).unwrap();
-        assert!(
-            status.contains("FAILED"),
-            "learn-status.log must record a FAILED line; got: {status}"
-        );
-    }
 }
 
 /// `_learn_bg <payload-shaped file> <non-UTF-8 dir containing it>` removes the file.

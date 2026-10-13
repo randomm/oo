@@ -1,6 +1,7 @@
 //! Unit tests for the OS-string argv helpers (issue #213).
 
 use crate::argv::{NON_UTF8_ARG_ERR, lossy_join, reject_non_utf8_reserved_args, utf8_or};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 
 #[cfg(unix)]
@@ -121,4 +122,21 @@ fn reject_non_utf8_learn_hint_rejected_wrapped_ok() {
         OsString::from("echo"),
     ];
     assert_eq!(reject_non_utf8_reserved_args(&ok_hint), Ok(()));
+}
+
+/// Sync guard: `argv::RESERVED_SUBCOMMANDS` must stay identical to the
+/// reserved names in the `USAGE` table in `usage.rs`; drift means a
+/// subcommand was added to one list but not the other, which this test catches.
+#[test]
+fn reserved_subcommands_match_usage_table() {
+    let argv_names = crate::argv::RESERVED_SUBCOMMANDS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let usage_names = crate::usage::reserved_names().collect::<BTreeSet<_>>();
+    assert_eq!(
+        argv_names, usage_names,
+        "a subcommand was added to one reserved-name list but not the other: argv = {:?}, usage = {:?}",
+        argv_names, usage_names
+    );
 }
