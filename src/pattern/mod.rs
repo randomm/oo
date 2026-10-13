@@ -5,6 +5,9 @@ use std::sync::LazyLock;
 pub use self::builtins::builtin_patterns;
 pub use self::toml::{FailureSection, PatternFile, load_user_patterns, parse_pattern_str};
 
+// Crate-internal helper for `oo patterns` (see `commands_patterns`).
+pub(crate) use self::toml::is_pattern_file;
+
 // Internal re-export for learn module
 #[doc(hidden)]
 pub use self::toml::validate_pattern_regexes;

@@ -244,6 +244,8 @@ oo learn --hint "compact test summary" pytest tests/
 
 ### Pattern file naming
 
+Only regular files (or symlinks to regular files) named *.toml are read; directories, FIFOs, sockets, devices and dangling symlinks are skipped without being opened. Commands other than oo patterns skip unreadable files silently; oo patterns reports them.
+
 The filename is derived from the command:
 
 - `cargo test` → `cargo-test.toml`
