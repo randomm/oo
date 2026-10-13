@@ -44,7 +44,7 @@ Every command (whether a reserved subcommand or shell command) goes through exec
    - Everything else → shell command execution
 
 **Key functions**:
-- `run(args)` — Execute a shell command and capture stdout, stderr, exit code
+- `run(args: &[OsString])` — Execute a shell command and capture stdout, stderr, exit code
 - `CommandOutput` — Struct holding captured output
 
 ### 2. Output Classification
@@ -245,6 +245,21 @@ See [Security Model](security-model.md) for details on:
 - Local data storage
 - API key handling
 - Command injection prevention
+
+## Library API Stability
+
+The crate (`double-o`) is published to crates.io for the `oo` binary (`cargo install double-o`). Its library target (`double_o`, `src/lib.rs`) exists for tests and integration. It carries **no stability guarantee** before 1.0: breaking library changes ship in a minor version (0.x → 0.y).
+
+`#[doc(hidden)]` items are not covered by cargo-semver-checks and may change in any release. This includes the `argv` module and the hidden `commands` items re-exported from the crate root.
+
+Library signature changes since v0.9.0:
+
+| Item | v0.9.0 | Now |
+|------|--------|-----|
+| `exec::run` | `run(args: &[String])` | `run(args: &[OsString])` |
+| `learn::run_background` | `run_background(data_path: &str, ...)` | `run_background(data_path: &Path, ...)` |
+| `commands::parse_action`, `run_command_args`, `cmd_run`, `cmd_learn` (hidden) | `&[String]` | `&[OsString]` |
+| `commands::Action::Run` / `Action::Learn` (hidden) | `Vec<String>` | `Vec<OsString>` |
 
 ## Further Reading
 
