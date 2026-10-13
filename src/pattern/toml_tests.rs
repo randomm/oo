@@ -1,7 +1,8 @@
 //! Unit tests for `is_pattern_file` and `load_user_patterns` on a directory
 //! mixing regular files with non-regular `*.toml` entries.
 
-use super::{is_pattern_file, load_user_patterns};
+use super::load_user_patterns;
+use crate::pattern::is_pattern_file;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use tempfile::TempDir;
@@ -51,7 +52,6 @@ fn is_pattern_file_classifies_regular_and_nonregular_entries() {
     assert!(is_pattern_file(&to_regular).unwrap(), "symlink to regular");
 
     let fifo = path.join("fifo.toml");
-    // SAFETY: a valid path buffer and zero mode; the call is `mkfifo(2)`.
     // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
     let rc = unsafe {
         libc::mkfifo(
