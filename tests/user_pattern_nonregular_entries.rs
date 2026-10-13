@@ -6,6 +6,7 @@
 
 #![cfg(unix)]
 
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::fs::symlink;
 use std::os::unix::net::UnixListener;
@@ -55,10 +56,22 @@ fn run_oo(
         }
     };
 
-    let out = child.wait_with_output().expect("child is already reaped");
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let stdout = read_pipe(&mut child.stdout);
+    let stderr = read_pipe(&mut child.stderr);
     (status, stdout, stderr)
+}
+
+/// Reads a piped child's stdout or stderr to EOF after the child has been
+/// reaped (so the pipe is already closed and no writer remains to block us).
+fn read_pipe<R>(pipe: &mut Option<R>) -> String
+where
+    R: std::io::Read,
+{
+    let mut buf = String::new();
+    if let Some(mut p) = pipe.take() {
+        let _ = std::io::Read::read_to_string(&mut p, &mut buf);
+    }
+    buf
 }
 
 /// Creates one `*.toml` entry of each non-regular kind in `patterns`.
@@ -80,7 +93,14 @@ fn create_stray(patterns: &Path, name: &str) {
         "dangling.toml" => symlink(patterns.join("missing-target.toml"), &path).unwrap(),
         "zero.toml" => symlink("/dev/zero", &path).unwrap(),
         "socket.toml" => {
-            let listener = UnixListener::bind(&path).unwrap();
+            // The unix(7) socket path is limited to 104-108 bytes depending
+            // on the OS; `tempfile` paths under a deep `TMPDIR` can exceed
+            // that. Fail loudly instead of a cryptic `bind` error.
+            if path.as_os_str().len() > 104 {
+                panic!("socket path too long for a unix socket: {path:?}");
+            }
+            let listener = UnixListener::bind(&path)
+                .unwrap_or_else(|e| panic!("bind({}): {e}", path.display()));
             drop(listener);
         }
         _ => panic!("unhandled stray kind {name}"),
@@ -229,6 +249,105 @@ fn valid_pattern_beside_stray_fifo_is_still_applied() {
     assert!(
         stdout.contains('✗'),
         "pattern-matched failure run should show the ✗ line, stdout: {stdout}"
+    );
+}
+
+/// Spawns `oo` with an isolated config/data dir, feeds `stdin` to the
+/// child, waits at most `DEADLINE`, and fails the test if the child was
+/// still running.
+fn run_oo_with_stdin(
+    config: &TempDir,
+    data: &TempDir,
+    cwd: &TempDir,
+    args: &[&str],
+    stdin: &str,
+) -> (ExitStatus, String, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_oo"))
+        .args(args)
+        .current_dir(cwd.path())
+        .env("OO_CONFIG_DIR", config.path())
+        .env("OO_DATA_DIR", data.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin is piped")
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    // Drop the parent's stdin handle so the child sees EOF and can finish.
+    drop(child.stdin.take());
+
+    let deadline = Instant::now() + DEADLINE;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    // Regression: the stray entry blocked `oo`. Kill and reap.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!(
+                        "oo {args:?} did not exit within {DEADLINE:?} — the non-regular entry was not skipped"
+                    );
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => panic!("failed to wait on oo {args:?}"),
+        }
+    };
+
+    let stdout = read_pipe(&mut child.stdout);
+    let stderr = read_pipe(&mut child.stderr);
+    (status, stdout, stderr)
+}
+
+/// `oo hook claude` is the motivating trigger in issue #214: a fresh process
+/// per Bash tool call, so a stray FIFO in the user patterns dir would stall
+/// the agent. The hook shares the `PATTERNS` LazyLock with `oo rewrite`
+/// (src/hook.rs), but this exercises the hook's own entry point with a
+/// spawned binary so a regression that changes hook-path pattern loading is
+/// caught.
+#[test]
+fn hook_claude_with_stray_fifo_still_rewrites() {
+    let config = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let patterns = config.path().join("patterns");
+    std::fs::create_dir_all(&patterns).unwrap();
+
+    // A user pattern for `pytest` next to a stray FIFO — the pattern must
+    // still apply while the FIFO is skipped without being opened.
+    std::fs::write(patterns.join("pytest.toml"), "command_match = \"pytest\"\n").unwrap();
+    let fifo = patterns.join("fifo.toml");
+    // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
+    let rc = unsafe {
+        libc::mkfifo(
+            fifo.to_str().unwrap().as_ptr().cast::<libc::c_char>(),
+            0o600,
+        )
+    };
+    assert_eq!(rc, 0, "mkfifo: {}", std::io::Error::last_os_error());
+
+    // PreToolUse JSON for a Bash tool call (same shape as `hook_tests.rs`).
+    let stdin = "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"pytest -q\"}}";
+    let (status, stdout, stderr) =
+        run_oo_with_stdin(&config, &data, &cwd, &["hook", "claude"], stdin);
+    assert_eq!(status.code(), Some(0), "hook claude failed: {stderr}");
+
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("hook output must be valid JSON: {stdout}");
+    assert_eq!(
+        v["hookSpecificOutput"]["hookEventName"], "PreToolUse",
+        "hookSpecificOutput: {stdout}"
+    );
+    assert_eq!(
+        v["hookSpecificOutput"]["updatedInput"]["command"].as_str(),
+        Some("oo pytest -q"),
+        "user pattern must rewrite through the hook: {stdout}"
     );
 }
 
