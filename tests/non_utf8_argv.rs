@@ -386,3 +386,60 @@ fn learn_bg_keeps_non_payload_file_with_byte_exact_message() {
         "status must contain 'not a learn payload'; got: {status}"
     );
 }
+
+/// `oo hook ""` must print the same stderr as main (the unknown-agent error),
+/// not the no-agent error. Regression guard for the `.filter(|s| !s.is_empty())`
+/// that was added during the OsString migration (issue #213).
+#[test]
+fn valid_utf8_hook_empty_string_matches_main_behavior() {
+    let (mut cmd, _root) = oo_sandboxed();
+    cmd.arg("hook").arg("");
+
+    let output = run_with_timeout(cmd);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "oo hook \"\" must exit 1; got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr == "oo: unknown hook agent ''; supported hook agents: claude\n",
+        "stderr must match main's exact unknown-agent error; got: {stderr:?}"
+    );
+}
+
+/// Table-driven: every reserved subcommand's own text argument, when given
+/// non-UTF-8 bytes, must be rejected with exit 2 and the D3 rejection line.
+#[test]
+fn all_reserved_subcommands_reject_non_utf8_text_arg() {
+    let byte = OsString::from_vec(vec![0xff]);
+    let cases: &[(&str, &[&str])] = &[
+        ("recall", &["recall"] as &[&str]),
+        ("forget", &["forget"].as_ref()),
+        ("learn --hint", &["learn", "--hint"].as_ref()),
+        ("help", &["help"].as_ref()),
+        ("rewrite", &["rewrite"].as_ref()),
+        ("hook", &["hook"].as_ref()),
+        ("init --format", &["init", "--format"].as_ref()),
+        ("patterns", &["patterns"].as_ref()),
+        ("version", &["version"].as_ref()),
+    ];
+
+    for &(label, prefix) in cases {
+        let (mut cmd, _root) = oo_sandboxed();
+        cmd.args(prefix.as_ref()).arg(&byte);
+        let output = run_with_timeout(cmd);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "oo {label} <non-UTF-8> must exit 2; got {:?}",
+            output.status.code()
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("argument is not valid UTF-8"),
+            "oo {label} stderr must contain the D3 rejection message; got: {stderr}"
+        );
+    }
+}

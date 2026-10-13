@@ -73,8 +73,12 @@ fn parse_learn_action(args: &[OsString]) -> Action {
             // The hint is consumed by oo, so it must be valid UTF-8 (D3).
             if let Some(hint_text) = iter.next() {
                 match argv::utf8_or(hint_text) {
+                    // Unreachable for non-UTF-8: main rejects such arguments
+                    // with exit 2 before parse_action runs (D3).
+                    Err(_) => result.push(hint_text.clone()),
                     Ok(text) if !text.starts_with('-') => hint = Some(text),
-                    _ => result.push(hint_text.clone()),
+                    // The next arg is a flag, treat it as part of the command
+                    Ok(_) => result.push(hint_text.clone()),
                 }
             }
             // If no hint text after --hint, treat as no hint
@@ -143,11 +147,9 @@ pub fn parse_action(args: &[OsString]) -> Action {
         // `oo hook claude` — stdin-JSON PreToolUse processor (issue #172).
         // Must be recognised before the `Run` fall-through, else `hook` would
         // be treated as a shell command to spawn.
-        Some("hook") => Action::Hook(
-            args.get(1)
-                .map(|a| a.to_string_lossy().into_owned())
-                .filter(|s| !s.is_empty()),
-        ),
+        // An empty agent string (`oo hook ""`) is kept as `Some("")` so main
+        // reports the unknown-agent error (byte-identical to pre-#213).
+        Some("hook") => Action::Hook(args.get(1).map(|a| a.to_string_lossy().into_owned())),
         _ => Action::Run(args.to_vec()),
     }
 }
