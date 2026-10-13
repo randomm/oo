@@ -1,6 +1,6 @@
 //! Unit tests for the OS-string argv helpers (issue #213).
 
-use crate::argv::{NON_UTF8_ARG_ERR, lossy_join, utf8_or};
+use crate::argv::{NON_UTF8_ARG_ERR, lossy_join, reject_non_utf8_reserved_args, utf8_or};
 use std::ffi::OsString;
 
 #[cfg(unix)]
@@ -56,4 +56,69 @@ fn lossy_join_leaves_valid_utf8_unchanged() {
         OsString::from("echo hi"),
     ];
     assert_eq!(lossy_join(&args), "sh -c echo hi");
+}
+
+/// A non-UTF-8 first word is simply the command to run: it can never match
+/// a reserved name, so the arguments pass through as bytes.
+#[cfg(unix)]
+#[test]
+fn reject_non_utf8_non_utf8_first_word_ok() {
+    let args = vec![OsString::from_vec(vec![0xff]), OsString::from("x")];
+    assert_eq!(reject_non_utf8_reserved_args(&args), Ok(()));
+}
+
+/// A non-reserved first word passes through: a non-UTF-8 later argument is
+/// part of the wrapped command, not an oo-owned option value.
+#[cfg(unix)]
+#[test]
+fn reject_non_utf8_non_reserved_first_word_ok() {
+    let args = vec![
+        OsString::from("sh"),
+        OsString::from("-c"),
+        OsString::from_vec(vec![0xff]),
+    ];
+    assert_eq!(reject_non_utf8_reserved_args(&args), Ok(()));
+}
+
+/// A reserved first word (other than `learn`) makes every remaining argument
+/// oo-owned, so a non-UTF-8 text argument is rejected.
+#[cfg(unix)]
+#[test]
+fn reject_non_utf8_reserved_first_word_with_bad_arg() {
+    let args = vec![OsString::from("recall"), OsString::from_vec(vec![0xff])];
+    assert_eq!(reject_non_utf8_reserved_args(&args), Err(NON_UTF8_ARG_ERR));
+}
+
+/// `learn` is special-cased: a non-UTF-8 value after `--hint` is rejected,
+/// while a non-UTF-8 wrapped-command word passes through (as does a valid
+/// hint).
+#[cfg(unix)]
+#[test]
+fn reject_non_utf8_learn_hint_rejected_wrapped_ok() {
+    let bad_hint = vec![
+        OsString::from("learn"),
+        OsString::from("--hint"),
+        OsString::from_vec(vec![0xff]),
+        OsString::from("echo"),
+    ];
+    assert_eq!(
+        reject_non_utf8_reserved_args(&bad_hint),
+        Err(NON_UTF8_ARG_ERR)
+    );
+
+    let ok_wrapped = vec![
+        OsString::from("learn"),
+        OsString::from("--hint"),
+        OsString::from("compress"),
+        OsString::from_vec(vec![0xff]),
+    ];
+    assert_eq!(reject_non_utf8_reserved_args(&ok_wrapped), Ok(()));
+
+    let ok_hint = vec![
+        OsString::from("learn"),
+        OsString::from("--hint"),
+        OsString::from("compress"),
+        OsString::from("echo"),
+    ];
+    assert_eq!(reject_non_utf8_reserved_args(&ok_hint), Ok(()));
 }

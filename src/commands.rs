@@ -24,7 +24,7 @@ pub enum Action {
     /// Run an argument that `oo` itself must interpret as a shell command.
     /// The original bytes (unix passthrough) are what the child receives; the
     /// command line recorded for labels, history, and the learn payload is
-    /// the lossy (U+FFFD) text, computed in `run_command_args` (D4).
+    /// the lossy (U+FFFD) text, computed in `run_command_args` (see #213).
     Run(Vec<OsString>),
     Recall {
         query: String,
@@ -46,8 +46,8 @@ pub enum Action {
 /// with `parse_learn_action`'s `--hint` handling). Searching for the literal
 /// string `--full` in a query is unsupported; document that in help.
 fn parse_recall_action(args: &[OsString]) -> Action {
-    // D3: non-UTF-8 arguments are rejected in main before this function is
-    // called; recall's own text is otherwise recorded lossily (D4).
+    // Non-UTF-8 arguments are rejected in main before this function is
+    // called; recall's own text is otherwise recorded lossily (see #213).
     let full = args.iter().any(|a| a == "--full");
     let query = args
         .iter()
@@ -70,15 +70,14 @@ fn parse_learn_action(args: &[OsString]) -> Action {
     while let Some(arg) = iter.next() {
         if arg == "--hint" {
             // Take the next argument as the hint text, but only if it's not a flag.
-            // The hint is consumed by oo, so it must be valid UTF-8 (D3).
             if let Some(hint_text) = iter.next() {
                 match argv::utf8_or(hint_text) {
-                    // Unreachable for non-UTF-8: main rejects such arguments
-                    // with exit 2 before parse_action runs (D3).
-                    Err(_) => result.push(hint_text.clone()),
+                    // Valid UTF-8 that does not start with `-` is the hint text.
                     Ok(text) if !text.starts_with('-') => hint = Some(text),
-                    // The next arg is a flag, treat it as part of the command
-                    Ok(_) => result.push(hint_text.clone()),
+                    // The next arg is a flag, treat it as part of the command. Main
+                    // rejects a non-UTF-8 hint before this point, so the `_` arm
+                    // only sees flag-like values in practice.
+                    _ => result.push(hint_text.clone()),
                 }
             }
             // If no hint text after --hint, treat as no hint
@@ -91,14 +90,14 @@ fn parse_learn_action(args: &[OsString]) -> Action {
 }
 
 pub fn parse_action(args: &[OsString]) -> Action {
-    // D3: a non-UTF-8 first word is simply the command to run — reserved
-    // names are matched only when the first word is valid UTF-8, and the
-    // match below compares the lossy text (a non-UTF-8 first word never
-    // equals a reserved name).
+    // A non-UTF-8 first word is simply the command to run — reserved names
+    // are matched only when the first word is valid UTF-8, and the match
+    // below compares the lossy text (a non-UTF-8 first word never equals a
+    // reserved name).
 
     // `oo <reserved> --help|-h`: the flag must be the first argument after the
-    // subcommand. Intercepted before any side-effecting arm runs.
-    // D3: the first word must be valid UTF-8 for the lookup to succeed.
+    // subcommand. Intercepted before any side-effecting arm runs. The first
+    // word must be valid UTF-8 for the lookup to succeed (see #213).
     if args.get(1).is_some_and(|a| a == "--help" || a == "-h") {
         let first_str = args.first().and_then(|s| argv::utf8_or(s).ok());
         if let Some(name) = first_str {
@@ -163,7 +162,8 @@ pub fn parse_action(args: &[OsString]) -> Action {
 /// no `Classification` value is fabricated.
 ///
 /// On unix the original argument bytes are passed to the child unchanged;
-/// the command line used for the label is the lossy (U+FFFD) text (D4).
+/// the command line used for the label is the lossy (U+FFFD) text (see
+/// #213).
 pub fn run_command_args(args: &[OsString]) -> (i32, Option<Classification>) {
     if args.is_empty() {
         eprintln!("oo: no command specified");

@@ -49,8 +49,8 @@ fn main() {
     warn_ignored_overrides();
 
     // Intercept _learn_bg before clap parsing (it's a hidden internal command).
-    // D5: read argv with args_os and treat payload path and directory as Path,
-    // so a non-UTF-8 TMPDIR works fully.
+    // Read argv with args_os and treat the payload path and directory as
+    // Path so a non-UTF-8 TMPDIR works fully (see #213).
     let raw_args: Vec<OsString> = std::env::args_os().collect();
     if raw_args.get(1).is_some_and(|a| a == "_learn_bg") {
         let status = learn_status::learn_status_path();
@@ -79,46 +79,14 @@ fn main() {
     let cli = Cli::parse();
     let args = cli.args;
 
-    // D3: a non-UTF-8 first word that is not a reserved name is simply the
-    // command to run. A non-UTF-8 argument given to an oo-owned option or to
-    // a reserved subcommand's own text argument is REJECTED with exit code 2
-    // and the stderr line `oo: argument is not valid UTF-8`.
-    //
-    // `oo learn` is special-cased: only the `--hint` value is oo-owned, while
-    // all wrapped-command arguments pass through as raw bytes (D2).
-    let first_is_reserved = args
-        .first()
-        .and_then(|a| argv::utf8_or(a).ok())
-        .map(|name| argv::RESERVED_SUBCOMMANDS.contains(&name.as_str()))
-        .unwrap_or(false);
-
-    if first_is_reserved {
-        let first_is_learn =
-            args.first().and_then(|a| argv::utf8_or(a).ok()) == Some("learn".to_string());
-        if first_is_learn {
-            // Reject only non-UTF-8 values following `--hint` (D3: the hint
-            // is consumed by oo and must be valid UTF-8).
-            let mut i = 1;
-            while i < args.len() {
-                if args[i] == "--hint" && i + 1 < args.len() {
-                    if argv::utf8_or(&args[i + 1]).is_err() {
-                        eprintln!("{}", argv::NON_UTF8_ARG_ERR);
-                        std::process::exit(2);
-                    }
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-        } else {
-            // Every remaining argument is oo-owned and must be valid UTF-8.
-            for arg in &args[1..] {
-                if argv::utf8_or(arg).is_err() {
-                    eprintln!("{}", argv::NON_UTF8_ARG_ERR);
-                    std::process::exit(2);
-                }
-            }
-        }
+    // Pre-validate the reserved subcommand's arguments (see #213): a
+    // non-UTF-8 first word is simply the command to run, while a non-UTF-8
+    // argument given to an oo-owned option or a reserved subcommand's own
+    // text argument is rejected with exit 2 and the stderr line
+    // `oo: argument is not valid UTF-8`.
+    if let Err(msg) = argv::reject_non_utf8_reserved_args(&args) {
+        eprintln!("{msg}");
+        std::process::exit(2);
     }
 
     // Show any pending learn-status message from a previous background learn.
