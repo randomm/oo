@@ -4,6 +4,9 @@
 //! Available behind the `vipune-store` feature flag.
 
 use crate::error::Error;
+use crate::project_drain::{
+    self, Entry, EntryId, LIST_CAP, MAX_PASSES, ProjectEntries, partial_delete_error,
+};
 use crate::store::{SearchResult, SessionMeta, Store, parse_meta};
 use crate::util;
 
@@ -34,19 +37,11 @@ impl VipuneStore {
 
 /// `Store` for Vipune.
 ///
-/// Completeness caveat for `delete_project` and `cleanup_stale`: Vipune has no
-/// bulk delete and no offset. `delete_project` repeatedly calls
-/// `list(project, 10_000)` and attempts to delete every entry returned, up to
-/// 10,000 entries per call. It stops after a call that returns fewer than
-/// 10,000 entries, or after a full page in which no deletion returned
-/// `Ok(true)` (an `Ok(false)` is not counted, which stops it from repeating on
-/// ids that never delete). A failed deletion is logged and the page is still
-/// processed. The `failed` count accumulates across pages and is never reset,
-/// so an entry that fails on more than one page is counted once per failure;
-/// the reported failure count can therefore include the same entry more than
-/// once. If `failed` is non-zero at the end, the call returns an error reporting
-/// partial progress. `cleanup_stale` inspects only the first 10,000 entries.
-/// Projects larger than this can keep entries after these calls.
+/// `delete_project` and `cleanup_stale` run the shared loops in
+/// `crate::project_drain`, which list and delete page by page. Vipune has no
+/// bulk delete and no offset, so a project is drained only when a listing is
+/// empty; any other stop is an error. Stale cleanup inspects one window of the
+/// newest entries Vipune lists and reports failed deletes as an error.
 #[cfg(feature = "vipune-store")]
 impl Store for VipuneStore {
     fn index(
@@ -92,79 +87,78 @@ impl Store for VipuneStore {
 
     fn delete_project(&mut self, project_id: &str) -> Result<usize, Error> {
         // Project-scoped delete: drop every entry for this project regardless
-        // of metadata. Completeness is bounded by the paginated `list` below
-        // (see the impl doc); search is similarity-based and is not the criterion.
-        //
-        // Vipune has no bulk-delete, so entries are listed (capped at 10 000
-        // per call) and deleted one-by-one. The stopping rule and its
-        // completeness bound are stated on the impl block above.
-        const PAGE: usize = 10_000;
-        let mut deleted = 0;
-        let mut failed = 0usize;
-        let mut total = 0usize;
-        loop {
-            let entries = self
-                .store
-                .list(project_id, PAGE)
-                .map_err(|e| Error::Store(e.to_string()))?;
-            total += entries.len();
-            let mut page_deletions = 0usize;
-            for entry in &entries {
-                match self.store.delete(&entry.id) {
-                    // `delete` returns `Ok(true)` on success and `Ok(false)`
-                    // when the id did not match any entry. Only `Ok(true)` is
-                    // a real deletion; `Ok(false)` is skipped, not counted.
-                    Ok(true) => {
-                        deleted += 1;
-                        page_deletions += 1;
-                    }
-                    Ok(false) => {}
-                    Err(e) => {
-                        // Keep going so one bad entry does not leave the rest
-                        // of the project behind; report partial progress at the end.
-                        eprintln!("oo: warning: failed to delete entry {}: {e}", entry.id);
-                        failed += 1;
-                    }
-                }
-            }
-            // A short page is the last page of the listing, so stop. This does
-            // not mean every entry was deleted: `Ok(false)` ids are skipped, and
-            // failed deletes are reported as a partial-delete error below.
-            if entries.len() < PAGE {
-                break;
-            }
-            // Guard against an infinite loop: if a full page produced no
-            // real deletions, re-listing would return the same page forever
-            // (e.g. ids that consistently fail or return `Ok(false)`).
-            if page_deletions == 0 {
-                break;
-            }
-        }
-        if failed > 0 {
-            return Err(Error::Store(format!(
-                "partial delete: removed {deleted} of {total} entries, {failed} deletion(s) failed"
-            )));
-        }
-        Ok(deleted)
+        // of metadata.
+        let drain = ProjectDrain {
+            store: &self.store,
+            project_id,
+        };
+        project_drain::drain_project(&drain, LIST_CAP, MAX_PASSES)
     }
 
     fn cleanup_stale(&mut self, project_id: &str, max_age_secs: i64) -> Result<usize, Error> {
-        let now = util::now_epoch();
-        let entries = self
-            .store
-            .list(project_id, 10_000)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let mut count = 0;
-        for entry in entries {
-            if let Some(meta) = entry.metadata.as_deref().and_then(parse_meta) {
-                if meta.source == "oo" && (now - meta.timestamp) > max_age_secs {
-                    self.store
-                        .delete(&entry.id)
-                        .map_err(|e| Error::Store(e.to_string()))?;
-                    count += 1;
-                }
-            }
+        let cutoff = project_drain::stale_cutoff(util::now_epoch(), max_age_secs);
+        let drain = ProjectDrain {
+            store: &self.store,
+            project_id,
+        };
+        let out = project_drain::cleanup_stale_in(&drain, cutoff, LIST_CAP)?;
+        if out.window_capped {
+            project_drain::warn_window_capped_once(&mut std::io::stderr(), &WINDOW_WARNED);
         }
-        Ok(count)
+        if out.failed > 0 {
+            return Err(partial_delete_error(out.deleted, out.failed));
+        }
+        Ok(out.deleted)
+    }
+}
+
+/// Process-wide: both the retention purge and `try_index` call
+/// `cleanup_stale`, so the window-capped warning must not repeat within one
+/// process. Deliberately not per store instance.
+static WINDOW_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Adapter scope for the drain functions: borrows the Vipune store and pins
+/// the project id, so the backend-agnostic loops never need to know either.
+struct ProjectDrain<'a> {
+    store: &'a vipune::MemoryStore,
+    project_id: &'a str,
+}
+
+/// `ProjectEntries` adapter over a `VipuneStore`. It maps Vipune rows and
+/// leaves the staleness decision to `crate::project_drain`. Enumeration uses
+/// `list`, never `search`: search is similarity-based and would not return
+/// every entry.
+impl ProjectEntries for ProjectDrain<'_> {
+    fn list(&self, limit: usize) -> Result<Vec<Entry>, Error> {
+        let memories = self
+            .store
+            .list(self.project_id, limit)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(memories
+            .into_iter()
+            .map(|m| {
+                let meta = m.metadata.as_deref().and_then(parse_meta);
+                let is_oo_entry = meta.as_ref().is_some_and(|meta| meta.source == "oo");
+                Entry {
+                    id: m.id,
+                    timestamp: meta.map_or(0, |meta| meta.timestamp),
+                    is_oo_entry,
+                }
+            })
+            .collect())
+    }
+
+    fn list_ids(&self, limit: usize) -> Result<Vec<EntryId>, Error> {
+        let memories = self
+            .store
+            .list(self.project_id, limit)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(memories.into_iter().map(|m| m.id).collect())
+    }
+
+    fn delete(&self, id: &str) -> Result<bool, Error> {
+        self.store
+            .delete(id)
+            .map_err(|e| Error::Store(e.to_string()))
     }
 }

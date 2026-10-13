@@ -104,6 +104,10 @@ pub mod pattern;
 /// by the dispatch layer and the rewrite/hook feature modules.
 #[doc(hidden)]
 pub mod pattern_load;
+/// Page-based project drain and stale cleanup for backends without bulk
+/// delete or pagination offset (Vipune adapter).
+#[cfg(any(feature = "vipune-store", test))]
+mod project_drain;
 /// Retention of indexed output (`[store] retention` in config.toml).
 mod retention;
 /// Session tracking and management.
