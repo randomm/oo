@@ -84,3 +84,46 @@ jobs:
 
       - name: Compile tests on MSRV
         run: cargo test --locked --no-run
+
+  # Covers the optional `vipune-store` feature (src/store_vipune.rs), which the
+  # `test` and `msrv` jobs never build. Compile and lint only: no vipune-feature
+  # tests exist, and running them would touch the real ~/.vipune store and need
+  # a model download, so `cargo test` is limited to `--no-run`.
+  # Build-time network: vipune -> ort-sys may fetch an ONNX Runtime binary during
+  # `cargo check`; a failed download surfaces as a build failure, not a code failure.
+  vipune:
+    name: Vipune feature
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-vipune-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check vipune-store feature
+        run: cargo check --locked --features vipune-store --all-targets
+
+      - name: Clippy vipune-store feature
+        run: cargo clippy --locked --features vipune-store -- -D warnings
+
+      - name: Compile tests with vipune-store feature
+        run: cargo test --locked --features vipune-store --no-run

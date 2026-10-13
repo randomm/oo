@@ -114,7 +114,7 @@ Orientation for agents new to the codebase:
 | `src/exec.rs` | Shell command execution and output capture |
 | `src/classify.rs` | Classification engine — touch carefully, well-tested |
 | `src/pattern/` | Built-in patterns (list with `oo patterns`), user TOML loading, pattern matching (split into `mod.rs`, `builtins.rs`, `toml.rs`) |
-| `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag |
+| `src/store.rs` | `SqliteStore` (default) + optional `VipuneStore` feature flag (CI builds and lints `--features vipune-store` in the `vipune` job, compile-only for tests; the MSRV job covers default features only) |
 | `src/session.rs` | Project id detection (the session id is informational only) |
 | `src/learn.rs` | LLM integration, background re-exec, Anthropic only |
 | `src/config.rs` | Config and data directory overrides (`OO_CONFIG_DIR`, `OO_DATA_DIR`) and the platform fallback |
