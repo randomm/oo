@@ -11,37 +11,34 @@ use tempfile::TempDir;
 
 const VALID_TOML: &str = "command_match = \"^valid\"\n";
 
-/// Creates a FIFO at `path` via `mkfifo(2)`. Panics with the errno, the path,
-/// whether the parent exists and its listing, so a recurrence of the CI
-/// `mkfifo: No such file or directory` failure (issue #220) is diagnosable.
-/// The path is passed as a NUL-terminated `CString`; a bare `&str` pointer is
-/// not NUL-terminated and would hand the kernel adjacent memory as the path.
+/// Creates a FIFO at `path` via `mkfifo(2)`. The path is passed as a
+/// NUL-terminated `CString`: a bare `&str` pointer is not NUL-terminated.
+/// On failure, the message carries errno, the path, and the parent directory's
+/// existence and listing, so a recurrence of ENOENT can be attributed. No retry.
 fn make_fifo(path: &Path) {
     let c_path = CString::new(path.as_os_str().as_bytes()).expect("path has no interior NUL");
     // SAFETY: `c_path` is a valid NUL-terminated C string; the call is `mkfifo(2)`.
     let rc = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
-    // Capture errno before any other syscall can overwrite it.
-    let err = std::io::Error::last_os_error();
-    if rc != 0 {
-        let parent = path.parent();
-        let parent_exists = parent.is_some_and(Path::exists);
-        let listing = parent.map_or_else(
-            || "no parent".to_owned(),
-            |p| match std::fs::read_dir(p) {
-                Ok(rd) => format!(
-                    "{:?}",
-                    rd.filter_map(Result::ok)
-                        .map(|e| e.file_name())
-                        .collect::<Vec<_>>()
-                ),
-                Err(e) => format!("read_dir failed: {e}"),
-            },
-        );
-        panic!(
-            "mkfifo failed: rc={rc} errno: {err}; path={}; parent_exists={parent_exists}; parent_listing={listing}",
-            path.display()
-        );
+    if rc == 0 {
+        return;
     }
+    // Capture errno before any further syscall can overwrite it.
+    let err = std::io::Error::last_os_error();
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let listing = match std::fs::read_dir(parent) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(", "),
+        Err(e) => format!("read_dir failed: {e}"),
+    };
+    panic!(
+        "mkfifo({}) failed: {err}; parent {} exists={}; parent listing=[{listing}]",
+        path.display(),
+        parent.display(),
+        parent.exists()
+    );
 }
 
 /// Creates the named non-regular entries in `dir`: a FIFO, a directory, a

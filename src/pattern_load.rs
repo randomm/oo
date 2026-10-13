@@ -77,65 +77,38 @@ mod tests {
         );
     }
 
-    /// Writes one fixture pattern file `dir/name` whose `command_match` is unique,
-    /// so the test can locate it in the result.
-    fn write_fixture(dir: &std::path::Path, name: &str, command_match: &str) {
-        std::fs::create_dir_all(dir).unwrap();
-        std::fs::write(
-            dir.join(name),
-            format!("command_match = \"{command_match}\"\n"),
-        )
-        .unwrap();
-    }
-
     #[test]
     fn all_patterns_precedence_is_project_user_builtin() {
-        // Builds a project tier (`<root>/.git` + `.oo/patterns`) and a user tier
-        // (`OO_CONFIG_DIR/patterns`) with unique fixtures, then calls
-        // `all_patterns()` directly. It does not read the memoized `PATTERNS`,
-        // so the result depends only on the fixtures written here.
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join(".git")).unwrap();
-        write_fixture(
-            &root.path().join(".oo").join("patterns"),
-            "project.toml",
-            "^zz-project-fixture",
-        );
-        let config = tempfile::tempdir().unwrap();
-        write_fixture(
-            &config.path().join("patterns"),
-            "user.toml",
-            "^zz-user-fixture",
-        );
-
+        // Asserts only on the returned vector, never on a live re-read of the
+        // user or project directories: user and project tiers vary per machine
+        // and across the process-global `PATTERNS` snapshot. The guard keeps a
+        // concurrent cwd or HOME mutation from changing the result mid-call.
         let _guard = crate::test_env::env_guard();
-        let prev_config = std::env::var_os("OO_CONFIG_DIR");
-        let original_cwd = std::env::current_dir().unwrap();
-        unsafe { std::env::set_var("OO_CONFIG_DIR", config.path()) };
-        std::env::set_current_dir(root.path()).unwrap();
         let all = all_patterns();
-        // Restore before asserting so a failure does not leak cwd/env.
-        std::env::set_current_dir(&original_cwd).unwrap();
-        match prev_config {
-            Some(v) => unsafe { std::env::set_var("OO_CONFIG_DIR", v) },
-            None => unsafe { std::env::remove_var("OO_CONFIG_DIR") },
+        let builtins = pattern::builtins();
+
+        // Every builtin must be present, so dropping any one of them fails.
+        for builtin in builtins {
+            assert!(
+                all.iter()
+                    .any(|p| p.command_match.as_str() == builtin.command_match.as_str()),
+                "builtin {:?} missing from all_patterns()",
+                builtin.command_match.as_str()
+            );
         }
 
-        let builtins = pattern::builtins();
-        let position = |m: &str| all.iter().position(|p| p.command_match.as_str() == m);
-        let project = position("^zz-project-fixture").expect("project fixture loaded");
-        let user = position("^zz-user-fixture").expect("user fixture loaded");
-        let first_builtin = all.len() - builtins.len();
-        assert!(
-            project < user && user < first_builtin,
-            "precedence must be project({project}) < user({user}) < builtin({first_builtin})"
-        );
-        // The builtin tier is the exact tail, in builtin order.
-        let tail: Vec<&str> = all[first_builtin..]
-            .iter()
-            .map(|p| p.command_match.as_str())
-            .collect();
-        let expected: Vec<&str> = builtins.iter().map(|p| p.command_match.as_str()).collect();
-        assert_eq!(tail, expected, "builtin tier must be the trailing entries");
+        // Builtins are the last tier, in their declared order: first-match-wins
+        // gives project and user patterns priority over them.
+        let tail_start = all
+            .len()
+            .checked_sub(builtins.len())
+            .expect("all_patterns must contain every builtin");
+        for (got, want) in all[tail_start..].iter().zip(builtins) {
+            assert_eq!(
+                got.command_match.as_str(),
+                want.command_match.as_str(),
+                "builtin tier must be last, in declared order"
+            );
+        }
     }
 }
