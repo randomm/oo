@@ -57,9 +57,9 @@ pub(crate) trait ProjectEntries {
 pub(crate) const LIST_CAP: usize = 10_000;
 
 /// Upper bound on list/delete passes in [`drain_project`], guarding against a
-/// concurrent writer that keeps refilling the project. Kept at the value the
-/// issue fixed (decision D2). The worst case is this many full listings plus a
-/// delete per row, about 10 million row reads, before the drain gives up.
+/// concurrent writer that keeps refilling the project. The worst case is this
+/// many full listings plus a delete per row, about 10 million row reads, before
+/// the drain gives up.
 pub(crate) const MAX_PASSES: usize = 1_000;
 
 /// Outcome of [`cleanup_stale_in`].
@@ -88,11 +88,9 @@ pub(crate) fn stale_cutoff(now: i64, max_age_secs: i64) -> i64 {
 /// The partial-delete error. The message is a contract documented in
 /// `docs/security-model.md` (Data Retention) and names no per-entry cause.
 pub(crate) fn partial_delete_error(deleted: usize, failed: usize) -> Error {
-    Error::Store(partial_message(deleted, failed, "entries remain"))
-}
-
-fn partial_message(deleted: usize, failed: usize, remain: &str) -> String {
-    format!("partial delete: deleted {deleted}, failed {failed}; {remain}")
+    Error::Store(format!(
+        "partial delete: deleted {deleted}, failed {failed}; entries remain"
+    ))
 }
 
 /// The message of a backend error without the `store error: ` display prefix,
@@ -132,13 +130,14 @@ pub(crate) fn drain_project(
     let mut previous_pass_gone = false;
 
     for _ in 0..max_passes {
-        let ids = store.list_ids(page).map_err(|e| {
-            Error::Store(format!(
-                "{}; listing failed: {}",
-                partial_message(deleted, failed.len(), "entries may remain"),
-                detail(&e)
-            ))
-        })?;
+        let ids = match store.list_ids(page) {
+            Ok(ids) => ids,
+            Err(e) => {
+                // The listing cause goes to stderr; the error keeps the D3 text.
+                eprintln!("oo: warning: failed to list entries: {}", detail(&e));
+                return Err(partial_delete_error(deleted, failed.len()));
+            }
+        };
         if ids.is_empty() {
             return Ok(deleted);
         }
