@@ -60,12 +60,11 @@ fn write_patterns_in<W: Write>(out: &mut W, dir: &Path) -> io::Result<bool> {
         // block forever, so both are skipped. Metadata follows symlinks, so a dangling one is
         // NotFound and skipped; any other stat failure (e.g. EACCES on an unsearchable dir)
         // must surface rather than look like an empty directory.
-        let meta = match std::fs::metadata(&path) {
-            Ok(m) => m,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+        let is_file = match pattern::is_pattern_file(&path) {
+            Ok(b) => b,
             Err(e) => return Err(with_path(&path, &e)),
         };
-        if !meta.is_file() {
+        if !is_file {
             continue;
         }
         let text = match std::fs::read_to_string(&path) {

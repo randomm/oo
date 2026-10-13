@@ -122,7 +122,7 @@ oo uses `clap` for CLI argument parsing, which provides protection against:
 
 ### Pattern Files
 
-Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design:
+Patterns are TOML files with a `command_match` regex and optional `success` and `failure` strategies. Only regular files (or symlinks to regular files) named `*.toml` are read; directories, FIFOs, sockets, devices and dangling symlinks are skipped without being opened. Built-in patterns and user patterns (in the user patterns directory, see Read Access) are trusted by design:
 
 - You installed, wrote, or accepted them. This includes patterns that `oo learn` writes into that directory from LLM output, which you should review.
 - `OO_CONFIG_DIR` is used only when absolute (see [Directories](configuration.md#directories)), so repository files in the current directory are never read as user patterns or configuration because of it.

@@ -125,9 +125,28 @@ pub struct FailureSection {
 // User patterns (TOML on disk)
 // ---------------------------------------------------------------------------
 
+/// Classify a `*.toml` path before it is opened: `Ok(true)` for a regular
+/// file (or a symlink to one), `Ok(false)` for any other file type (directory,
+/// FIFO, socket, device, dangling symlink), `Err` for other metadata errors.
+///
+/// Metadata follows symlinks (`std::fs::metadata`), so the check must happen
+/// before any open: a FIFO or a symlink to `/dev/zero` would otherwise block
+/// or grow without end. The metadata-then-open order has a TOCTOU window;
+/// it is accepted because replacing a pattern file requires write access to
+/// the user's own patterns directory.
+pub(crate) fn is_pattern_file(path: &Path) -> std::io::Result<bool> {
+    match std::fs::metadata(path) {
+        Ok(m) => Ok(m.is_file()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 /// Load user-defined patterns from a directory of TOML files.
 ///
-/// Invalid files are silently skipped.
+/// Invalid files are silently skipped. Non-regular entries (directories,
+/// FIFOs, sockets, devices, dangling symlinks) are skipped without being
+/// opened; a symlink to a regular file is read.
 pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -137,7 +156,9 @@ pub fn load_user_patterns(dir: &Path) -> Vec<Pattern> {
     let mut patterns = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_some_and(|e| e == "toml") {
+        if path.extension().is_some_and(|e| e == "toml")
+            && is_pattern_file(&path).is_ok_and(|ok| ok)
+        {
             if let Ok(p) = load_pattern_file(&path) {
                 patterns.push(p);
             }
@@ -283,6 +304,10 @@ pub fn parse_pattern_str(content: &str) -> Result<Pattern, Error> {
         failure,
     })
 }
+
+#[cfg(test)]
+#[path = "toml_tests.rs"]
+mod tests;
 
 /// Validate all regexes in a TOML pattern string with safety limits.
 ///
