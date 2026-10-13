@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-13
+
+### Bug Fixes
+
+- *(#214)* Skip non-regular *.toml entries in the pattern loader
+- *(#213)* Never panic on non-UTF-8 arguments; pass wrapped-command bytes through
+- *(#215)* Drain Vipune projects completely or fail loudly; saturating cleanup cutoff
+- *(#220)* Make env-dependent lib tests hermetic; NUL-terminate the mkfifo path
+
+### Documentation
+
+- Record the library API stability policy; exec::run and learn::run_background take OsString/Path
+
+
 ## [0.9.0] - 2026-10-12
 
 ### ⚠ Breaking Changes
