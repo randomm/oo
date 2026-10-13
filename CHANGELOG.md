@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### ⚠ Breaking Changes
 
-- *(#213)* `double_o::exec::run` takes `&[OsString]` instead of `&[String]`, and `double_o::learn::run_background` takes `data_path: &Path` instead of `&str`. See [Library API Stability](docs/architecture.md#library-api-stability).
+- *(#213)* `double_o::exec::run` takes `&[OsString]` instead of `&[String]`, and `double_o::learn::run_background` takes `data_path: &Path` instead of `&str`; its full signature is now `run_background(data_path: &Path, payload_dir: &Path, status_path: &Path)`. See [Library API Stability](docs/architecture.md#library-api-stability).
 - *(#213)* The `#[doc(hidden)]` items `double_o::commands::{parse_action, run_command_args, cmd_run, cmd_learn}` and the crate-root re-exports `double_o::{parse_action, cmd_run, cmd_learn}` take `&[OsString]`. `Action::Run` carries `Vec<OsString>`; `Action::Learn` carries `Vec<OsString>` and `Option<String>`. New `#[doc(hidden)]` module `double_o::argv`.
 - *(#213)* Non-UTF-8 arguments to oo's own inputs (`recall`, `forget`, `help`, `rewrite`, `hook`, `init`, `patterns`, `version`, and the `--hint` value of `learn`) exit 2 with `oo: argument is not valid UTF-8` instead of panicking. Wrapped-command arguments are not checked, except that a non-UTF-8 argument directly after a `--hint` token in `oo learn` is rejected even when it belongs to the wrapped command.
 - *(#213)* On Unix, wrapped-command arguments reach the child as their original bytes; labels, history and learn payloads use the lossy UTF-8 form.
