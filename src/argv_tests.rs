@@ -10,7 +10,7 @@ use std::os::unix::ffi::OsStringExt as _;
 #[cfg(unix)]
 #[test]
 fn utf8_or_rejects_invalid_bytes() {
-    let arg = OsString::from_vec(vec![0xff, 0xfe]);
+    let arg = OsString::from_vec(vec![0xff, 0xfe, 0x41]);
     assert_eq!(utf8_or(&arg), Err(NON_UTF8_ARG_ERR));
 }
 
@@ -45,4 +45,15 @@ fn lossy_join_replaces_invalid_bytes_per_argument() {
 fn lossy_join_single_argument() {
     let args = vec![OsString::from("echo hi")];
     assert_eq!(lossy_join(&args), "echo hi");
+}
+
+/// Valid UTF-8 arguments pass through the lossy join unchanged (all platforms).
+#[test]
+fn lossy_join_leaves_valid_utf8_unchanged() {
+    let args = vec![
+        OsString::from("sh"),
+        OsString::from("-c"),
+        OsString::from("echo hi"),
+    ];
+    assert_eq!(lossy_join(&args), "sh -c echo hi");
 }

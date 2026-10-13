@@ -61,7 +61,6 @@
 pub mod api_key;
 /// OS-string argv helpers: lossy display and UTF-8-or-reject conversion (issue #213).
 #[doc(hidden)]
-#[allow(missing_docs)]
 pub mod argv;
 #[cfg(test)]
 #[path = "argv_tests.rs"]
