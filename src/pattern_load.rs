@@ -12,6 +12,7 @@
 //! #151) deliberately uses `pattern::builtins()` only, not this set, so the
 //! `oo learn` display does not consult project or user patterns.
 
+use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::{
@@ -35,10 +36,15 @@ pub static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
 /// `&'static` slice and are not re-read. Called by `oo <cmd>` and by the
 /// [`PATTERNS`] initializer.
 pub fn all_patterns() -> Vec<Pattern> {
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-    all_patterns
+    compose(load_project_patterns(), &learn::patterns_dir())
+}
+
+/// Precedence composition over explicit tier roots. Split out so the precedence
+/// test passes its fixtures in rather than mutating the process cwd or env.
+fn compose(mut all: Vec<Pattern>, user_dir: &Path) -> Vec<Pattern> {
+    all.extend(pattern::load_user_patterns(user_dir));
+    all.extend_from_slice(pattern::builtins());
+    all
 }
 
 /// Load project-local patterns from `<git-root>/.oo/patterns/`.
@@ -49,7 +55,11 @@ pub fn load_project_patterns() -> Vec<Pattern> {
     let Ok(cwd) = std::env::current_dir() else {
         return Vec::new();
     };
-    pattern::load_user_patterns(&find_root(&cwd).join(".oo").join("patterns"))
+    project_patterns_in(&cwd)
+}
+
+fn project_patterns_in(cwd: &Path) -> Vec<Pattern> {
+    pattern::load_user_patterns(&find_root(cwd).join(".oo").join("patterns"))
 }
 
 #[cfg(test)]
@@ -79,12 +89,10 @@ mod tests {
 
     #[test]
     fn all_patterns_precedence_is_project_user_builtin() {
-        // Holds the guard for the whole test: `all_patterns` reads the cwd (project
-        // tier) and `OO_CONFIG_DIR` (user tier) live, and the guard restores both.
         // Each fixture has a unique `command_match`, so the tiers are located by
-        // marker and no live user or project directory is consulted.
-        let _env = crate::test_env::env_guard();
-
+        // marker and no live user or project directory is consulted. The test never
+        // changes cwd or env: a cwd left inside a temp dir that is then deleted
+        // leaks a dead cwd to any child process spawned meanwhile.
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join(".git")).unwrap();
         let project_dir = project.path().join(".oo").join("patterns");
@@ -104,11 +112,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: the shared guard is held, so no other lib test mutates the environment.
-        unsafe { std::env::set_var("OO_CONFIG_DIR", config.path()) };
-        std::env::set_current_dir(project.path()).unwrap();
-
-        let all = all_patterns();
+        let all = compose(project_patterns_in(project.path()), &user_dir);
         let position = |marker: &str| all.iter().position(|p| p.command_match.as_str() == marker);
         let project_at = position("^oo-precedence-project$").expect("project tier missing");
         let user_at = position("^oo-precedence-user$").expect("user tier missing");

@@ -38,6 +38,10 @@ pub struct EnvGuard {
 }
 
 /// Acquires the shared environment guard and snapshots the tracked state.
+///
+/// Create temp dirs BEFORE taking the guard, so cwd/env are restored before they
+/// are deleted: locals drop in reverse declaration order, and a tempdir dropped
+/// while the cwd still points into it leaks a deleted cwd to child processes.
 pub fn env_guard() -> EnvGuard {
     let lock = ENV_LOCK
         .lock()
@@ -81,7 +85,14 @@ impl Drop for Restore {
         }
         if let Some(cwd) = &self.saved_cwd {
             if let Err(e) = std::env::set_current_dir(cwd) {
-                eprintln!("test_env: could not restore cwd {}: {e}", cwd.display());
+                // A leaked cwd is inherited by every later child process; fail the
+                // test that leaked it instead of letting the damage spread.
+                let msg = format!("test_env: could not restore cwd {}: {e}", cwd.display());
+                if std::thread::panicking() {
+                    eprintln!("{msg}");
+                } else {
+                    panic!("{msg}");
+                }
             }
         }
     }
