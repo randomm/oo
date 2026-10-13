@@ -79,31 +79,52 @@ mod tests {
 
     #[test]
     fn all_patterns_precedence_is_project_user_builtin() {
-        // Asserts only on the returned vector, never on a live re-read of the
-        // user or project directories: user and project tiers vary per machine
-        // and across the process-global `PATTERNS` snapshot. The guard keeps a
-        // concurrent cwd or HOME mutation from changing the result mid-call.
-        let _guard = crate::test_env::env_guard();
+        // Holds the guard for the whole test: `all_patterns` reads the cwd (project
+        // tier) and `OO_CONFIG_DIR` (user tier) live, and the guard restores both.
+        // Each fixture has a unique `command_match`, so the tiers are located by
+        // marker and no live user or project directory is consulted.
+        let _env = crate::test_env::env_guard();
+
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join(".git")).unwrap();
+        let project_dir = project.path().join(".oo").join("patterns");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(
+            project_dir.join("project.toml"),
+            "command_match = \"^oo-precedence-project$\"\n",
+        )
+        .unwrap();
+
+        let config = tempfile::tempdir().unwrap();
+        let user_dir = config.path().join("patterns");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        std::fs::write(
+            user_dir.join("user.toml"),
+            "command_match = \"^oo-precedence-user$\"\n",
+        )
+        .unwrap();
+
+        // SAFETY: the shared guard is held, so no other lib test mutates the environment.
+        unsafe { std::env::set_var("OO_CONFIG_DIR", config.path()) };
+        std::env::set_current_dir(project.path()).unwrap();
+
         let all = all_patterns();
+        let position = |marker: &str| all.iter().position(|p| p.command_match.as_str() == marker);
+        let project_at = position("^oo-precedence-project$").expect("project tier missing");
+        let user_at = position("^oo-precedence-user$").expect("user tier missing");
+
+        // Builtins are the last tier, in declared order. First-match-wins then gives
+        // project over user over builtin.
         let builtins = pattern::builtins();
-
-        // Every builtin must be present, so dropping any one of them fails.
-        for builtin in builtins {
-            assert!(
-                all.iter()
-                    .any(|p| p.command_match.as_str() == builtin.command_match.as_str()),
-                "builtin {:?} missing from all_patterns()",
-                builtin.command_match.as_str()
-            );
-        }
-
-        // Builtins are the last tier, in their declared order: first-match-wins
-        // gives project and user patterns priority over them.
-        let tail_start = all
+        let builtin_start = all
             .len()
             .checked_sub(builtins.len())
             .expect("all_patterns must contain every builtin");
-        for (got, want) in all[tail_start..].iter().zip(builtins) {
+        assert!(
+            project_at < user_at && user_at < builtin_start,
+            "precedence must be project({project_at}) < user({user_at}) < builtin({builtin_start})"
+        );
+        for (got, want) in all[builtin_start..].iter().zip(builtins) {
             assert_eq!(
                 got.command_match.as_str(),
                 want.command_match.as_str(),

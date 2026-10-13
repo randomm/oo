@@ -25,6 +25,12 @@ fn make_fifo(path: &Path) {
     // Capture errno before any further syscall can overwrite it.
     let err = std::io::Error::last_os_error();
     let parent = path.parent().unwrap_or(Path::new("."));
+    // `metadata` keeps the error: `exists()` would report EACCES as absence.
+    let parent_state = match std::fs::metadata(parent) {
+        Ok(m) if m.is_dir() => "is a directory".to_string(),
+        Ok(_) => "is not a directory".to_string(),
+        Err(e) => format!("metadata failed: {e}"),
+    };
     let listing = match std::fs::read_dir(parent) {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -34,10 +40,9 @@ fn make_fifo(path: &Path) {
         Err(e) => format!("read_dir failed: {e}"),
     };
     panic!(
-        "mkfifo({}) failed: {err}; parent {} exists={}; parent listing=[{listing}]",
+        "mkfifo({}) failed: {err}; parent {} {parent_state}; parent listing=[{listing}]",
         path.display(),
         parent.display(),
-        parent.exists()
     );
 }
 

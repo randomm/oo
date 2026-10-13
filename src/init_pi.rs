@@ -260,8 +260,6 @@ pub fn run(cwd: &Path, global: bool) -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    // Process-global env mutations are serialized by the single shared guard in
-    // `crate::test_env` (see its docs for the cross-module HOME race it fixes).
     use crate::test_env::env_guard;
 
     fn with_home<F: FnOnce(PathBuf)>(home: &Path, f: F) {

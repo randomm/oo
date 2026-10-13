@@ -4,8 +4,6 @@ mod tests {
     use crate::hook::*;
     use crate::pattern::builtins;
 
-    // Process-global env mutations are serialized by the single shared guard in
-    // `crate::test_env` (see its docs for the cross-module HOME race it fixes).
     use crate::test_env::env_guard;
 
     // -------------------------------------------------------------------

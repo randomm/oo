@@ -338,6 +338,7 @@ fn test_load_learn_config_no_file_returns_default() {
 
 #[test]
 fn test_patterns_dir_is_under_config_dir() {
+    let _env = crate::test_env::env_guard(); // reads OO_CONFIG_DIR, set under this guard elsewhere
     let dir = patterns_dir();
     let s = dir.to_string_lossy();
     assert!(s.ends_with("oo/patterns"), "got: {s}");
