@@ -44,7 +44,7 @@ Every command (whether a reserved subcommand or shell command) goes through exec
    - Everything else → shell command execution
 
 **Key functions**:
-- `run(args: &[OsString])` — Execute a shell command and capture stdout, stderr, exit code
+- `exec::run(args: &[OsString])` — Execute a shell command and capture stdout, stderr, exit code
 - `CommandOutput` — Struct holding captured output
 
 ### 2. Output Classification
@@ -248,14 +248,18 @@ See [Security Model](security-model.md) for details on:
 
 ## Library API Stability
 
-The crate (`double-o`) is published to crates.io for the `oo` binary (`cargo install double-o`). Its library target (`double_o`, `src/lib.rs`) is the public surface for embedding and tests. It carries **no stability guarantee** before 1.0: breaking library changes ship in a minor version (0.x → 0.y).
+The crate `double-o` is released to crates.io by release-plz (`publish = true` in `release-plz.toml`) and ships the `oo` binary. Its library target (`double_o`, `src/lib.rs`) is the public library surface for other Rust code, used for tests and integration. It carries **no stability guarantee** before 1.0: breaking library changes ship in a minor version (0.x → 0.y).
 
-`#[doc(hidden)]` items are hidden from docs only; they are not covered by cargo-semver-checks and may change in any release. This includes the `argv` module and the hidden `commands` items re-exported from the crate root.
+The library surface is every `pub` item reachable from the crate root in `src/lib.rs`. Items marked `#[doc(hidden)]` are part of that surface but are left out of the rendered docs, and they may change in any release (this includes the `argv` module and the hidden `commands` items re-exported from the crate root).
 
-Library signature changes since v0.9.0, for downstream adaptation:
-- `exec::run(&[String])` → `exec::run(&[OsString])`
-- `learn::run_background(data_path: &str, ...)` → `learn::run_background(data_path: &Path, ...)`
-- `#[doc(hidden)]` items (may change at any time): `commands::parse_action`, `run_command_args`, `cmd_run`, `cmd_learn` now take `&[OsString]`; `commands::Action::Run(Vec<OsString>)` and `Action::Learn(Vec<OsString>, Option<String>)`; new `argv` module.
+Automated semver checks may not flag every signature change, so a breaking library change must be marked in its commit (`!` or a `BREAKING CHANGE:` footer).
+
+### Changes to the library surface in 0.10.0
+
+Signatures changed since v0.9.0; downstream code must adapt:
+- `exec::run`: `&[String]` → `&[OsString]`
+- `learn::run_background`: `data_path: &str` → `data_path: &Path`
+- `#[doc(hidden)]`: `commands::parse_action`, `run_command_args`, `cmd_run`, and `cmd_learn` take `&[OsString]`; `Action::Run(Vec<OsString>)` and `Action::Learn(Vec<OsString>, Option<String>)`; new `argv` module.
 
 ## Further Reading
 
