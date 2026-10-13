@@ -213,7 +213,7 @@ oo forget
 
 ### Behavior
 
-Deletes all outputs indexed for the current project, regardless of which session stored them. It exits 1 with an error if the store cannot be opened, a listing fails, or a deletion fails. With the `vipune-store` build, the deletion can report success while entries remain, because the loop stops after a full page in which no deletion succeeded, so entries beyond that page can remain (see #177 for the drain loop work); in a sequential run this needs a concurrent writer to remove every listed entry first. See the stop rule in [Security Model](security-model.md#command-output). This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
+Deletes all outputs indexed for the current project, regardless of which session stored them. It exits 1 with an error if the store cannot be opened, a listing fails, or a deletion fails. With the `vipune-store` build, the deletion deletes the project's entries page by page and fails with `partial delete: deleted N, failed M; entries remain` if any entry could not be deleted; it never reports success while entries remain. This affects only data stored for `oo recall` — it does not affect patterns or configuration files.
 
 ### Output format
 
