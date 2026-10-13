@@ -115,15 +115,13 @@ mod tests {
     #[test]
     #[cfg(not(feature = "vipune-store"))]
     fn test_detect_project_fallback_cwd_fallback() {
-        // When run inside a temp dir with no git, detect_project_fallback must
-        // still return a non-empty string (the directory name or "unknown").
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let original = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(tmp.path()).expect("set_current_dir");
+        // Run from a dir with no git (`/`), so detect_project_fallback must still
+        // return a non-empty string. `/` is never deleted; a temp dir would leak a
+        // dead cwd to child processes spawned while the test runs.
+        let _guard = crate::test_env::env_guard();
+        std::env::set_current_dir("/").expect("set_current_dir");
 
         let id = detect_project_fallback();
-
-        std::env::set_current_dir(&original).expect("restore cwd");
         // Either the dir name (a UUID-ish string) or "unknown" — both are acceptable
         assert!(!id.is_empty(), "fallback must not be empty");
     }

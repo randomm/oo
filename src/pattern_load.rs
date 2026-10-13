@@ -12,6 +12,7 @@
 //! #151) deliberately uses `pattern::builtins()` only, not this set, so the
 //! `oo learn` display does not consult project or user patterns.
 
+use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::{
@@ -35,10 +36,15 @@ pub static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(all_patterns);
 /// `&'static` slice and are not re-read. Called by `oo <cmd>` and by the
 /// [`PATTERNS`] initializer.
 pub fn all_patterns() -> Vec<Pattern> {
-    let mut all_patterns = load_project_patterns();
-    all_patterns.extend(pattern::load_user_patterns(&learn::patterns_dir()));
-    all_patterns.extend_from_slice(pattern::builtins());
-    all_patterns
+    compose(load_project_patterns(), &learn::patterns_dir())
+}
+
+/// Precedence composition over explicit tier roots. Split out so the precedence
+/// test passes its fixtures in rather than mutating the process cwd or env.
+fn compose(mut all: Vec<Pattern>, user_dir: &Path) -> Vec<Pattern> {
+    all.extend(pattern::load_user_patterns(user_dir));
+    all.extend_from_slice(pattern::builtins());
+    all
 }
 
 /// Load project-local patterns from `<git-root>/.oo/patterns/`.
@@ -49,7 +55,11 @@ pub fn load_project_patterns() -> Vec<Pattern> {
     let Ok(cwd) = std::env::current_dir() else {
         return Vec::new();
     };
-    pattern::load_user_patterns(&find_root(&cwd).join(".oo").join("patterns"))
+    project_patterns_in(&cwd)
+}
+
+fn project_patterns_in(cwd: &Path) -> Vec<Pattern> {
+    pattern::load_user_patterns(&find_root(cwd).join(".oo").join("patterns"))
 }
 
 #[cfg(test)]
@@ -79,24 +89,51 @@ mod tests {
 
     #[test]
     fn all_patterns_precedence_is_project_user_builtin() {
-        // The precedence order is load order: project patterns first, then
-        // user config, then builtins. User patterns (from
-        // `learn::patterns_dir`) appear before the builtin tier; verify the
-        // assembly does not drop a tier by checking the counts add up.
-        let all = all_patterns();
-        let user_dir = learn::patterns_dir();
-        let user_count = if user_dir.exists() {
-            pattern::load_user_patterns(&user_dir).len()
-        } else {
-            0
-        };
-        let builtin_count = pattern::builtins().len();
+        // Each fixture has a unique `command_match`, so the tiers are located by
+        // marker and no live user or project directory is consulted. The test never
+        // changes cwd or env: a cwd left inside a temp dir that is then deleted
+        // leaks a dead cwd to any child process spawned meanwhile.
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join(".git")).unwrap();
+        let project_dir = project.path().join(".oo").join("patterns");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(
+            project_dir.join("project.toml"),
+            "command_match = \"^oo-precedence-project$\"\n",
+        )
+        .unwrap();
+
+        let config = tempfile::tempdir().unwrap();
+        let user_dir = config.path().join("patterns");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        std::fs::write(
+            user_dir.join("user.toml"),
+            "command_match = \"^oo-precedence-user$\"\n",
+        )
+        .unwrap();
+
+        let all = compose(project_patterns_in(project.path()), &user_dir);
+        let position = |marker: &str| all.iter().position(|p| p.command_match.as_str() == marker);
+        let project_at = position("^oo-precedence-project$").expect("project tier missing");
+        let user_at = position("^oo-precedence-user$").expect("user tier missing");
+
+        // Builtins are the last tier, in declared order. First-match-wins then gives
+        // project over user over builtin.
+        let builtins = pattern::builtins();
+        let builtin_start = all
+            .len()
+            .checked_sub(builtins.len())
+            .expect("all_patterns must contain every builtin");
         assert!(
-            all.len() >= user_count + builtin_count,
-            "all_patterns({}) must contain at least user({}) + builtin({}) entries",
-            all.len(),
-            user_count,
-            builtin_count
+            project_at < user_at && user_at < builtin_start,
+            "precedence must be project({project_at}) < user({user_at}) < builtin({builtin_start})"
         );
+        for (got, want) in all[builtin_start..].iter().zip(builtins) {
+            assert_eq!(
+                got.command_match.as_str(),
+                want.command_match.as_str(),
+                "builtin tier must be last, in declared order"
+            );
+        }
     }
 }

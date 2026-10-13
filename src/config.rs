@@ -112,12 +112,15 @@ mod tests {
 
     #[test]
     fn unset_override_uses_platform_dirs() {
+        // The platform dirs read HOME live, so hold the guard against HOME mutators.
+        let _env = crate::test_env::env_guard();
         assert_eq!(config_dir_from(None), platform_config_dir());
         assert_eq!(data_dir_from(None), platform_data_dir());
     }
 
     #[test]
     fn blank_override_is_treated_as_unset() {
+        let _env = crate::test_env::env_guard();
         assert_eq!(check_override(OsStr::new("")), Ok(None));
         assert_eq!(check_override(OsStr::new(" \t")), Ok(None));
         assert_eq!(config_dir_from(Some("".into())), platform_config_dir());
@@ -142,6 +145,7 @@ mod tests {
 
     #[test]
     fn relative_overrides_fall_back_to_platform_dirs() {
+        let _env = crate::test_env::env_guard();
         assert_eq!(
             config_dir_from(Some("relative".into())),
             platform_config_dir()

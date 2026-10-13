@@ -259,17 +259,8 @@ pub fn run(cwd: &Path, global: bool) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    // set_var is process-global and tests run on parallel threads — every
-    // env-mutating test below takes this lock first.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    use crate::test_env::env_guard;
 
     fn with_home<F: FnOnce(PathBuf)>(home: &Path, f: F) {
         let _guard = env_guard();
@@ -496,8 +487,8 @@ console.log(JSON.stringify({
 
     #[test]
     fn target_dir_project_under_git_root() {
-        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
         fs::create_dir_all(dir.path().join(".git")).unwrap();
         let sub = dir.path().join("a").join("b");
         fs::create_dir_all(&sub).unwrap();
@@ -509,8 +500,8 @@ console.log(JSON.stringify({
 
     #[test]
     fn target_dir_project_falls_back_to_cwd_outside_repo() {
-        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
         assert_eq!(
             target_dir(dir.path(), false).unwrap(),
             dir.path().join(".pi").join("extensions")
@@ -583,8 +574,8 @@ console.log(JSON.stringify({
 
     #[test]
     fn run_creates_extension_under_project_dir() {
-        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
         run(dir.path(), false).expect("install must succeed");
         let ext = dir.path().join(".pi").join("extensions").join("oo.ts");
         let content = fs::read_to_string(&ext).expect("oo.ts must be created");
@@ -596,8 +587,8 @@ console.log(JSON.stringify({
 
     #[test]
     fn run_is_noop_for_identical_file() {
-        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
         run(dir.path(), false).unwrap();
         let before =
             fs::read_to_string(dir.path().join(".pi").join("extensions").join("oo.ts")).unwrap();
@@ -609,8 +600,8 @@ console.log(JSON.stringify({
 
     #[test]
     fn run_does_not_overwrite_different_file() {
-        let _guard = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
+        let _guard = env_guard();
         let ext_dir = dir.path().join(".pi").join("extensions");
         fs::create_dir_all(&ext_dir).unwrap();
         let ext = ext_dir.join("oo.ts");

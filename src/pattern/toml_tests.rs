@@ -3,31 +3,54 @@
 
 use super::load_user_patterns;
 use crate::pattern::is_pattern_file;
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use tempfile::TempDir;
 
 const VALID_TOML: &str = "command_match = \"^valid\"\n";
 
+/// Creates a FIFO at `path` via `mkfifo(2)`. The path is passed as a
+/// NUL-terminated `CString`: a bare `&str` pointer is not NUL-terminated.
+/// On failure, the message carries errno, the path, and the parent directory's
+/// existence and listing, so a recurrence of ENOENT can be attributed. No retry.
+fn make_fifo(path: &Path) {
+    let c_path = CString::new(path.as_os_str().as_bytes()).expect("path has no interior NUL");
+    // SAFETY: `c_path` is a valid NUL-terminated C string; the call is `mkfifo(2)`.
+    let rc = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    if rc == 0 {
+        return;
+    }
+    // Capture errno before any further syscall can overwrite it.
+    let err = std::io::Error::last_os_error();
+    let parent = path.parent().unwrap_or(Path::new("."));
+    // `metadata` keeps the error: `exists()` would report EACCES as absence.
+    let parent_state = match std::fs::metadata(parent) {
+        Ok(m) if m.is_dir() => "is a directory".to_string(),
+        Ok(_) => "is not a directory".to_string(),
+        Err(e) => format!("metadata failed: {e}"),
+    };
+    let listing = match std::fs::read_dir(parent) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(", "),
+        Err(e) => format!("read_dir failed: {e}"),
+    };
+    panic!(
+        "mkfifo({}) failed: {err}; parent {} {parent_state}; parent listing=[{listing}]",
+        path.display(),
+        parent.display(),
+    );
+}
+
 /// Creates the named non-regular entries in `dir`: a FIFO, a directory, a
 /// dangling symlink, all named `*.toml`. The FIFO is only stat'ed, never
 /// opened, so the tests cannot hang.
 fn create_strays(dir: &Path) {
-    let fifo = dir.join("stray-fifo.toml");
-    // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
-    let rc = unsafe {
-        libc::mkfifo(
-            fifo.to_str().unwrap().as_ptr().cast::<libc::c_char>(),
-            0o600,
-        )
-    };
-    assert_eq!(
-        rc,
-        0,
-        "mkfifo({}): {}",
-        fifo.display(),
-        std::io::Error::last_os_error()
-    );
+    make_fifo(&dir.join("stray-fifo.toml"));
 
     let sub = dir.join("stray-dir.toml");
     std::fs::create_dir(&sub).unwrap();
@@ -52,14 +75,7 @@ fn is_pattern_file_classifies_regular_and_nonregular_entries() {
     assert!(is_pattern_file(&to_regular).unwrap(), "symlink to regular");
 
     let fifo = path.join("fifo.toml");
-    // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
-    let rc = unsafe {
-        libc::mkfifo(
-            fifo.to_str().unwrap().as_ptr().cast::<libc::c_char>(),
-            0o600,
-        )
-    };
-    assert_eq!(rc, 0, "mkfifo: {}", std::io::Error::last_os_error());
+    make_fifo(&fifo);
     assert!(!is_pattern_file(&fifo).unwrap(), "fifo");
 
     let subdir = path.join("subdir.toml");

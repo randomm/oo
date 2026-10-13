@@ -160,3 +160,6 @@ pub use commands::{
 // Internal type re-exported for learn module
 #[doc(hidden)]
 pub use pattern::FailureSection;
+
+#[cfg(test)]
+mod test_env;
