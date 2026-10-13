@@ -302,7 +302,10 @@ fn drain_uses_id_listing_not_entry_listing() {
 fn drain_listing_failure_is_an_error_never_success() {
     let fake = Fake::with_entries(numbered(1..=2)).listing_fails("listing failed");
     let err = drain_project(&fake, 10, MAX_PASSES).unwrap_err();
-    assert_eq!(err.to_string(), partial(0, 0));
+    assert_eq!(
+        err.to_string(),
+        "store error: partial delete: deleted 0, failed 0; entries may remain; listing failed: listing failed"
+    );
 }
 
 // --- cleanup_stale_in --------------------------------------------------------

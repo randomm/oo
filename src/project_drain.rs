@@ -86,7 +86,7 @@ pub(crate) fn stale_cutoff(now: i64, max_age_secs: i64) -> i64 {
 }
 
 /// The partial-delete error. The message is a contract documented in
-/// `docs/security-model.md` (Data Retention) and names no per-entry cause.
+/// `docs/security-model.md` (Command Output) and names no per-entry cause.
 pub(crate) fn partial_delete_error(deleted: usize, failed: usize) -> Error {
     Error::Store(format!(
         "partial delete: deleted {deleted}, failed {failed}; entries remain"
@@ -132,10 +132,14 @@ pub(crate) fn drain_project(
     for _ in 0..max_passes {
         let ids = match store.list_ids(page) {
             Ok(ids) => ids,
+            // After a failed listing the state is unknown, so the message says
+            // entries may remain rather than that they do.
             Err(e) => {
-                // The listing cause goes to stderr; the error keeps the D3 text.
-                eprintln!("oo: warning: failed to list entries: {}", detail(&e));
-                return Err(partial_delete_error(deleted, failed.len()));
+                return Err(Error::Store(format!(
+                    "partial delete: deleted {deleted}, failed {}; entries may remain; listing failed: {}",
+                    failed.len(),
+                    detail(&e)
+                )));
             }
         };
         if ids.is_empty() {
