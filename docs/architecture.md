@@ -142,7 +142,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | Module | Responsibility | Key Types/Functions |
 |--------|---------------|---------------------|
 | [`src/main.rs`](../src/main.rs) | CLI entry point, subcommand dispatch | `Cli`, `main()` |
-| [`src/exec.rs`](../src/exec.rs) | Shell command execution, output capture | `run()`, `CommandOutput` |
+| [`src/exec.rs`](../src/exec.rs) | Shell command execution, output capture | `run(args: &[OsString])`, `CommandOutput` |
 | [`src/classify.rs`](../src/classify.rs) | Classification engine, category detection | `classify()`, `detect_category()` |
 | [`src/failure_display.rs`](../src/failure_display.rs) | Failure-tier display and the recall notice for failed commands | `render()` |
 | [`src/indexing.rs`](../src/indexing.rs) | Index raw output for `oo recall`; shared index-or-warn path | `try_index()`, `index_or_warn()` |
@@ -152,7 +152,7 @@ Unpatterned Large (Data) and Bounded (Content/Unknown) outputs are indexed for f
 | [`src/pattern/toml.rs`](../src/pattern/toml.rs) | Load/parse user patterns from TOML | `load_user_patterns()`, `parse_pattern_str()` |
 | [`src/store.rs`](../src/store.rs) | Storage backends (SQLite, Vipune) | `Store` trait, `SqliteStore` |
 | [`src/session.rs`](../src/session.rs) | Session and project ID detection | `session_id()`, `project_id()` |
-| [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background()`, `LearnConfig` |
+| [`src/learn.rs`](../src/learn.rs) | LLM integration, background pattern learning | `run_background(data_path: &Path)`, `LearnConfig` |
 | [`src/config.rs`](../src/config.rs) | Config and data directory overrides (`OO_CONFIG_DIR`, `OO_DATA_DIR`) and the platform fallback | `config_dir()`, `data_dir()`, `warn_ignored_overrides()` |
 | [`src/retention.rs`](../src/retention.rs) | `[store] retention` parsing and the lazy per-project purge of indexed output | `purge_stale()`, `load_retention()` |
 | [`src/error.rs`](../src/error.rs) | Unified error types | `Error` enum |
@@ -248,18 +248,19 @@ See [Security Model](security-model.md) for details on:
 
 ## Library API Stability
 
-The crate `double-o` is released to crates.io by release-plz (`publish = true` in `release-plz.toml`) and ships the `oo` binary. Its library target (`double_o`, `src/lib.rs`) is the public library surface for other Rust code, used for tests and integration. It carries **no stability guarantee** before 1.0: breaking library changes ship in a minor version (0.x → 0.y).
+The crate `double-o` is released to crates.io by release-plz (`publish = true` in `release-plz.toml`) and ships the `oo` binary. Its library target (`double_o`, `src/lib.rs`) is a public library surface for other Rust code, used for tests and integration. It carries **no stability guarantee** before 1.0: breaking library changes ship in a minor version (0.x → 0.y).
 
-The library surface is every `pub` item reachable from the crate root in `src/lib.rs`. Items marked `#[doc(hidden)]` are part of that surface but are left out of the rendered docs, and they may change in any release (this includes the `argv` module and the hidden `commands` items re-exported from the crate root).
+The library surface is every `pub` item reachable from the crate root in `src/lib.rs`. Items marked `#[doc(hidden)]` are part of that surface and follow the same rule. `#[doc(hidden)]` only omits them from the rendered docs; they are not intended for external use (this includes the `argv` and `commands` modules).
 
-Automated semver checks may not flag every signature change, so a breaking library change must be marked in its commit (`!` or a `BREAKING CHANGE:` footer).
+Automated checks may not flag every change, so a breaking library change must be marked in its commit (`!` or a `BREAKING CHANGE:` footer).
 
-### Changes to the library surface in 0.10.0
+### Changes to the library surface since v0.9.0
 
 Signatures changed since v0.9.0; downstream code must adapt:
 - `exec::run`: `&[String]` → `&[OsString]`
 - `learn::run_background`: `data_path: &str` → `data_path: &Path`
-- `#[doc(hidden)]`: `commands::parse_action`, `run_command_args`, `cmd_run`, and `cmd_learn` take `&[OsString]`; `Action::Run(Vec<OsString>)` and `Action::Learn(Vec<OsString>, Option<String>)`; new `argv` module.
+- Hidden items in the `commands` module (`double_o::commands::…`): `parse_action`, `run_command_args`, `cmd_run`, and `cmd_learn` take `&[OsString]`; `Action::Run(Vec<OsString>)` and `Action::Learn(Vec<OsString>, Option<String>)`. `parse_action`, `cmd_run`, `cmd_learn` and `Action` are also re-exported from the crate root; `run_command_args` is not.
+- New hidden `argv` module.
 
 ## Further Reading
 
