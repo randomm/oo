@@ -4,15 +4,9 @@ mod tests {
     use crate::hook::*;
     use crate::pattern::builtins;
 
-    // set_var/remove_var are process-global and tests run on parallel threads
-    // — every env-mutating test takes this lock first.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    // Process-global env mutations are serialized by the single shared guard in
+    // `crate::test_env` (see its docs for the cross-module HOME race it fixes).
+    use crate::test_env::env_guard;
 
     // -------------------------------------------------------------------
     // handle — the fail-open processor

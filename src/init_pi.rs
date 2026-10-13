@@ -259,17 +259,10 @@ pub fn run(cwd: &Path, global: bool) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    // set_var is process-global and tests run on parallel threads — every
-    // env-mutating test below takes this lock first.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    // Process-global env mutations are serialized by the single shared guard in
+    // `crate::test_env` (see its docs for the cross-module HOME race it fixes).
+    use crate::test_env::env_guard;
 
     fn with_home<F: FnOnce(PathBuf)>(home: &Path, f: F) {
         let _guard = env_guard();

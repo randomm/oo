@@ -77,26 +77,65 @@ mod tests {
         );
     }
 
+    /// Writes one fixture pattern file `dir/name` whose `command_match` is unique,
+    /// so the test can locate it in the result.
+    fn write_fixture(dir: &std::path::Path, name: &str, command_match: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join(name),
+            format!("command_match = \"{command_match}\"\n"),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn all_patterns_precedence_is_project_user_builtin() {
-        // The precedence order is load order: project patterns first, then
-        // user config, then builtins. User patterns (from
-        // `learn::patterns_dir`) appear before the builtin tier; verify the
-        // assembly does not drop a tier by checking the counts add up.
-        let all = all_patterns();
-        let user_dir = learn::patterns_dir();
-        let user_count = if user_dir.exists() {
-            pattern::load_user_patterns(&user_dir).len()
-        } else {
-            0
-        };
-        let builtin_count = pattern::builtins().len();
-        assert!(
-            all.len() >= user_count + builtin_count,
-            "all_patterns({}) must contain at least user({}) + builtin({}) entries",
-            all.len(),
-            user_count,
-            builtin_count
+        // Builds a project tier (`<root>/.git` + `.oo/patterns`) and a user tier
+        // (`OO_CONFIG_DIR/patterns`) with unique fixtures, then calls
+        // `all_patterns()` directly. It does not read the memoized `PATTERNS`,
+        // so the result depends only on the fixtures written here.
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        write_fixture(
+            &root.path().join(".oo").join("patterns"),
+            "project.toml",
+            "^zz-project-fixture",
         );
+        let config = tempfile::tempdir().unwrap();
+        write_fixture(
+            &config.path().join("patterns"),
+            "user.toml",
+            "^zz-user-fixture",
+        );
+
+        let _guard = crate::test_env::env_guard();
+        let prev_config = std::env::var_os("OO_CONFIG_DIR");
+        let original_cwd = std::env::current_dir().unwrap();
+        unsafe { std::env::set_var("OO_CONFIG_DIR", config.path()) };
+        std::env::set_current_dir(root.path()).unwrap();
+        let all = all_patterns();
+        // Restore before asserting so a failure does not leak cwd/env.
+        std::env::set_current_dir(&original_cwd).unwrap();
+        match prev_config {
+            Some(v) => unsafe { std::env::set_var("OO_CONFIG_DIR", v) },
+            None => unsafe { std::env::remove_var("OO_CONFIG_DIR") },
+        }
+
+        let builtins = pattern::builtins();
+        let position = |m: &str| all.iter().position(|p| p.command_match.as_str() == m);
+        let project = position("^zz-project-fixture").expect("project fixture loaded");
+        let user = position("^zz-user-fixture").expect("user fixture loaded");
+        let first_builtin = all.len() - builtins.len();
+        assert!(
+            project < user && user < first_builtin,
+            "precedence must be project({project}) < user({user}) < builtin({first_builtin})"
+        );
+        // The builtin tier is the exact tail, in builtin order.
+        let tail: Vec<&str> = all[first_builtin..]
+            .iter()
+            .map(|p| p.command_match.as_str())
+            .collect();
+        let expected: Vec<&str> = builtins.iter().map(|p| p.command_match.as_str()).collect();
+        assert_eq!(tail, expected, "builtin tier must be the trailing entries");
     }
 }

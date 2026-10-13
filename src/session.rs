@@ -118,6 +118,7 @@ mod tests {
         // When run inside a temp dir with no git, detect_project_fallback must
         // still return a non-empty string (the directory name or "unknown").
         let tmp = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::test_env::env_guard();
         let original = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(tmp.path()).expect("set_current_dir");
 

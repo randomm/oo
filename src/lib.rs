@@ -160,3 +160,38 @@ pub use commands::{
 // Internal type re-exported for learn module
 #[doc(hidden)]
 pub use pattern::FailureSection;
+
+/// Process-global environment mutex shared by every test that mutates a
+/// process-global environment variable (`HOME`, `OO_CLAUDE_DIR`,
+/// `OO_PI_EXTENSIONS_DIR`, …). `std::env::set_var` / `remove_var` are
+/// process-global and tests run on parallel threads: without a single shared
+/// lock, one module's `set_var("HOME", …)` can land between another module's
+/// `remove_var("HOME")` and the call that expects `HOME` to be absent, so the
+/// two test modules that each kept their own `ENV_LOCK` raced against each
+/// other and flaked (issue #220). Every lib test that mutates process-global
+/// state must hold this guard before touching the environment.
+///
+/// Convention: any lib test that mutates process-global state (env vars or the
+/// cwd) must hold `test_env::env_guard()` for the whole mutation. The guard
+/// serializes mutators only: a test that merely reads `HOME` or the cwd without
+/// mutating them is not covered and can still observe another test's change.
+/// No test can prove the lock serializes (a single-threaded run passes
+/// trivially); the verification vehicle is a loop of
+/// `RUST_TEST_THREADS=64 cargo test --lib`.
+#[cfg(test)]
+#[doc(hidden)]
+pub mod test_env {
+    use std::sync::Mutex;
+
+    /// The single process-global environment mutex for the whole test binary.
+    pub static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Acquire the shared environment guard; returns the guard held for the
+    /// scope. A poisoned lock (a prior test panicked mid-mutation) is recovered
+    /// rather than failing the whole suite.
+    pub fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}

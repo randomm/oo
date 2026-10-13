@@ -3,31 +3,52 @@
 
 use super::load_user_patterns;
 use crate::pattern::is_pattern_file;
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use tempfile::TempDir;
 
 const VALID_TOML: &str = "command_match = \"^valid\"\n";
 
+/// Creates a FIFO at `path` via `mkfifo(2)`. Panics with the errno, the path,
+/// whether the parent exists and its listing, so a recurrence of the CI
+/// `mkfifo: No such file or directory` failure (issue #220) is diagnosable.
+/// The path is passed as a NUL-terminated `CString`; a bare `&str` pointer is
+/// not NUL-terminated and would hand the kernel adjacent memory as the path.
+fn make_fifo(path: &Path) {
+    let c_path = CString::new(path.as_os_str().as_bytes()).expect("path has no interior NUL");
+    // SAFETY: `c_path` is a valid NUL-terminated C string; the call is `mkfifo(2)`.
+    let rc = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    // Capture errno before any other syscall can overwrite it.
+    let err = std::io::Error::last_os_error();
+    if rc != 0 {
+        let parent = path.parent();
+        let parent_exists = parent.is_some_and(Path::exists);
+        let listing = parent.map_or_else(
+            || "no parent".to_owned(),
+            |p| match std::fs::read_dir(p) {
+                Ok(rd) => format!(
+                    "{:?}",
+                    rd.filter_map(Result::ok)
+                        .map(|e| e.file_name())
+                        .collect::<Vec<_>>()
+                ),
+                Err(e) => format!("read_dir failed: {e}"),
+            },
+        );
+        panic!(
+            "mkfifo failed: rc={rc} errno: {err}; path={}; parent_exists={parent_exists}; parent_listing={listing}",
+            path.display()
+        );
+    }
+}
+
 /// Creates the named non-regular entries in `dir`: a FIFO, a directory, a
 /// dangling symlink, all named `*.toml`. The FIFO is only stat'ed, never
 /// opened, so the tests cannot hang.
 fn create_strays(dir: &Path) {
-    let fifo = dir.join("stray-fifo.toml");
-    // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
-    let rc = unsafe {
-        libc::mkfifo(
-            fifo.to_str().unwrap().as_ptr().cast::<libc::c_char>(),
-            0o600,
-        )
-    };
-    assert_eq!(
-        rc,
-        0,
-        "mkfifo({}): {}",
-        fifo.display(),
-        std::io::Error::last_os_error()
-    );
+    make_fifo(&dir.join("stray-fifo.toml"));
 
     let sub = dir.join("stray-dir.toml");
     std::fs::create_dir(&sub).unwrap();
@@ -52,14 +73,7 @@ fn is_pattern_file_classifies_regular_and_nonregular_entries() {
     assert!(is_pattern_file(&to_regular).unwrap(), "symlink to regular");
 
     let fifo = path.join("fifo.toml");
-    // SAFETY: a valid null-terminated path and zero mode; the call is `mkfifo(2)`.
-    let rc = unsafe {
-        libc::mkfifo(
-            fifo.to_str().unwrap().as_ptr().cast::<libc::c_char>(),
-            0o600,
-        )
-    };
-    assert_eq!(rc, 0, "mkfifo: {}", std::io::Error::last_os_error());
+    make_fifo(&fifo);
     assert!(!is_pattern_file(&fifo).unwrap(), "fifo");
 
     let subdir = path.join("subdir.toml");
