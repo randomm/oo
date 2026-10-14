@@ -182,7 +182,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo forget` | Clear all indexed output for this project |
 | `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
-| `oo init` | Set up hooks for agent frameworks (`--format claude` or `--format generic`; or `--agent pi` or `--agent claude-code`, with optional `--global`) |
+| `oo init --agent <pi\|claude-code>` | Install the agent hook (optional `--global`); see [Agent Integration](docs/agents.md) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
@@ -196,67 +196,17 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 
 ## Agent Integration
 
-Add this to your system prompt or `CLAUDE.md`:
-
-```
-Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs.
-```
-
-That's it. The agent runs `oo cargo test`, gets `✓ cargo test (47 passed, 2.1s)`,
-and moves on.
-
-### Use with pi
-
-`oo init --agent pi` installs a pi extension (`.pi/extensions/oo.ts` at the git
-root, or `~/.pi/agent/extensions/oo.ts` with `--global` — or
-`$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set, since the
-variable is the final extensions directory) that hooks pi's bash
-tool calls and rewrites bare shell commands to their `oo`-prefixed form via
-`oo rewrite`. pi agents then get token-efficient output automatically — no
-prompt instruction required.
+Install the hook for your agent:
 
 ```bash
-oo init --agent pi           # project: <git-root>/.pi/extensions/oo.ts
-oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_EXTENSIONS_DIR/oo.ts)
+oo init --agent pi           # pi: <git-root>/.pi/extensions/oo.ts
+oo init --agent claude-code  # Claude Code: <git-root>/.claude/settings.json
 ```
 
-- The extension carries an `ooAvailable` flag, initially true: if the load
-  probe fails (binary missing, error, or timeout) it is set false and the
-  `tool_call` handler passes every command through untouched (status note
-  only).
-- It leaves nested (codemode) tool calls untouched, skips commands already
-  starting with `oo `, and fails open on any error — a failing handler never
-  blocks your shell commands.
-- Disable for a session: `OO_DISABLE=1`.
-- Uninstall: delete the installed `oo.ts` file.
-
-Plain `oo init` (the `--format claude` default) only writes the legacy
-`.claude/hooks.json`; for the rewriting Claude Code hook use `--agent claude-code`
-(below). See
-the [CLI reference](docs/cli-reference.md#oo-init---format-format---agent-agent---global) for the full option matrix.
-
-### Use with Claude Code
-
-`oo init --agent claude-code` installs a Claude Code PreToolUse hook for the
-Bash tool (merging `oo hook claude` into `.claude/settings.json`, or
-`~/.claude/settings.json` with `--global`). When Claude Code runs a Bash
-command, the hook pipes the PreToolUse JSON to `oo hook claude`, which
-rewrites the command to its `oo`-prefixed form via `updatedInput.command` and
-prints it back — token-efficient output with no prompt instruction required.
-
-```bash
-oo init --agent claude-code           # project: <git-root>/.claude/settings.json
-oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO_CLAUDE_DIR/settings.json)
-```
-
-- Only Bash tool calls are rewritten; other tools pass through unchanged.
-- The hook is **fail-open**: any parse error, empty/invalid input, or no
-  matching pattern prints nothing and exits 0, so the original command always
-  runs. `OO_DISABLE=1` disables only the hook's rewriting (the hook passes
-  commands through untouched); it does not disable the `oo` runner itself.
-- The installed hook is idempotent (re-running leaves exactly one entry) and
-  never overwrites a malformed `settings.json` (it errors instead).
-- Uninstall: remove the `oo hook claude` entry from `settings.json`.
+`--global` installs for every project instead. Only commands that match an `oo`
+pattern are rewritten to their `oo`-prefixed form; everything else runs unchanged.
+Setup, verification, disabling, uninstalling and what to commit are in
+[Agent Integration](docs/agents.md).
 
 ---
 
@@ -337,13 +287,15 @@ real output to analyze. See [Learning Patterns](docs/learn.md).
 ## Documentation
 
 **[Documentation Index](docs/README.md)** — Extensive project documentation:
-- [Testing Guide](docs/testing.md) — How to run, write, and understand tests
-- [Architecture](docs/architecture.md) — System design and module responsibilities
-- [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [Agent Integration](docs/agents.md) — Installing, verifying and removing the pi and Claude Code hooks
+- [`oo rewrite`](docs/oo-rewrite.md) — Which commands are rewritten, and how (experimental)
 - [CLI Reference](docs/cli-reference.md) — All subcommands, output tiers, and the savings indicator spec
-- [Configuration](docs/configuration.md) — Environment variables, config files, and platform paths
 - [Custom Patterns](docs/patterns.md) — Creating patterns for command output compression
 - [Learning Patterns](docs/learn.md) — Using `oo learn` to generate patterns automatically
+- [Configuration](docs/configuration.md) — Environment variables, config files, and platform paths
+- [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [Testing Guide](docs/testing.md) — How to run, write, and understand tests
+- [Architecture](docs/architecture.md) — System design and module responsibilities
 - [Changelog](CHANGELOG.md) — Release history
 
 **For contributors**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and workflow.

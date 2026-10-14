@@ -386,25 +386,18 @@ supported values (`pi`, `claude-code`).
 
 `OO_PI_EXTENSIONS_DIR` and `OO_CLAUDE_DIR` are trusted paths: when set, their values are used as-is — the file is written directly into the named directory, with no sanitisation or additional path components. A set-but-empty variable is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
 
-### Pi extension behaviour
-
-- At load, probes `oo --version` and updates its `ooAvailable` flag (initially true) so that a missing or erroring `oo` (non-zero exit, timeout, exception) hard-disables the handler: it returns undefined for every tool call without invoking `oo rewrite` (status note only).
-- On bash `tool_call`: skips empty commands, commands already starting with `oo ` (including `oo rewrite` itself), and nested calls (`parentToolCallId` set — codemode scripts see raw output).
-- Honors the `OO_DISABLE=1` environment opt-out.
-- Calls `oo rewrite <cmd>` (2000 ms timeout) and swaps in the rewritten command only when it is exit 0, non-empty, and different.
-- Fails open: any handler error passes the command through unmodified.
-
-Install is idempotent: an existing identical file is a no-op ("already installed"); an existing different file is not overwritten and the command explains how to proceed. Uninstall by deleting the installed `oo.ts` file.
+The installed pi extension's runtime behaviour (startup probe, which commands are skipped, `OO_DISABLE=1`, fail-open) is described in [Agent Integration](agents.md#pi).
 
 ### Behavior
 
 - `--agent pi` creates `.pi/extensions/oo.ts` (idempotent, never overwrites a different file)
 - `--agent claude-code` merges a `oo hook claude` PreToolUse entry into `.claude/settings.json` (project) or `~/.claude/settings.json` (`--global`); idempotent, never overwrites a malformed file
-- `--format claude` (default) and plain `oo init` create `.claude/hooks.json` (legacy)
-- Prints a snippet to add to your project's `AGENTS.md` file (format modes)
-- The snippet instructs agents to prefix commands with `oo`
+- `--format claude` (default) and plain `oo init` create `.claude/hooks.json` (legacy: it only blocks `--help`/`-h` calls and does not rewrite commands; see [Legacy: plain `oo init`](agents.md#legacy-plain-oo-init))
+- Format modes print a snippet to add to your project's `AGENTS.md` file
 
-`--format claude` (the legacy `.claude/hooks.json`, which only blocks `--help`/`-h` calls) and `--agent claude-code` (the rewriting hook in `.claude/settings.json`) are **independent installers** — one does not imply the other; install both for full Claude Code coverage. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
+`--format claude` and `--agent claude-code` are **independent installers** — one does not imply the other. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
+
+For what the installed hooks do, and how to verify, disable and uninstall them, see [Agent Integration](agents.md).
 
 ### Output format
 

@@ -175,6 +175,8 @@ Writes made by `oo init` (only when you run it):
 - `oo init --agent pi`: `.pi/extensions/oo.ts` in the git root (same fallback)
 - `oo init --agent pi --global`: `$OO_PI_EXTENSIONS_DIR/oo.ts`, or `~/.pi/agent/extensions/oo.ts` when `OO_PI_EXTENSIONS_DIR` is unset
 
+What each installed hook does, and how to remove it, is in [Agent Integration](agents.md).
+
 By default these writes stay under your user home directory (global installs) or the repository root, falling back to the current directory when there is no git root (project installs). The absolute `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides, and `OO_CLAUDE_DIR` and `OO_PI_EXTENSIONS_DIR`, can point anywhere. A set-but-empty `OO_CLAUDE_DIR` or `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); it does not fall back to the home directory.
 
 Temporary files (not listed above):
