@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [When oo makes network calls](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see [When oo makes network calls](#when-oo-makes-network-calls)). Commands you run may make their own requests
+2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [When oo makes network calls](#when-oo-makes-network-calls): the `oo learn` payload ([what is sent](#llm-learning-oo-learn)), and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see [When oo makes network calls](#when-oo-makes-network-calls)). Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -18,7 +18,7 @@ oo is designed to be safe and predictable:
 You must trust:
 
 1. **The oo binary** — It executes commands and can read/write local files
-2. **The LLM provider (Anthropic)** — When using `oo learn`, your command output is sent to Anthropic (see below)
+2. **The LLM provider (Anthropic)** — When using `oo learn`, the `oo learn` payload ([what is sent](#llm-learning-oo-learn)) goes to Anthropic
 3. **Your shell environment** — Commands run with your existing environment variables, PATH, and shell settings
 
 ### What We Don't Trust (and Why)
@@ -63,10 +63,15 @@ You must trust:
 
 ### LLM Learning (`oo learn`)
 
-**What gets sent**:
-- Command string (e.g., "cargo test --release")
-- Complete command output (stdout + stderr)
-- Exit code
+**What gets sent** (the single source for `oo learn` disclosure; other docs link here):
+- **Command**: the arguments joined into one command line (e.g., "cargo test --release"), cut to at most its first 100 bytes (the cut backs off to a UTF-8 character boundary).
+- **Output**: at most the first 4,000 bytes of the output (the cut backs off to a UTF-8 character boundary), stdout followed by stderr (not interleaved). Anything after that is not sent. Invalid UTF-8 is replaced with U+FFFD.
+- **Exit code**.
+- **Hint**: the `--hint` text, if one is given. A hint longer than 1,000 bytes is refused, not truncated, and no request is made. Observed: `oo learn --hint <1,001 bytes> echo hi` still runs `echo` and exits 0; the foreground shows the command's normal oo output and the `[learning pattern for …]` line, with no hint-related message. The refusal (`--hint too long (1001 > 1000 chars)`) reaches `learn-status.log` and is printed by the next `oo` invocation only when `ANTHROPIC_API_KEY` is set and non-empty. Without a key, the background run fails earlier with the missing-key error, and that error is recorded instead.
+- **Requests**: one `oo learn` run sends at most 3 requests: the first attempt, then up to 2 retries, and a retry happens only when the reply fails TOML validation. A transport, HTTP, or provider error ends the run without a retry. The first request carries the command, exit code, hint (if any), and output as above. A retry carries none of them. It sends the previous reply (code fences stripped) with a fixed note that the TOML was invalid (`initial TOML validation failed` or `retry TOML validation failed`). Both retries reuse the initial reply, not the reply from the previous retry. Each request is a single message with no earlier turns.
+- **API key**: sent in the `x-api-key` request header, not in the request body.
+
+The command line is sent even when it contains secrets (for example a token passed as an argument), so do not run `oo learn` on a command line that may contain one.
 
 **What does NOT get sent**:
 - Environment variables (except API key for authentication)
@@ -175,6 +180,8 @@ Writes made by `oo init` (only when you run it):
 - `oo init --agent pi`: `.pi/extensions/oo.ts` in the git root (same fallback)
 - `oo init --agent pi --global`: `$OO_PI_EXTENSIONS_DIR/oo.ts`, or `~/.pi/agent/extensions/oo.ts` when `OO_PI_EXTENSIONS_DIR` is unset
 
+What each installed hook does, and how to remove it, is in [Agent Integration](agents.md).
+
 By default these writes stay under your user home directory (global installs) or the repository root, falling back to the current directory when there is no git root (project installs). The absolute `OO_CONFIG_DIR` and `OO_DATA_DIR` overrides, and `OO_CLAUDE_DIR` and `OO_PI_EXTENSIONS_DIR`, can point anywhere. A set-but-empty `OO_CLAUDE_DIR` or `OO_PI_EXTENSIONS_DIR` is an error (exit 1, nothing written); it does not fall back to the home directory.
 
 Temporary files (not listed above):
@@ -208,7 +215,7 @@ In the default build, oo itself makes network requests in two cases:
 **Via `oo learn`**:
 - To the Anthropic API (`https://api.anthropic.com/v1/messages` by default). `ANTHROPIC_API_URL` may override it: it must use HTTPS, except `http://` to a host that is exactly `localhost`, `127.0.0.1` or `[::1]` (compared case-insensitively), and it must not contain userinfo (`user@`). Other schemes are rejected. The URL is validated once, and the request is sent to that validated URL.
 - Redirects are not followed. The HTTP client is configured with `max_redirects(0)`, so any 3xx status (300 to 399, with or without a `Location` header, including 304) fails the request with `unexpected redirect (status N): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint`. The `x-api-key` header is never sent to a `Location` target, and the error does not include the `Location` value.
-- With your command output and API key
+- The `oo learn` payload listed under [What gets sent](#llm-learning-oo-learn)
 - In the background, after command completes
 
 **Via `oo help <command>`** (not for reserved subcommands):

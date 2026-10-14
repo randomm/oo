@@ -7,9 +7,8 @@ generates and saves a pattern in the background using an LLM.
 oo learn cargo test --release
 ```
 
-The command executes normally. After it finishes, a background process sends
-the command, output, and exit code to the configured LLM and writes a TOML
-pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories)).
+The command executes normally. After it finishes, a background process writes a TOML
+pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories)). `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 
 ## Config
 

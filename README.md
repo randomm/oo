@@ -1,52 +1,56 @@
+# oo
+
+[![CI status](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml) [![crates.io version](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o) [![docs.rs documentation](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+
+**oo shrinks verbose shell output for AI coding agents.** It runs the command, keeps the result and the errors, and indexes the rest for `oo recall`. It supports [pi](docs/agents.md#pi) and [Claude Code](docs/agents.md#claude-code); other agents use a prompt instruction (see [Agent Integration](docs/agents.md)).
+
+```bash
+cargo install double-o        # the crate is double-o; it installs the `oo` binary
+oo init --agent pi            # or: oo init --agent claude-code
 ```
-  ██████   ██████ 
- ███▒▒███ ███▒▒███
-▒███ ▒███▒███ ▒███
-▒███ ▒███▒███ ▒███
-▒▒██████ ▒▒██████ 
- ▒▒▒▒▒▒   ▒▒▒▒▒▒ 
+
+Legend: ✓ passed · ✗ failed · ● indexed or truncated.
+
+Before and after:
+
 ```
-
-<br /><br />
-
-[![CI](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o)
-[![docs.rs](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
-
-*"Double-o, agent's best friend."*
-
-*Or: how I learned to stop worrying and love my context-efficient command runner for AI coding agents.*
+$ cargo test                  # without oo: every line of the run reaches the agent
+$ oo cargo test               # with oo, output over 4 KiB
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
+```
 
 ---
 
 ## Why oo?
 
-AI coding agents waste context tokens on verbose command output. A single `cargo build`
-can produce thousands of lines that the agent must process but rarely needs in full.
+AI agents see everything a command prints, and they pay context tokens for all of it. A
+`cargo build` can produce thousands of lines the agent must read but rarely needs. A
+`cargo test` run producing 47 KB costs roughly 12,000 tokens (at about 4 bytes per token,
+an illustrative estimate) just to learn that the tests passed, and across a session the
+context window fills with noise.
 
-**oo solves this transparently:**
+oo runs the command for the agent and keeps what it needs:
 - Commands run normally — oo wraps them, not replaces them
 - Output is classified and compressed using patterns
 - Agents get the signal (pass/fail, errors, summaries) without the noise
-- No agent modification required — just prefix commands with `oo`
+- Pi and Claude Code need no prompt change: `oo init --agent pi` or `oo init --agent claude-code` installs a hook or extension that rewrites commands. Other agents need one line in their prompt (see [Agent Integration](#agent-integration))
 
 Unlike manual truncation (`head`/`tail`), oo understands command semantics. Unlike
 agent-native output limits, oo preserves the information the agent actually needs.
 
 ---
 
-## The Problem
+## What oo prints
 
-AI agents see everything you print. A `cargo test` run producing 8 KB of output
-costs the agent hundreds of tokens just to learn "tests passed." Multiply that
-across a session and the context window fills with noise, not signal. `oo` runs
-commands for you and collapses their output to what the agent actually needs.
+Each command falls into one of four categories, which decides what is shown when no
+pattern matches:
 
----
+- **Status**: test runners, builds, and linters.
+- **Data**: listings and logs such as `git log` and `ls`.
+- **Content**: file-like output such as `git show`, `git diff`, and `cat`.
+- **Unknown**: everything else, such as `jq` or `sh -c`.
 
-## Output Tiers
+For output over 4 KiB with no matching pattern summary: Status collapses to a quiet `✓` line; Data shows only an indicator line; Content and Unknown show a head+tail slice. Successful output of 4 KiB or less passes through unchanged; failed commands are always filtered. See [command categories](docs/patterns.md#command-categories) for the full rules.
 
 **Without oo:** Your agent receives the full output.
 ```
@@ -66,8 +70,10 @@ test result: ok. 47 passed; 0 failed; finished in 2.1s
 **With oo:** Your agent gets the signal.
 ```
 $ oo cargo test
-✓ cargo test (47 passed, 2.1s)
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
+
+The `[saved …]` figure is appended only when oo saved more than 4 KiB, and the value shown is illustrative. The 47-test run above stands for a large run: a successful run of 4 KiB or less passes through unchanged and prints as-is.
 
 Large output with a known success pattern collapses to a single summary line.
 
@@ -85,9 +91,9 @@ Failure output is filtered to the actionable tail. When the displayed output doe
 **Large unrecognised output:** Indexed for retrieval.
 ```
 $ oo gh issue list
-● gh (indexed 47.2 KiB → use `oo recall` to query)
+● gh (indexed <size> → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤ 4 KiB) pass through
+Query indexed output with `oo recall "<terms>"`. Indexed output is kept for the retention period (7 days by default); entries older than that are purged the next time the same project indexes output, so they can stay longer. `oo forget` removes them now (see [retention](docs/configuration.md#store-section)). Small successful outputs (≤ 4 KiB) pass through
 unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
@@ -99,15 +105,17 @@ for details.
 
 ## Installation
 
-### Quick install (macOS and Linux)
+**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64. The Linux binaries are built on `ubuntu-latest` (x86_64) or `ubuntu-24.04-arm` (ARM64), which are Ubuntu 24.04 at the time of writing (glibc 2.39), so older glibc may not run them. Intel macOS and Windows are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
+
+### Quick install (Apple Silicon macOS and Linux)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/oo-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/double-o-installer.sh | sh
 ```
 
-> The installer detects your platform, downloads the correct binary, and adds it to `~/.cargo/bin/` by default. If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available. Use `--prefix=/usr/local` for system-wide installs.
+> The installer detects your platform, downloads the `oo` binary and installs it to `$CARGO_HOME/bin` (default `~/.cargo/bin/`). If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
 
-### Pre-built binaries (recommended)
+### Pre-built binaries (supported platforms)
 
 Download from [GitHub Releases](https://github.com/randomm/oo/releases/latest):
 
@@ -134,6 +142,8 @@ sudo mv double-o-aarch64-unknown-linux-gnu/oo /usr/local/bin/
 cargo install double-o
 ```
 
+The crate is named `double-o`; it installs the `oo` binary. Requires Rust 1.85+. Use this on platforms without a pre-built binary (Intel macOS, Windows, or Linux with glibc older than 2.39).
+
 ### From source
 
 ```bash
@@ -148,16 +158,20 @@ cp target/release/oo /usr/local/bin/
 ## Quick Start
 
 ```bash
-# Wrap any command — output is classified and compressed
+# 1. Set up your agent (pi or Claude Code): commands that match a pattern are rewritten through oo
+$ oo init --agent pi
+
+# 2. Wrap any command — output is classified and compressed (figures are illustrative)
 $ oo cargo test
-✓ cargo test (47 passed, 2.1s)
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 
-# Large unrecognised output is indexed — query it later
-$ oo git log --oneline -100
-● git (indexed 12.4 KiB → use `oo recall` to query)
-$ oo recall "merge commit"
+# 3. Output over 4 KiB that has no pattern is indexed — query it later
+$ oo ls -la /usr/share/doc
+● ls (indexed <size> → use `oo recall` to query)
+$ oo recall "<term>"
 
-# Teach oo a new pattern for an unrecognised command
+# Teach oo a new pattern (needs ANTHROPIC_API_KEY; what is sent:
+# docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 $ oo learn rspec spec/
 ```
 
@@ -178,11 +192,11 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall [--full] <query>` | Search indexed output for this project |
+| `oo recall [--full] <query>` | Search indexed output for this project (see [retention](docs/configuration.md#store-section)) |
 | `oo forget` | Clear all indexed output for this project |
-| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
+| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM. `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets. |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
-| `oo init` | Set up hooks for agent frameworks (`--format claude` or `--format generic`; or `--agent pi` or `--agent claude-code`, with optional `--global`) |
+| `oo init --agent <pi\|claude-code>` | Install the agent hook (optional `--global`); see [Agent Integration](docs/agents.md) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
 | `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
@@ -196,67 +210,17 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 
 ## Agent Integration
 
-Add this to your system prompt or `CLAUDE.md`:
-
-```
-Prefix all shell commands with `oo`. Use `oo recall "<query>"` to search large outputs.
-```
-
-That's it. The agent runs `oo cargo test`, gets `✓ cargo test (47 passed, 2.1s)`,
-and moves on.
-
-### Use with pi
-
-`oo init --agent pi` installs a pi extension (`.pi/extensions/oo.ts` at the git
-root, or `~/.pi/agent/extensions/oo.ts` with `--global` — or
-`$OO_PI_EXTENSIONS_DIR/oo.ts` when `OO_PI_EXTENSIONS_DIR` is set, since the
-variable is the final extensions directory) that hooks pi's bash
-tool calls and rewrites bare shell commands to their `oo`-prefixed form via
-`oo rewrite`. pi agents then get token-efficient output automatically — no
-prompt instruction required.
+Install the hook for your agent:
 
 ```bash
-oo init --agent pi           # project: <git-root>/.pi/extensions/oo.ts
-oo init --agent pi --global  # user:    ~/.pi/agent/extensions/oo.ts (or $OO_PI_EXTENSIONS_DIR/oo.ts)
+oo init --agent pi           # pi: <git-root>/.pi/extensions/oo.ts
+oo init --agent claude-code  # Claude Code: <git-root>/.claude/settings.json
 ```
 
-- The extension carries an `ooAvailable` flag, initially true: if the load
-  probe fails (binary missing, error, or timeout) it is set false and the
-  `tool_call` handler passes every command through untouched (status note
-  only).
-- It leaves nested (codemode) tool calls untouched, skips commands already
-  starting with `oo `, and fails open on any error — a failing handler never
-  blocks your shell commands.
-- Disable for a session: `OO_DISABLE=1`.
-- Uninstall: delete the installed `oo.ts` file.
-
-Plain `oo init` (the `--format claude` default) only writes the legacy
-`.claude/hooks.json`; for the rewriting Claude Code hook use `--agent claude-code`
-(below). See
-the [CLI reference](docs/cli-reference.md#oo-init---format-format---agent-agent---global) for the full option matrix.
-
-### Use with Claude Code
-
-`oo init --agent claude-code` installs a Claude Code PreToolUse hook for the
-Bash tool (merging `oo hook claude` into `.claude/settings.json`, or
-`~/.claude/settings.json` with `--global`). When Claude Code runs a Bash
-command, the hook pipes the PreToolUse JSON to `oo hook claude`, which
-rewrites the command to its `oo`-prefixed form via `updatedInput.command` and
-prints it back — token-efficient output with no prompt instruction required.
-
-```bash
-oo init --agent claude-code           # project: <git-root>/.claude/settings.json
-oo init --agent claude-code --global  # user:    ~/.claude/settings.json (or $OO_CLAUDE_DIR/settings.json)
-```
-
-- Only Bash tool calls are rewritten; other tools pass through unchanged.
-- The hook is **fail-open**: any parse error, empty/invalid input, or no
-  matching pattern prints nothing and exits 0, so the original command always
-  runs. `OO_DISABLE=1` disables only the hook's rewriting (the hook passes
-  commands through untouched); it does not disable the `oo` runner itself.
-- The installed hook is idempotent (re-running leaves exactly one entry) and
-  never overwrites a malformed `settings.json` (it errors instead).
-- Uninstall: remove the `oo hook claude` entry from `settings.json`.
+`--global` installs for every project instead. Only commands that match an `oo`
+pattern are rewritten to their `oo`-prefixed form; everything else runs unchanged.
+Setup, verification, disabling, uninstalling and what to commit are in
+[Agent Integration](docs/agents.md).
 
 ---
 
@@ -300,13 +264,13 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 
 **What if oo doesn't recognize my command?**
 Successful unknown commands pass through unchanged at up to 4 KiB; failed ones are always filtered. Larger Data, Content, and Unknown output
-is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
+is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer; see [retention](docs/configuration.md#store-section). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
 Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Larger unpatterned unknown commands already show a bounded head+tail slice with the full output stored for
-`oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). For commands with built-in patterns, you can override with
+`oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer; see [retention](docs/configuration.md#store-section). For commands with built-in patterns, you can override with
 a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 
 **Does oo work in CI?**
@@ -314,8 +278,7 @@ It can, but oo is designed for interactive AI agent sessions where context token
 In CI, full output is usually fine.
 
 **Which LLM providers does `oo learn` support?**
-Anthropic only. Set `ANTHROPIC_API_KEY` in your environment.
-See [Learning Patterns](docs/learn.md).
+Anthropic only. `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets. See [Learning Patterns](docs/learn.md) and [Security Model](docs/security-model.md).
 
 ---
 
@@ -337,13 +300,15 @@ real output to analyze. See [Learning Patterns](docs/learn.md).
 ## Documentation
 
 **[Documentation Index](docs/README.md)** — Extensive project documentation:
-- [Testing Guide](docs/testing.md) — How to run, write, and understand tests
-- [Architecture](docs/architecture.md) — System design and module responsibilities
-- [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [Agent Integration](docs/agents.md) — Installing, verifying and removing the pi and Claude Code hooks
+- [`oo rewrite`](docs/oo-rewrite.md) — Which commands are rewritten, and how (experimental)
 - [CLI Reference](docs/cli-reference.md) — All subcommands, output tiers, and the savings indicator spec
-- [Configuration](docs/configuration.md) — Environment variables, config files, and platform paths
 - [Custom Patterns](docs/patterns.md) — Creating patterns for command output compression
 - [Learning Patterns](docs/learn.md) — Using `oo learn` to generate patterns automatically
+- [Configuration](docs/configuration.md) — Environment variables, config files, and platform paths
+- [Security Model](docs/security-model.md) — Trust assumptions and data handling
+- [Testing Guide](docs/testing.md) — How to run, write, and understand tests
+- [Architecture](docs/architecture.md) — System design and module responsibilities
 - [Changelog](CHANGELOG.md) — Release history
 
 **For contributors**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and workflow.

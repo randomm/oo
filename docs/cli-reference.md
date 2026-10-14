@@ -13,7 +13,7 @@
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in, project, and user) |
-| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 
 ---
 
@@ -44,7 +44,7 @@ oo classifies command output into five tiers:
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
-Large unpatterned Data output is indexed in full and retrievable via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](configuration.md#store-section)); the
+Large unpatterned Data output is indexed in full and retrievable via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer (see [retention](configuration.md#store-section)); the
 display is only the indicator line. If indexing fails, the NOT-indexed indicator line and the stderr warning are printed, followed by the
 `smart_truncate` view: output of 120 lines or fewer is printed in full, unchanged. Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
@@ -61,7 +61,7 @@ When oo compresses output (Success and Failure arms), the savings are reported o
 indicator line itself:
 
 ```
-✓ cargo test (47 passed, 2.1s) [saved 46.10 KiB]
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
 
 The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
@@ -133,6 +133,8 @@ Returns the exit code of the wrapped command.
 ## `oo recall [--full] <query>`
 
 Search indexed output for the current project.
+
+By default, indexed output is kept for the retention period (7 days, `[store] retention`). Entries older than that are purged the next time the same project indexes output, so they can stay longer; `oo recall` does not purge. `oo forget` removes them now (see [retention](configuration.md#store-section)).
 
 ### Usage
 
@@ -246,7 +248,7 @@ oo learn --hint "compact test summary" pytest tests/
 ### Behavior
 
 1. Runs the command normally and displays oo-classified output
-2. Sends command, output, and exit code to the configured LLM in the background
+2. `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
 4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form; see Exit codes
 
@@ -386,25 +388,18 @@ supported values (`pi`, `claude-code`).
 
 `OO_PI_EXTENSIONS_DIR` and `OO_CLAUDE_DIR` are trusted paths: when set, their values are used as-is — the file is written directly into the named directory, with no sanitisation or additional path components. A set-but-empty variable is an error (exit 1, nothing written); with the variable unset, `HOME` is used instead (unset or empty `HOME` is likewise an error).
 
-### Pi extension behaviour
-
-- At load, probes `oo --version` and updates its `ooAvailable` flag (initially true) so that a missing or erroring `oo` (non-zero exit, timeout, exception) hard-disables the handler: it returns undefined for every tool call without invoking `oo rewrite` (status note only).
-- On bash `tool_call`: skips empty commands, commands already starting with `oo ` (including `oo rewrite` itself), and nested calls (`parentToolCallId` set — codemode scripts see raw output).
-- Honors the `OO_DISABLE=1` environment opt-out.
-- Calls `oo rewrite <cmd>` (2000 ms timeout) and swaps in the rewritten command only when it is exit 0, non-empty, and different.
-- Fails open: any handler error passes the command through unmodified.
-
-Install is idempotent: an existing identical file is a no-op ("already installed"); an existing different file is not overwritten and the command explains how to proceed. Uninstall by deleting the installed `oo.ts` file.
+The installed pi extension's runtime behaviour (startup probe, which commands are skipped, `OO_DISABLE=1`, fail-open) is described in [Agent Integration](agents.md#pi).
 
 ### Behavior
 
 - `--agent pi` creates `.pi/extensions/oo.ts` (idempotent, never overwrites a different file)
 - `--agent claude-code` merges a `oo hook claude` PreToolUse entry into `.claude/settings.json` (project) or `~/.claude/settings.json` (`--global`); idempotent, never overwrites a malformed file
-- `--format claude` (default) and plain `oo init` create `.claude/hooks.json` (legacy)
-- Prints a snippet to add to your project's `AGENTS.md` file (format modes)
-- The snippet instructs agents to prefix commands with `oo`
+- `--format claude` (default) and plain `oo init` create `.claude/hooks.json` (legacy: it only blocks `--help`/`-h` calls and does not rewrite commands; see [Legacy: plain `oo init`](agents.md#legacy-plain-oo-init))
+- Format modes print a snippet to add to your project's `AGENTS.md` file
 
-`--format claude` (the legacy `.claude/hooks.json`, which only blocks `--help`/`-h` calls) and `--agent claude-code` (the rewriting hook in `.claude/settings.json`) are **independent installers** — one does not imply the other; install both for full Claude Code coverage. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
+`--format claude` and `--agent claude-code` are **independent installers** — one does not imply the other. `OO_CLAUDE_DIR` is a trusted path used as-is (like `OO_PI_EXTENSIONS_DIR`).
+
+For what the installed hooks do, and how to verify, disable and uninstall them, see [Agent Integration](agents.md).
 
 ### Output format
 

@@ -96,6 +96,43 @@ Overrides the data directory that holds the SQLite index.
 export OO_DATA_DIR="/some/custom/data/dir"
 ```
 
+### `OO_DISABLE`
+
+Turns off command rewriting for a session. Only the exact value `1` counts.
+
+- **Default**: unset (rewriting on)
+- **Claude Code** (`oo hook claude`, from `oo init --agent claude-code`): the hook passes every command through untouched (no rewrite, no output, exit 0)
+- **pi** (the extension from `oo init --agent pi`): the extension does not rewrite bash commands
+- **Does not** disable the `oo` runner itself: `oo <cmd>` still runs commands and filters their output
+
+```bash
+export OO_DISABLE=1
+```
+
+### `OO_PI_EXTENSIONS_DIR`
+
+Overrides the directory that `oo init --agent pi --global` writes to.
+
+- **Default**: `~/.pi/agent/extensions/` (the file is `oo.ts` inside it)
+- **Purpose**: the value is the final extensions directory; `oo.ts` is written directly into it, with no suffix appended
+- A set-but-empty value is an error (exit 1, nothing written); it does not fall back to `HOME`
+
+```bash
+export OO_PI_EXTENSIONS_DIR="/some/custom/extensions"
+```
+
+### `OO_CLAUDE_DIR`
+
+Overrides the directory that `oo init --agent claude-code --global` writes to.
+
+- **Default**: `~/.claude/` (the file is `settings.json` inside it)
+- **Purpose**: the value is the final config directory; `settings.json` is written directly into it, with no suffix appended
+- A set-but-empty value is an error (exit 1, nothing written); it does not fall back to `HOME`
+
+```bash
+export OO_CLAUDE_DIR="/some/custom/claude"
+```
+
 ### `ANTHROPIC_API_KEY`
 
 The environment variable named by `api_key_env` in `[learn]` must be set to a non-empty value for `oo learn`. An empty or whitespace-only value is treated as unset.
