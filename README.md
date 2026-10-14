@@ -169,7 +169,8 @@ $ oo ls -la /usr/share/doc
 $ oo recall "<term>"
 
 # Teach oo a new pattern for an unrecognised command
-# (sends the command, its output and exit code to Anthropic; needs ANTHROPIC_API_KEY)
+# (sends the command, its output and exit code to Anthropic; needs ANTHROPIC_API_KEY;
+# avoid if the output may contain secrets; see docs/security-model.md)
 $ oo learn rspec spec/
 ```
 
@@ -192,7 +193,7 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
 | `oo recall [--full] <query>` | Search indexed output for this project (kept 7 days by default, see [configuration](docs/configuration.md#store-section)) |
 | `oo forget` | Clear all indexed output for this project |
-| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM (sends the command, its output and exit code to Anthropic; requires `ANTHROPIC_API_KEY`) |
+| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM (sends the command, its output and exit code to Anthropic; requires `ANTHROPIC_API_KEY`; avoid if output may contain secrets, see [Security Model](docs/security-model.md)) |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init --agent <pi\|claude-code>` | Install the agent hook (optional `--global`); see [Agent Integration](docs/agents.md) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
