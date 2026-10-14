@@ -58,8 +58,7 @@ oo init: <path> already exists with different content — not overwritten.
 To install the bundled version: back up or delete the file, then re-run `oo init --agent pi`.
 ```
 
-The existing file stays in effect, so after upgrading `oo` it may be stale. To
-update it, delete the file and re-run `oo init --agent pi`.
+The existing file stays in effect and may be stale after an upgrade; see [Failure mode: stale `oo.ts`](#failure-mode-stale-oots).
 
 ### Behaviour
 
