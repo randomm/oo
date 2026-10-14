@@ -13,7 +13,7 @@ or user). Everything else runs unchanged. For example, `pytest -q` becomes
 `oo pytest -q`, while `ls -la` is left alone.
 
 - Built-in patterns: `oo patterns` lists them with their command regexes.
-- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)). `oo learn` sends the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to Anthropic and requires `ANTHROPIC_API_KEY`; avoid it for output that may contain secrets (see [Security Model](security-model.md)).
+- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)). `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 - Rewrite rules in detail (pipes, redirections, `&&`/`||`/`;`, env prefixes): [`oo rewrite`](oo-rewrite.md).
 
 Because only matching commands are rewritten, the installer does not teach the
@@ -48,9 +48,18 @@ With `OO_PI_EXTENSIONS_DIR` set, `--global` writes `$OO_PI_EXTENSIONS_DIR/oo.ts`
 The variable names the extensions directory itself: no `.pi/extensions` is
 appended, and the file is `oo.ts` inside the given directory.
 
-Re-running prints `… already installed — nothing to do`. An existing file that
-differs from the generated one is not overwritten (the command warns and exits 0).
-To upgrade the file after updating `oo`, delete the old `oo.ts` and re-run the install.
+Re-running prints `… already installed — nothing to do`.
+
+If `oo.ts` already exists with different content, it is not overwritten. The
+command prints this to stderr and exits 0:
+
+```
+oo init: <path> already exists with different content — not overwritten.
+To install the bundled version: back up or delete the file, then re-run `oo init --agent pi`.
+```
+
+The existing file stays in effect, so after upgrading `oo` it may be stale. To
+update it, delete the file and re-run `oo init --agent pi`.
 
 ### Behaviour
 
@@ -87,6 +96,11 @@ every command through unchanged.
 ### Uninstall
 
 Delete the installed `oo.ts` file (project or global).
+
+### Failure mode: stale `oo.ts`
+
+- Symptom: the install warning above, and behaviour that no longer matches the current `oo` (for example, commands not rewritten after an upgrade).
+- Fix: delete `oo.ts` (project or global) and re-run `oo init --agent pi`, then restart pi or run `/reload`.
 
 ### Failure mode: `oo` not on pi's PATH
 
@@ -145,10 +159,14 @@ Remove the `oo hook claude` entry from `settings.json` (project or global).
 
 | Install | Files | Commit? |
 |---|---|---|
-| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. pi loads `.pi/extensions/` only after project trust is granted; interactive pi asks (default `defaultProjectTrust: "ask"`), and declining skips the extension. Print, JSON and RPC modes have no trust prompt, so the extension loads only if `--approve` is passed, a saved trust decision grants trust (`/trust`, stored in `~/.pi/agent/trust.json`), or `defaultProjectTrust` is `"always"`. A user-level extension can also answer the trust decision (pi docs: `security.md#understand-project-trust`). |
-| Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every teammate has `oo` on PATH. On a machine without it the hook command cannot run (how Claude Code reports that is not verified here; see [Failure modes](#failure-modes)). |
+| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. pi loads project extensions only after project trust is granted — see pi's security docs (`security.md`). |
+| Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every collaborator has `oo` installed. Otherwise use `--global`, so each user gets the hook in their own settings. (How Claude Code behaves when `oo` is not on PATH is not verified here; see [Failure modes](#failure-modes).) |
 | Global (`--global`) | `~/.pi/agent/extensions/oo.ts`, `~/.claude/settings.json` | Not in the repo; these are per-user. |
 
+- Project pi trust, in detail (pi docs: `security.md`, *Understand project trust*):
+  - Interactive pi asks by default (`defaultProjectTrust: "ask"`); declining skips the extension.
+  - Print, JSON and RPC modes do not prompt, so the extension loads only with `--approve`, a saved `/trust` decision that grants trust (a saved refusal blocks it; decisions are stored in `~/.pi/agent/trust.json`), or `defaultProjectTrust: "always"`.
+  - A user-level extension that handles the `project_trust` event decides first.
 - Project `settings.json` is shared as a whole. Review the diff before committing if it holds other settings.
 - The recall line (see [Recall instruction](#recall-instruction)) belongs in the instruction file you commit (for example `CLAUDE.md`).
 

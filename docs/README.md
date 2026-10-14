@@ -4,14 +4,13 @@ Detailed documentation for `oo`, grouped by audience. The [main README](../READM
 
 ## Using oo
 
-- **[Agent Integration](agents.md)** — Install, verify, disable and uninstall the pi and Claude Code hooks; what to commit; other agents
 - **[Custom Patterns](patterns.md)** — Creating patterns for command output compression
 - **[Learning Patterns](learn.md)** — Using `oo learn` to generate patterns automatically
 - **[Security Model](security-model.md)** — Trust assumptions, data handling, and API key security
 
 ## Agents
 
-- **[Agent Integration](agents.md)** — Per-agent setup and the recall instruction to add to `CLAUDE.md` or `AGENTS.md`
+- **[Agent Integration](agents.md)** — Install, verify, disable and uninstall the pi and Claude Code hooks; what to commit; other agents; the recall instruction to add to `CLAUDE.md` or `AGENTS.md`
 - **[`oo rewrite`](oo-rewrite.md)** — Which commands the hooks rewrite, and the rules that decide it (experimental)
 
 ## Reference

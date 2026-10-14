@@ -44,7 +44,7 @@ oo classifies command output into five tiers:
 
 The `saved` figure uses binary units (1 KiB = 1024 bytes), chosen by magnitude: `KiB`, `MiB`, `GiB`, and so on. `B` never appears, because a suffix needs more than 4 KiB saved. A value that is an exact whole number of its unit prints with no decimals (`[saved 5 KiB]`, `[saved 2 MiB]`, `[saved 1 GiB]`); any other value is rounded to two decimal places and always shows both (`[saved 8.68 KiB]`, `[saved 46.10 KiB]`, `[saved 1.50 MiB]`). Rounding can reach a whole number, so a value just under 1 MiB displays as `1024.00 KiB`, and 4,097 bytes saved displays as `4.00 KiB`.
 
-Large unpatterned Data output is indexed in full and retrievable via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](configuration.md#store-section)); the
+Large unpatterned Data output is indexed in full and retrievable via `oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer (see [retention](configuration.md#store-section)); the
 display is only the indicator line. If indexing fails, the NOT-indexed indicator line and the stderr warning are printed, followed by the
 `smart_truncate` view: output of 120 lines or fewer is printed in full, unchanged. Longer output keeps its first 72 and last 48 lines around a
 `... [N lines truncated] ...` marker.
@@ -134,7 +134,7 @@ Returns the exit code of the wrapped command.
 
 Search indexed output for the current project.
 
-By default, indexed output is kept 7 days (`[store] retention`, see [configuration](configuration.md#store-section)). Entries older than that are purged the next time the same project indexes output; `oo recall` does not purge.
+By default, indexed output is kept for the retention period (7 days, `[store] retention`). Entries older than that are purged the next time the same project indexes output, so they can stay longer; `oo recall` does not purge. `oo forget` removes them now (see [retention](configuration.md#store-section)).
 
 ### Usage
 
@@ -248,7 +248,7 @@ oo learn --hint "compact test summary" pytest tests/
 ### Behavior
 
 1. Runs the command normally and displays oo-classified output
-2. Sends the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to the configured LLM in the background
+2. Sends the command, part of its output, its exit code and any `--hint` to Anthropic in the background (needs `ANTHROPIC_API_KEY`); see [what is sent](security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 3. Generates a TOML pattern file and saves it to the user patterns directory as `<label>.toml` (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories))
 4. On the next invocation, prints status: `oo: learned pattern for <label> → <path>` (e.g. `oo: learned pattern for cargo-test → …/cargo-test.toml`). Failures are reported on stderr in a `oo: learn failed for <label> — …` form; see Exit codes
 

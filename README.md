@@ -93,7 +93,7 @@ Failure output is filtered to the actionable tail. When the displayed output doe
 $ oo gh issue list
 ● gh (indexed <size> → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Indexed output is kept 7 days by default (`[store] retention`); entries older than that are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Small successful outputs (≤ 4 KiB) pass through
+Query indexed output with `oo recall "<terms>"`. Indexed output is kept for the retention period (7 days by default); entries older than that are purged the next time the same project indexes output, so they can stay longer. `oo forget` removes them now (see [retention](docs/configuration.md#store-section)). Small successful outputs (≤ 4 KiB) pass through
 unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
@@ -170,9 +170,8 @@ $ oo ls -la /usr/share/doc
 ● ls (indexed <size> → use `oo recall` to query)
 $ oo recall "<term>"
 
-# Teach oo a new pattern for an unrecognised command
-# (sends the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to Anthropic; needs ANTHROPIC_API_KEY;
-# avoid if the output may contain secrets; see docs/security-model.md)
+# Teach oo a new pattern (needs ANTHROPIC_API_KEY; what is sent:
+# docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets.
 $ oo learn rspec spec/
 ```
 
@@ -193,9 +192,9 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall [--full] <query>` | Search indexed output for this project (kept 7 days by default, see [configuration](docs/configuration.md#store-section)) |
+| `oo recall [--full] <query>` | Search indexed output for this project (see [retention](docs/configuration.md#store-section)) |
 | `oo forget` | Clear all indexed output for this project |
-| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM (sends the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to Anthropic; requires `ANTHROPIC_API_KEY`; avoid if output may contain secrets, see [Security Model](docs/security-model.md)) |
+| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM. `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets. |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init --agent <pi\|claude-code>` | Install the agent hook (optional `--global`); see [Agent Integration](docs/agents.md) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
@@ -265,13 +264,13 @@ LLM) or write one manually in the user patterns directory (`oo patterns` prints 
 
 **What if oo doesn't recognize my command?**
 Successful unknown commands pass through unchanged at up to 4 KiB; failed ones are always filtered. Larger Data, Content, and Unknown output
-is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Data commands show only an indicator
+is indexed in full for later retrieval via `oo recall` (unless a matching success pattern shows its summary instead); entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer; see [retention](docs/configuration.md#store-section). Data commands show only an indicator
 line; other commands show a byte-bounded head+tail slice (marked with a truncation line).
 Successful Status commands such as `make` with more than 4 KiB of output and no pattern summary print only a `✓ label` line, with ` [saved N]` appended when the output minus that line is over 4 KiB (binary units from KiB upward, chosen by magnitude; see the [savings indicator spec](docs/cli-reference.md#savings-indicator)), and are not indexed. Use `oo learn <command>` to teach oo a compression pattern.
 
 **Can I disable compression for a command?**
 Larger unpatterned unknown commands already show a bounded head+tail slice with the full output stored for
-`oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). For commands with built-in patterns, you can override with
+`oo recall`; entries older than the retention period (7 days by default) are purged the next time the same project indexes output, so they can stay longer; see [retention](docs/configuration.md#store-section). For commands with built-in patterns, you can override with
 a custom TOML pattern. See [Custom Patterns](docs/patterns.md).
 
 **Does oo work in CI?**
@@ -279,7 +278,7 @@ It can, but oo is designed for interactive AI agent sessions where context token
 In CI, full output is usually fine.
 
 **Which LLM providers does `oo learn` support?**
-Anthropic only. `oo learn` sends the command line (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to Anthropic, and requires `ANTHROPIC_API_KEY` in your environment. Avoid it for commands whose output may contain secrets. See [Learning Patterns](docs/learn.md) and [Security Model](docs/security-model.md).
+Anthropic only. `oo learn` sends the command, part of its output, its exit code and any `--hint` to Anthropic (needs `ANTHROPIC_API_KEY`) — see [what is sent](docs/security-model.md#llm-learning-oo-learn). Avoid it when the command line or its output may contain secrets. See [Learning Patterns](docs/learn.md) and [Security Model](docs/security-model.md).
 
 ---
 
