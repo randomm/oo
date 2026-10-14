@@ -7,7 +7,7 @@ This document describes oo's security properties, trust assumptions, and how it 
 oo is designed to be safe and predictable:
 
 1. **All execution is local** — Commands run on your machine exactly as you typed them
-2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [When oo makes network calls](#when-oo-makes-network-calls): the command output and API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see [When oo makes network calls](#when-oo-makes-network-calls)). Commands you run may make their own requests
+2. **No telemetry or data collection** — oo sends no usage data. In the default build, its only network requests are the ones listed in [When oo makes network calls](#when-oo-makes-network-calls): the command, up to the first 4,000 bytes of its output, and the API key sent by `oo learn`, and the command name requested from cheat.sh by `oo help <command>`. A `--features vipune-store` build also downloads an embedding model from Hugging Face (see [When oo makes network calls](#when-oo-makes-network-calls)). Commands you run may make their own requests
 3. **Transparent modification** — oo only compresses output; it doesn't modify command behavior or inject side effects
 4. **Clear boundaries** — You control what gets indexed, stored, and transmitted
 
@@ -18,7 +18,7 @@ oo is designed to be safe and predictable:
 You must trust:
 
 1. **The oo binary** — It executes commands and can read/write local files
-2. **The LLM provider (Anthropic)** — When using `oo learn`, your command output is sent to Anthropic (see below)
+2. **The LLM provider (Anthropic)** — When using `oo learn`, the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code are sent to Anthropic (see below)
 3. **Your shell environment** — Commands run with your existing environment variables, PATH, and shell settings
 
 ### What We Don't Trust (and Why)
@@ -210,7 +210,7 @@ In the default build, oo itself makes network requests in two cases:
 **Via `oo learn`**:
 - To the Anthropic API (`https://api.anthropic.com/v1/messages` by default). `ANTHROPIC_API_URL` may override it: it must use HTTPS, except `http://` to a host that is exactly `localhost`, `127.0.0.1` or `[::1]` (compared case-insensitively), and it must not contain userinfo (`user@`). Other schemes are rejected. The URL is validated once, and the request is sent to that validated URL.
 - Redirects are not followed. The HTTP client is configured with `max_redirects(0)`, so any 3xx status (300 to 399, with or without a `Location` header, including 304) fails the request with `unexpected redirect (status N): redirects are not followed; ANTHROPIC_API_URL must point directly at the API endpoint`. The `x-api-key` header is never sent to a `Location` target, and the error does not include the `Location` value.
-- With your command output and API key
+- The command (first 100 bytes), up to the first 4,000 bytes of its output, its exit code, any `--hint` text, and your API key
 - In the background, after command completes
 
 **Via `oo help <command>`** (not for reserved subcommands):

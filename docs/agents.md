@@ -13,7 +13,7 @@ or user). Everything else runs unchanged. For example, `pytest -q` becomes
 `oo pytest -q`, while `ls -la` is left alone.
 
 - Built-in patterns: `oo patterns` lists them with their command regexes.
-- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)). `oo learn` sends the command, its output and its exit code to Anthropic and requires `ANTHROPIC_API_KEY`; avoid it for output that may contain secrets (see [Security Model](security-model.md)).
+- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)). `oo learn` sends the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to Anthropic and requires `ANTHROPIC_API_KEY`; avoid it for output that may contain secrets (see [Security Model](security-model.md)).
 - Rewrite rules in detail (pipes, redirections, `&&`/`||`/`;`, env prefixes): [`oo rewrite`](oo-rewrite.md).
 
 Because only matching commands are rewritten, the installer does not teach the
@@ -145,7 +145,7 @@ Remove the `oo hook claude` entry from `settings.json` (project or global).
 
 | Install | Files | Commit? |
 |---|---|---|
-| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. pi loads `.pi/extensions/` only after project trust is granted; interactive pi asks (default `defaultProjectTrust: "ask"`), and declining skips the extension. Print, JSON and RPC modes have no prompt, so the extension loads only with `--approve` or a saved or `"always"` trust decision (pi docs: `security.md#understand-project-trust`). |
+| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. pi loads `.pi/extensions/` only after project trust is granted; interactive pi asks (default `defaultProjectTrust: "ask"`), and declining skips the extension. Print, JSON and RPC modes have no trust prompt, so the extension loads only if `--approve` is passed, a saved trust decision grants trust (`/trust`, stored in `~/.pi/agent/trust.json`), or `defaultProjectTrust` is `"always"`. A user-level extension can also answer the trust decision (pi docs: `security.md#understand-project-trust`). |
 | Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every teammate has `oo` on PATH. On a machine without it the hook command cannot run (how Claude Code reports that is not verified here; see [Failure modes](#failure-modes)). |
 | Global (`--global`) | `~/.pi/agent/extensions/oo.ts`, `~/.claude/settings.json` | Not in the repo; these are per-user. |
 

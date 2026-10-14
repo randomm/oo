@@ -8,7 +8,7 @@ oo learn cargo test --release
 ```
 
 The command executes normally. After it finishes, a background process sends
-the command, output, and exit code to the configured LLM and writes a TOML
+the command (first 100 bytes), up to the first 4,000 bytes of its output, and its exit code to the configured LLM and writes a TOML
 pattern to the user patterns directory (`~/.config/oo/patterns/` on Linux, `~/Library/Application Support/oo/patterns/` on macOS; see [configuration.md](configuration.md#directories)).
 
 ## Config
