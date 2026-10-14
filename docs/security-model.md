@@ -64,10 +64,11 @@ You must trust:
 ### LLM Learning (`oo learn`)
 
 **What gets sent** (the single source for `oo learn` disclosure; other docs link here):
-- **Command**: the arguments joined into one command line (e.g., "cargo test --release"), cut to its first 100 bytes.
-- **Output**: the first 4,000 bytes of the output, stdout followed by stderr (not interleaved). Anything after that is not sent. Invalid UTF-8 is replaced with U+FFFD.
+- **Command**: the arguments joined into one command line (e.g., "cargo test --release"), cut to at most its first 100 bytes (the cut backs off to a UTF-8 character boundary).
+- **Output**: at most the first 4,000 bytes of the output (the cut backs off to a UTF-8 character boundary), stdout followed by stderr (not interleaved). Anything after that is not sent. Invalid UTF-8 is replaced with U+FFFD.
 - **Exit code**.
-- **Hint**: the `--hint` text, if one is given. A hint longer than 1,000 bytes is refused, not truncated, and no request is made. Observed: `oo learn --hint <1,001 bytes> echo hi` still runs `echo` and exits 0; the foreground prints only the pattern line, and the refusal (`--hint too long (1001 > 1000 chars)`) is written to `learn-status.log` and printed by the next `oo` invocation.
+- **Hint**: the `--hint` text, if one is given. A hint longer than 1,000 bytes is refused, not truncated, and no request is made. Observed: `oo learn --hint <1,001 bytes> echo hi` still runs `echo` and exits 0; the foreground shows the command's normal oo output and the `[learning pattern for …]` line, with no hint-related message. The refusal (`--hint too long (1001 > 1000 chars)`) reaches `learn-status.log` and is printed by the next `oo` invocation only when `ANTHROPIC_API_KEY` is set and non-empty. Without a key, the background run fails earlier with the missing-key error, and that error is recorded instead.
+- **Requests**: one `oo learn` run sends at most 3 requests: the first attempt, then up to 2 retries, and a retry happens only when the reply fails TOML validation. A transport, HTTP, or provider error ends the run without a retry. The first request carries the command, exit code, hint (if any), and output as above. A retry carries none of them. It sends the previous reply (code fences stripped) with a fixed note that the TOML was invalid (`initial TOML validation failed` or `retry TOML validation failed`). Both retries reuse the initial reply, not the reply from the previous retry. Each request is a single message with no earlier turns.
 - **API key**: sent in the `x-api-key` request header, not in the request body.
 
 The command line is sent even when it contains secrets (for example a token passed as an argument), so do not run `oo learn` on a command line that may contain one.
