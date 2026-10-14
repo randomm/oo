@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-14
+
+### Documentation
+
+- *(#225,#226,#227)* Accurate install, agent integration guide, and a README that explains oo in one screen ([#228](https://github.com/randomm/oo/pull/228))
+
+
 ## [0.10.0] - 2026-10-13
 
 ### ⚠ Breaking Changes
