@@ -1,32 +1,32 @@
+# oo
+
+[![CI status](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml) [![crates.io version](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o) [![docs.rs documentation](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+
+**oo shrinks verbose shell output for AI coding agents.** It runs the command, keeps the result and the errors, and indexes the rest for `oo recall`. It supports [pi](docs/agents.md#pi) and [Claude Code](docs/agents.md#claude-code); other agents use a one-line prompt instruction (see [Agent Integration](docs/agents.md)).
+
+```bash
+cargo install double-o        # the crate is double-o; it installs the `oo` binary
+oo init --agent pi            # or: oo init --agent claude-code
 ```
-  ██████   ██████ 
- ███▒▒███ ███▒▒███
-▒███ ▒███▒███ ▒███
-▒███ ▒███▒███ ▒███
-▒▒██████ ▒▒██████ 
- ▒▒▒▒▒▒   ▒▒▒▒▒▒ 
+
+Before and after:
+
 ```
-
-<br /><br />
-
-[![CI](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o)
-[![docs.rs](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
-
-*"Double-o, agent's best friend."*
-
-*Or: how I learned to stop worrying and love my context-efficient command runner for AI coding agents.*
+$ cargo test                  # without oo: every line of the run reaches the agent
+$ oo cargo test               # with oo
+✓ cargo (47 passed, 2.1s)
+```
 
 ---
 
 ## Why oo?
 
-AI coding agents waste context tokens on verbose command output. A single `cargo build`
-can produce thousands of lines that the agent must process but rarely needs in full.
+AI agents see everything a command prints, and they pay context tokens for all of it. A
+`cargo build` can produce thousands of lines the agent must read but rarely needs. A
+`cargo test` run producing 8 KB costs hundreds of tokens just to learn that the tests
+passed, and across a session the context window fills with noise.
 
-**oo solves this transparently:**
+oo runs the command for the agent and keeps what it needs:
 - Commands run normally — oo wraps them, not replaces them
 - Output is classified and compressed using patterns
 - Agents get the signal (pass/fail, errors, summaries) without the noise
@@ -37,16 +37,19 @@ agent-native output limits, oo preserves the information the agent actually need
 
 ---
 
-## The Problem
+## What oo prints
 
-AI agents see everything you print. A `cargo test` run producing 8 KB of output
-costs the agent hundreds of tokens just to learn "tests passed." Multiply that
-across a session and the context window fills with noise, not signal. `oo` runs
-commands for you and collapses their output to what the agent actually needs.
+Each command falls into one of four categories, which decides what is shown when no
+pattern matches:
 
----
+- **Status**: test runners, builds, and linters. Large successful output collapses to a quiet `✓` line.
+- **Data**: listings and logs such as `git log` and `ls`. Only an indicator line is shown.
+- **Content**: file-like output such as `git show`, `git diff`, and `cat`. A head+tail slice is shown.
+- **Unknown**: everything else, such as `jq` or `sh -c`. A head+tail slice is shown.
 
-## Output Tiers
+See [command categories](docs/patterns.md#command-categories) for the full rules.
+
+Legend: ✓ passed · ✗ failed · ● indexed or truncated.
 
 **Without oo:** Your agent receives the full output.
 ```
@@ -66,7 +69,7 @@ test result: ok. 47 passed; 0 failed; finished in 2.1s
 **With oo:** Your agent gets the signal.
 ```
 $ oo cargo test
-✓ cargo test (47 passed, 2.1s)
+✓ cargo (47 passed, 2.1s)
 ```
 
 Large output with a known success pattern collapses to a single summary line.
@@ -148,13 +151,16 @@ cp target/release/oo /usr/local/bin/
 ## Quick Start
 
 ```bash
-# Wrap any command — output is classified and compressed
-$ oo cargo test
-✓ cargo test (47 passed, 2.1s)
+# 1. Set up your agent (pi or Claude Code): commands that match a pattern are rewritten through oo
+$ oo init --agent pi
 
-# Large unrecognised output is indexed — query it later
-$ oo git log --oneline -100
-● git (indexed 12.4 KiB → use `oo recall` to query)
+# 2. Wrap any command — output is classified and compressed
+$ oo cargo test
+✓ cargo (47 passed, 2.1s)
+
+# 3. Large unrecognised output is indexed — query it later
+$ oo git log -p -30
+● git (indexed 969.60 KiB → use `oo recall` to query)
 $ oo recall "merge commit"
 
 # Teach oo a new pattern for an unrecognised command
