@@ -111,7 +111,7 @@ for details.
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/double-o-installer.sh | sh
 ```
 
-> The installer detects your platform, downloads the `oo` binary and installs it to `$CARGO_HOME/bin` (default `~/.cargo/bin/`). To install elsewhere, set `DOUBLE_O_INSTALL_DIR`: the binary is written to `$DOUBLE_O_INSTALL_DIR/bin/oo` (for example, `DOUBLE_O_INSTALL_DIR=/opt/oo` installs `/opt/oo/bin/oo`). If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
+> The installer detects your platform, downloads the `oo` binary and installs it to `$CARGO_HOME/bin` (default `~/.cargo/bin/`). If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
 
 ### Pre-built binaries (supported platforms)
 
