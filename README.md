@@ -25,7 +25,7 @@ $ oo cargo test               # with oo, output over 4 KiB
 
 AI agents see everything a command prints, and they pay context tokens for all of it. A
 `cargo build` can produce thousands of lines the agent must read but rarely needs. A
-`cargo test` run producing 8 KB costs roughly 2,000 tokens (at about 4 bytes per token,
+`cargo test` run producing 47 KB costs roughly 12,000 tokens (at about 4 bytes per token,
 an illustrative estimate) just to learn that the tests passed, and across a session the
 context window fills with noise.
 
@@ -73,7 +73,7 @@ $ oo cargo test
 ✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
 
-The `[saved …]` figure is appended only when oo saved more than 4 KiB; the value shown is illustrative. Successful output of 4 KiB or less passes through unchanged, so a short run like the one above prints as-is.
+The `[saved …]` figure is appended only when oo saved more than 4 KiB, and the value shown is illustrative. The 47-test run above stands for a large run: a successful run of 4 KiB or less passes through unchanged and prints as-is.
 
 Large output with a known success pattern collapses to a single summary line.
 
@@ -161,7 +161,7 @@ cp target/release/oo /usr/local/bin/
 # 1. Set up your agent (pi or Claude Code): commands that match a pattern are rewritten through oo
 $ oo init --agent pi
 
-# 2. Wrap any command — output is classified and compressed
+# 2. Wrap any command — output is classified and compressed (figures are illustrative)
 $ oo cargo test
 ✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 
