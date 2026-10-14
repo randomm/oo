@@ -65,7 +65,7 @@ You must trust:
 
 **What gets sent** (the single source for `oo learn` disclosure; other docs link here):
 - **Command**: the arguments joined into one command line (e.g., "cargo test --release"), cut to its first 100 bytes (`MAX_COMMAND_LENGTH`). The cut never splits a UTF-8 character.
-- **Output**: the first 4,000 bytes of the merged output, stdout followed by stderr (not interleaved). Anything after that is not sent (`truncate_for_prompt`). The same UTF-8 rule applies.
+- **Output**: the first 4,000 bytes of the merged output after lossy UTF-8 decoding (invalid bytes become the 3-byte U+FFFD), stdout followed by stderr (not interleaved). Anything after that is not sent (`truncate_for_prompt`). Valid UTF-8 output is unaffected; the cut never splits a character.
 - **Exit code**.
 - **Hint**: the `--hint` text, if one is given. A hint longer than 1,000 bytes is refused before any request is made (`MAX_HINT_LENGTH`); it is not truncated.
 - **API key**: sent in the `x-api-key` request header, not in the request body.

@@ -65,7 +65,7 @@ For a more comprehensive test, try indexing a large output:
 ./target/release/oo ls -la /usr/share/doc
 ```
 
-Expected output (if output > 4 KiB and no success pattern matches; the size varies by host):
+Expected output (if output > 4 KiB and no success pattern matches; the size varies by host, and the path must exist and list more than 4 KiB, which `/usr/share/doc` does on most Linux hosts; otherwise pick any large directory):
 ```
 ● ls (indexed <size> → use `oo recall` to query)
 ```

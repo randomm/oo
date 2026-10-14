@@ -105,7 +105,7 @@ for details.
 
 ## Installation
 
-**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64 with glibc 2.39 or newer (the installer enforces the glibc floor). Intel macOS, Windows and older-glibc Linux are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
+**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64. The Linux binaries are built on Ubuntu 24.04 (glibc 2.39), so older glibc may not run them. Intel macOS and Windows are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
 
 ### Quick install (Apple Silicon macOS and Linux)
 
@@ -142,7 +142,7 @@ sudo mv double-o-aarch64-unknown-linux-gnu/oo /usr/local/bin/
 cargo install double-o
 ```
 
-The crate is named `double-o`; it installs the `oo` binary. Requires Rust 1.85+. Use this on platforms without a pre-built binary (Intel macOS, Windows, glibc older than 2.39).
+The crate is named `double-o`; it installs the `oo` binary. Requires Rust 1.85+. Use this on platforms without a pre-built binary (Intel macOS, Windows, or Linux with glibc older than 2.39).
 
 ### From source
 
