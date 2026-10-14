@@ -9,6 +9,8 @@ cargo install double-o        # the crate is double-o; it installs the `oo` bina
 oo init --agent pi            # or: oo init --agent claude-code
 ```
 
+Legend: ✓ passed · ✗ failed · ● indexed or truncated.
+
 Before and after:
 
 ```
@@ -43,14 +45,12 @@ agent-native output limits, oo preserves the information the agent actually need
 Each command falls into one of four categories, which decides what is shown when no
 pattern matches:
 
-- **Status**: test runners, builds, and linters. Large successful output collapses to a quiet `✓` line.
-- **Data**: listings and logs such as `git log` and `ls`. Only an indicator line is shown.
-- **Content**: file-like output such as `git show`, `git diff`, and `cat`. A head+tail slice is shown.
-- **Unknown**: everything else, such as `jq` or `sh -c`. A head+tail slice is shown.
+- **Status**: test runners, builds, and linters.
+- **Data**: listings and logs such as `git log` and `ls`.
+- **Content**: file-like output such as `git show`, `git diff`, and `cat`.
+- **Unknown**: everything else, such as `jq` or `sh -c`.
 
-See [command categories](docs/patterns.md#command-categories) for the full rules.
-
-Legend: ✓ passed · ✗ failed · ● indexed or truncated.
+For output over 4 KiB with no matching pattern summary: Status collapses to a quiet `✓` line; Data shows only an indicator line; Content and Unknown show a head+tail slice. Output of 4 KiB or less passes through unchanged. See [command categories](docs/patterns.md#command-categories) for the full rules.
 
 **Without oo:** Your agent receives the full output.
 ```

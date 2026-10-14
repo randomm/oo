@@ -138,14 +138,14 @@ Remove the `oo hook claude` entry from `settings.json` (project or global).
 ### Failure modes
 
 - **Hook fails open for its own errors.** Empty input, invalid JSON or missing fields print nothing and exit 0, so the original command runs.
-- **`oo` not on PATH.** The hook command is `oo hook claude`, looked up by name. This page does not verify how Claude Code reports a hook whose command is not found. Check that `oo hook claude` works in a terminal, from the environment Claude Code starts in.
+- **`oo` not on PATH.** The hook command is `oo hook claude`, looked up by name. On a machine where `oo` is not found, the hook cannot run. How Claude Code reports that is not verified here. Check that `oo hook claude` works in a terminal, from the environment Claude Code starts in.
 
 ## What to commit
 
 | Install | Files | Commit? |
 |---|---|---|
 | Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. Whether pi loads project extensions without a trust prompt is not verified here. |
-| Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every teammate has `oo` on PATH. Without it, the hook command is not found (see [Failure modes](#failure-modes)). |
+| Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every teammate has `oo` on PATH. On a machine without it the hook command cannot run (how Claude Code reports that is not verified here; see [Failure modes](#failure-modes)). |
 | Global (`--global`) | `~/.pi/agent/extensions/oo.ts`, `~/.claude/settings.json` | Not in the repo; these are per-user. |
 
 - Project `settings.json` is shared as a whole. Review the diff before committing if it holds other settings.
