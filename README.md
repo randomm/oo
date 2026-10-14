@@ -105,10 +105,10 @@ for details.
 ### Quick install (macOS and Linux)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/oo-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/double-o-installer.sh | sh
 ```
 
-> The installer detects your platform, downloads the correct binary, and adds it to `~/.cargo/bin/` by default. If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available. Use `--prefix=/usr/local` for system-wide installs.
+> The installer detects your platform, downloads the correct binary, and adds it to `~/.cargo/bin/` by default. If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
 
 ### Pre-built binaries (recommended)
 

@@ -147,7 +147,7 @@ For Codex, Cursor, Aider, opencode and other agents without an `oo` installer:
 oo init --format generic
 ```
 
-This prints the AGENTS.md instruction and writes nothing. Put the printed text in the instruction file the agent reads.
+This prints an instruction snippet and writes no files. Put the printed text in the instruction file the agent reads.
 
 Without a hook, nothing rewrites commands. The agent must choose to prefix commands with `oo` itself. Check its output for the `✓`, `✗` and `●` lines.
 
