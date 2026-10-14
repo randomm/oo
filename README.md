@@ -105,7 +105,7 @@ for details.
 
 ## Installation
 
-**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64. The Linux binaries are built on Ubuntu 24.04 (glibc 2.39), so older glibc may not run them. Intel macOS and Windows are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
+**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64. The Linux binaries are built on `ubuntu-latest` (x86_64) or `ubuntu-24.04-arm` (ARM64), which are Ubuntu 24.04 at the time of writing (glibc 2.39), so older glibc may not run them. Intel macOS and Windows are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
 
 ### Quick install (Apple Silicon macOS and Linux)
 
