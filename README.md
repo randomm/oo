@@ -2,7 +2,7 @@
 
 [![CI status](https://github.com/randomm/oo/actions/workflows/ci.yml/badge.svg)](https://github.com/randomm/oo/actions/workflows/ci.yml) [![crates.io version](https://img.shields.io/crates/v/double-o.svg)](https://crates.io/crates/double-o) [![docs.rs documentation](https://docs.rs/double-o/badge.svg)](https://docs.rs/double-o) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-brightgreen.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
 
-**oo shrinks verbose shell output for AI coding agents.** It runs the command, keeps the result and the errors, and indexes the rest for `oo recall`. It supports [pi](docs/agents.md#pi) and [Claude Code](docs/agents.md#claude-code); other agents use a one-line prompt instruction (see [Agent Integration](docs/agents.md)).
+**oo shrinks verbose shell output for AI coding agents.** It runs the command, keeps the result and the errors, and indexes the rest for `oo recall`. It supports [pi](docs/agents.md#pi) and [Claude Code](docs/agents.md#claude-code); other agents use a prompt instruction (see [Agent Integration](docs/agents.md)).
 
 ```bash
 cargo install double-o        # the crate is double-o; it installs the `oo` binary
@@ -23,8 +23,9 @@ $ oo cargo test               # with oo
 
 AI agents see everything a command prints, and they pay context tokens for all of it. A
 `cargo build` can produce thousands of lines the agent must read but rarely needs. A
-`cargo test` run producing 8 KB costs hundreds of tokens just to learn that the tests
-passed, and across a session the context window fills with noise.
+`cargo test` run producing 8 KB costs roughly 2,000 tokens (at about 4 bytes per token,
+an illustrative estimate) just to learn that the tests passed, and across a session the
+context window fills with noise.
 
 oo runs the command for the agent and keeps what it needs:
 - Commands run normally — oo wraps them, not replaces them
@@ -158,9 +159,9 @@ $ oo init --agent pi
 $ oo cargo test
 ✓ cargo (47 passed, 2.1s)
 
-# 3. Large unrecognised output is indexed — query it later
+# 3. Large unrecognised output is indexed — query it later (<size> varies with the output)
 $ oo git log -p -30
-● git (indexed 969.60 KiB → use `oo recall` to query)
+● git (indexed <size> → use `oo recall` to query)
 $ oo recall "merge commit"
 
 # Teach oo a new pattern for an unrecognised command
