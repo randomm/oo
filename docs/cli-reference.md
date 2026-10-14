@@ -13,7 +13,7 @@
 | `oo hook <agent>` | Agent hook processor (e.g. `oo hook claude` reads PreToolUse JSON on stdin) |
 | `oo version` | Print version |
 | `oo patterns` | List all loaded patterns (built-in, project, and user) |
-| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (reserved) |
+| `oo rewrite <command...>` | Print an `oo`-prefixed form of a command for agent hooks (experimental) |
 
 ---
 
@@ -61,7 +61,7 @@ When oo compresses output (Success and Failure arms), the savings are reported o
 indicator line itself:
 
 ```
-✓ cargo test (47 passed, 2.1s) [saved 46.10 KiB]
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
 
 The exact format is `{base_line} [saved {humansize}]` — bracketed, single space after
@@ -133,6 +133,8 @@ Returns the exit code of the wrapped command.
 ## `oo recall [--full] <query>`
 
 Search indexed output for the current project.
+
+By default, indexed output is kept 7 days (`[store] retention`, see [configuration](configuration.md#store-section)). Entries older than that are purged the next time the same project indexes output; `oo recall` does not purge.
 
 ### Usage
 

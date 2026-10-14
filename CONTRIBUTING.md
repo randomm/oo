@@ -62,12 +62,12 @@ hello, world
 For a more comprehensive test, try indexing a large output:
 
 ```bash
-./target/release/oo git log --oneline -100
+./target/release/oo ls -la /usr/share/doc
 ```
 
-Expected output (if output > 4 KiB and no success pattern matches):
+Expected output (if output > 4 KiB and no success pattern matches; the size varies by host):
 ```
-● git log (indexed X.XX KiB → use `oo recall` to query)
+● ls (indexed <size> → use `oo recall` to query)
 ```
 
 ## Workflow

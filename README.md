@@ -33,7 +33,7 @@ oo runs the command for the agent and keeps what it needs:
 - Commands run normally — oo wraps them, not replaces them
 - Output is classified and compressed using patterns
 - Agents get the signal (pass/fail, errors, summaries) without the noise
-- No agent modification required — just prefix commands with `oo`
+- Pi and Claude Code need no prompt change: `oo init --agent pi` or `oo init --agent claude-code` installs a hook or extension that rewrites commands. Other agents need one line in their prompt (see [Agent Integration](#agent-integration))
 
 Unlike manual truncation (`head`/`tail`), oo understands command semantics. Unlike
 agent-native output limits, oo preserves the information the agent actually needs.
@@ -89,9 +89,9 @@ Failure output is filtered to the actionable tail. When the displayed output doe
 **Large unrecognised output:** Indexed for retrieval.
 ```
 $ oo gh issue list
-● gh (indexed 47.2 KiB → use `oo recall` to query)
+● gh (indexed <size> → use `oo recall` to query)
 ```
-Query indexed output with `oo recall "<terms>"`. Small successful outputs (≤ 4 KiB) pass through
+Query indexed output with `oo recall "<terms>"`. Indexed output is kept 7 days by default (`[store] retention`); entries older than that are purged the next time the same project indexes output (see [configuration](docs/configuration.md#store-section)). Small successful outputs (≤ 4 KiB) pass through
 unchanged; failed commands are always filtered (see above). Larger unpatterned Data, Content, and Unknown output is indexed in full; successful Status output (test runners, builds, linters) over 4 KiB with no pattern summary gets a quiet `✓` line and is not indexed. Data commands like
 `git log` and `ls` show only an indicator line; content commands like `git show` and `git diff`
 and unknown commands like `jq` or `sh -c` show a byte-bounded head+tail slice with a truncation
@@ -103,15 +103,17 @@ for details.
 
 ## Installation
 
-### Quick install (macOS and Linux)
+**Supported platforms:** Apple Silicon macOS, and Linux x86_64 and ARM64 with glibc 2.39 or newer (the installer enforces the glibc floor). Intel macOS, Windows and older-glibc Linux are not covered by the pre-built binaries or the installer: use `cargo install double-o` (Rust 1.85+) or build from source.
+
+### Quick install (Apple Silicon macOS and Linux)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/randomm/oo/releases/latest/download/double-o-installer.sh | sh
 ```
 
-> The installer detects your platform, downloads the correct binary, and adds it to `~/.cargo/bin/` by default. If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
+> The installer detects your platform, downloads the `oo` binary and installs it to `$CARGO_HOME/bin` (default `~/.cargo/bin/`). To install elsewhere, set `DOUBLE_O_INSTALL_DIR`: the binary is written to `$DOUBLE_O_INSTALL_DIR/bin/oo` (for example, `DOUBLE_O_INSTALL_DIR=/opt/oo` installs `/opt/oo/bin/oo`). If you don't use Rust, restart your shell or run `export PATH="$HOME/.cargo/bin:$PATH"` to make `oo` available.
 
-### Pre-built binaries (recommended)
+### Pre-built binaries (supported platforms)
 
 Download from [GitHub Releases](https://github.com/randomm/oo/releases/latest):
 
@@ -138,6 +140,8 @@ sudo mv double-o-aarch64-unknown-linux-gnu/oo /usr/local/bin/
 cargo install double-o
 ```
 
+The crate is named `double-o`; it installs the `oo` binary. Requires Rust 1.85+. Use this on platforms without a pre-built binary (Intel macOS, Windows, glibc older than 2.39).
+
 ### From source
 
 ```bash
@@ -159,12 +163,13 @@ $ oo init --agent pi
 $ oo cargo test
 ✓ cargo (47 passed, 2.1s)
 
-# 3. Large unrecognised output is indexed — query it later (<size> varies with the output)
-$ oo git log -p -30
-● git (indexed <size> → use `oo recall` to query)
-$ oo recall "merge commit"
+# 3. Output over 4 KiB that has no pattern is indexed — query it later
+$ oo ls -la /usr/share/doc
+● ls (indexed <size> → use `oo recall` to query)
+$ oo recall "<term>"
 
 # Teach oo a new pattern for an unrecognised command
+# (sends the command, its output and exit code to Anthropic; needs ANTHROPIC_API_KEY)
 $ oo learn rspec spec/
 ```
 
@@ -185,9 +190,9 @@ See the [savings indicator spec](docs/cli-reference.md#savings-indicator) for ho
 | Command | Description |
 |---|---|
 | `oo <cmd> [args...]` | Run a shell command with context-efficient output |
-| `oo recall [--full] <query>` | Search indexed output for this project |
+| `oo recall [--full] <query>` | Search indexed output for this project (kept 7 days by default, see [configuration](docs/configuration.md#store-section)) |
 | `oo forget` | Clear all indexed output for this project |
-| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM |
+| `oo learn <cmd> [args...]` | Run command and teach `oo` a new output pattern via LLM (sends the command, its output and exit code to Anthropic; requires `ANTHROPIC_API_KEY`) |
 | `oo help <cmd>` | Fetch a cheat sheet for `cmd` from cheat.sh (`oo help <reserved-subcommand>` prints local usage) |
 | `oo init --agent <pi\|claude-code>` | Install the agent hook (optional `--global`); see [Agent Integration](docs/agents.md) |
 | `oo patterns` | List loaded output patterns (built-in, project and user) |
@@ -271,8 +276,7 @@ It can, but oo is designed for interactive AI agent sessions where context token
 In CI, full output is usually fine.
 
 **Which LLM providers does `oo learn` support?**
-Anthropic only. Set `ANTHROPIC_API_KEY` in your environment.
-See [Learning Patterns](docs/learn.md).
+Anthropic only. `oo learn` sends the command line, its output and its exit code to Anthropic, and requires `ANTHROPIC_API_KEY` in your environment. Avoid it for commands whose output may contain secrets. See [Learning Patterns](docs/learn.md) and [Security Model](docs/security-model.md).
 
 ---
 
