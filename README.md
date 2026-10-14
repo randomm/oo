@@ -15,8 +15,8 @@ Before and after:
 
 ```
 $ cargo test                  # without oo: every line of the run reaches the agent
-$ oo cargo test               # with oo
-✓ cargo (47 passed, 2.1s)
+$ oo cargo test               # with oo, output over 4 KiB
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
 
 ---
@@ -50,7 +50,7 @@ pattern matches:
 - **Content**: file-like output such as `git show`, `git diff`, and `cat`.
 - **Unknown**: everything else, such as `jq` or `sh -c`.
 
-For output over 4 KiB with no matching pattern summary: Status collapses to a quiet `✓` line; Data shows only an indicator line; Content and Unknown show a head+tail slice. Output of 4 KiB or less passes through unchanged. See [command categories](docs/patterns.md#command-categories) for the full rules.
+For output over 4 KiB with no matching pattern summary: Status collapses to a quiet `✓` line; Data shows only an indicator line; Content and Unknown show a head+tail slice. Successful output of 4 KiB or less passes through unchanged; failed commands are always filtered. See [command categories](docs/patterns.md#command-categories) for the full rules.
 
 **Without oo:** Your agent receives the full output.
 ```
@@ -70,8 +70,10 @@ test result: ok. 47 passed; 0 failed; finished in 2.1s
 **With oo:** Your agent gets the signal.
 ```
 $ oo cargo test
-✓ cargo (47 passed, 2.1s)
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 ```
+
+The `[saved …]` figure is appended only when oo saved more than 4 KiB; the value shown is illustrative. Successful output of 4 KiB or less passes through unchanged, so a short run like the one above prints as-is.
 
 Large output with a known success pattern collapses to a single summary line.
 
@@ -161,7 +163,7 @@ $ oo init --agent pi
 
 # 2. Wrap any command — output is classified and compressed
 $ oo cargo test
-✓ cargo (47 passed, 2.1s)
+✓ cargo (47 passed, 2.1s) [saved 46.10 KiB]
 
 # 3. Output over 4 KiB that has no pattern is indexed — query it later
 $ oo ls -la /usr/share/doc

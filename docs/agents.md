@@ -13,7 +13,7 @@ or user). Everything else runs unchanged. For example, `pytest -q` becomes
 `oo pytest -q`, while `ls -la` is left alone.
 
 - Built-in patterns: `oo patterns` lists them with their command regexes.
-- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)).
+- Extend coverage: write a pattern in [Custom Patterns](patterns.md), or generate one with `oo learn <cmd>` ([Learning Patterns](learn.md)). `oo learn` sends the command, its output and its exit code to Anthropic and requires `ANTHROPIC_API_KEY`; avoid it for output that may contain secrets (see [Security Model](security-model.md)).
 - Rewrite rules in detail (pipes, redirections, `&&`/`||`/`;`, env prefixes): [`oo rewrite`](oo-rewrite.md).
 
 Because only matching commands are rewritten, the installer does not teach the
@@ -73,8 +73,9 @@ A working session shows these lines in the tool output:
 
 - `✓ <label> (<summary>)`: a matched command succeeded.
 - `✗ <label>`: a matched command failed; the failure tail follows.
-- `● <label> (indexed <size> → use \`oo recall\` to query)`: large output was indexed. Query it with `oo recall`.
-- `● <label> (output truncated: <size> total → use \`oo recall\` to query)`: output was truncated and the full output was indexed.
+- ``● <label> (indexed <size> → use `oo recall` to query)``: large output was indexed. Query it with `oo recall`.
+- ``● <label> (output truncated: <size> total → use `oo recall` to query)``: output was truncated and the full output was indexed.
+- ``● <label> (output truncated: <size> total — NOT indexed, recall unavailable)``: output was truncated and indexing failed, so `oo recall` cannot return the rest. A warning is printed on stderr.
 
 `<label>` is the command's name, and `<size>` is the output size; both vary by command.
 
@@ -144,7 +145,7 @@ Remove the `oo hook claude` entry from `settings.json` (project or global).
 
 | Install | Files | Commit? |
 |---|---|---|
-| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. Whether pi loads project extensions without a trust prompt is not verified here. |
+| Project pi (`--agent pi`) | `.pi/extensions/oo.ts` | Optional. Without `oo`, the extension disables itself and runs commands unchanged. pi loads `.pi/extensions/` only after project trust is granted; interactive pi asks (default `defaultProjectTrust: "ask"`), and declining skips the extension. Print, JSON and RPC modes have no prompt, so the extension loads only with `--approve` or a saved or `"always"` trust decision (pi docs: `security.md#understand-project-trust`). |
 | Project Claude Code (`--agent claude-code`) | `.claude/settings.json` | Commit only if every teammate has `oo` on PATH. On a machine without it the hook command cannot run (how Claude Code reports that is not verified here; see [Failure modes](#failure-modes)). |
 | Global (`--global`) | `~/.pi/agent/extensions/oo.ts`, `~/.claude/settings.json` | Not in the repo; these are per-user. |
 
